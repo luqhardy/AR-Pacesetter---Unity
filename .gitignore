@@ -1,0 +1,30 @@
+# Prerequisites
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Mm]emoryCaptures/
+/[Vv][Ss][Cc]ache/
+
+# Personal settings
+/[ squirrels]/
+/[Uu]ser[Ss]ettings/
+
+# Visual Studio / Rider generated files
+/*.csproj
+/*.sln
+/*.suo
+/*.user
+/*.userprefs
+/*.pidb
+/*.booproj
+/*.svd
+/*.pdb
+/*.opendb
+/*.VC.db
+
+# OS generated files
+.DS_Store
+Thumbs.db
