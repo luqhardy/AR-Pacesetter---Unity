@@ -3,6 +3,26 @@
   "WorkspaceRootPath": "C:\\Users\\luqma\\AR Pacesetter\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Library\\PackageCache\\com.unity.render-pipelines.universal@13e5115b98bf\\Shaders\\Lit.shader||{3B902123-F8A7-4915-9F01-361F908088D0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Library\\PackageCache\\com.unity.render-pipelines.universal@13e5115b98bf\\Shaders\\Lit.shader||{3B902123-F8A7-4915-9F01-361F908088D0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\SilentRouteRecoverer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\SilentRouteRecoverer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AnalyticsManager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\AnalyticsManager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\SafetyAndSystemController.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\SafetyAndSystemController.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarVisualsAndActions.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\AvatarVisualsAndActions.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarEngine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\AvatarEngine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
@@ -23,6 +43,71 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
+              "Title": "Lit.shader",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Library\\PackageCache\\com.unity.render-pipelines.universal@13e5115b98bf\\Shaders\\Lit.shader",
+              "RelativeDocumentMoniker": "Library\\PackageCache\\com.unity.render-pipelines.universal@13e5115b98bf\\Shaders\\Lit.shader",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Library\\PackageCache\\com.unity.render-pipelines.universal@13e5115b98bf\\Shaders\\Lit.shader",
+              "RelativeToolTip": "Library\\PackageCache\\com.unity.render-pipelines.universal@13e5115b98bf\\Shaders\\Lit.shader",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-05-28T03:06:39.874Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "SilentRouteRecoverer.cs",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\SilentRouteRecoverer.cs",
+              "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\SilentRouteRecoverer.cs",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\SilentRouteRecoverer.cs",
+              "RelativeToolTip": "Assets\\_Project\\Scripts\\SilentRouteRecoverer.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACYAAAAnAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-05-28T02:09:01.126Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "AnalyticsManager.cs",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AnalyticsManager.cs",
+              "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\AnalyticsManager.cs",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AnalyticsManager.cs",
+              "RelativeToolTip": "Assets\\_Project\\Scripts\\AnalyticsManager.cs",
+              "ViewState": "AgIAACsAAAAAAAAAAAAowGgAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-05-28T02:04:16.46Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "SafetyAndSystemController.cs",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\SafetyAndSystemController.cs",
+              "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\SafetyAndSystemController.cs",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\SafetyAndSystemController.cs",
+              "RelativeToolTip": "Assets\\_Project\\Scripts\\SafetyAndSystemController.cs",
+              "ViewState": "AgIAAD8AAAAAAAAAAAAowHwAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-05-28T01:22:44.724Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "AvatarVisualsAndActions.cs",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarVisualsAndActions.cs",
+              "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\AvatarVisualsAndActions.cs",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarVisualsAndActions.cs",
+              "RelativeToolTip": "Assets\\_Project\\Scripts\\AvatarVisualsAndActions.cs",
+              "ViewState": "AgIAAAgAAAAAAAAAAAAowEUAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-05-28T00:44:21.961Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
               "Title": "AvatarEngine.cs",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarEngine.cs",
               "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\AvatarEngine.cs",
@@ -35,7 +120,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 6,
               "Title": "GameStateController.cs",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\GameStateController.cs",
               "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\GameStateController.cs",
@@ -43,8 +128,7 @@
               "RelativeToolTip": "Assets\\_Project\\Scripts\\GameStateController.cs",
               "ViewState": "AgIAAFQAAAAAAAAAAAAowJEAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-05-27T11:38:56.352Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-27T11:38:56.352Z"
             }
           ]
         }

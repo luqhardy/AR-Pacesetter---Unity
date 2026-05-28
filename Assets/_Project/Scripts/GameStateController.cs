@@ -20,6 +20,7 @@ public class GameStateController : MonoBehaviour
     [SerializeField] private GameObject avatarTarget;
     [SerializeField] private MeshRenderer avatarRenderer;
 
+    private SkinnedMeshRenderer _avatarSkinnedRenderer;
     private float _gpsLostTimer = 0.0f;
     private Coroutine _fadeCoroutine;
 
@@ -95,11 +96,11 @@ public class GameStateController : MonoBehaviour
                 break;
 
             case ARVisionState.Standby:
-                avatarTarget.SetActive(false);
+                if (avatarTarget != null) avatarTarget.SetActive(false);
                 break;
 
             case ARVisionState.Reaccumulation:
-                avatarTarget.SetActive(true);
+                if (avatarTarget != null) avatarTarget.SetActive(true);
                 if (_fadeCoroutine != null) StopCoroutine(_fadeCoroutine);
                 _fadeCoroutine = StartCoroutine(ExecuteReaccumulationProcess());
                 break;
@@ -110,22 +111,40 @@ public class GameStateController : MonoBehaviour
         }
     }
 
+    // Dynamic pipeline gateway to route tracking commands to VRChat or Capsule meshes dynamically
+    public void UpdateActiveRenderer(MeshRenderer staticMesh, SkinnedMeshRenderer skinnedMesh)
+    {
+        avatarRenderer = staticMesh;
+        _avatarSkinnedRenderer = skinnedMesh;
+    }
+
     private IEnumerator FadeAvatarAlpha(float start, float end, float duration)
     {
         float elapsed = 0.0f;
-        Color matColor = avatarRenderer.material.color;
+
+        // Safety validation checklist: identify which component holds the material
+        Material targetMat = null;
+        if (avatarRenderer != null) targetMat = avatarRenderer.material;
+        else if (_avatarSkinnedRenderer != null) targetMat = _avatarSkinnedRenderer.material;
+
+        if (targetMat == null) yield break;
+        Color matColor = targetMat.color;
 
         while (elapsed < duration)
         {
             elapsed += Time.deltaTime;
             float newAlpha = Mathf.Lerp(start, end, elapsed / duration);
-            avatarRenderer.material.color = new Color(matColor.r, matColor.g, matColor.b, newAlpha);
+
+            // Apply opacity transformations safely to whichever asset mesh is currently active
+            if (avatarRenderer != null) avatarRenderer.material.color = new Color(matColor.r, matColor.g, matColor.b, newAlpha);
+            if (_avatarSkinnedRenderer != null) _avatarSkinnedRenderer.material.color = new Color(matColor.r, matColor.g, matColor.b, newAlpha);
+
             yield return null;
         }
 
         if (end == 0.0f)
         {
-            TransitionToState(ARVisionState.Standby);
+            TransitionToState(ARVisionState.Standby); // Automatically enter standby when invisible
         }
     }
 
@@ -135,12 +154,21 @@ public class GameStateController : MonoBehaviour
         Debug.Log("Playing 1.5s Light Particle Accumulation FX...");
         yield return new WaitForSeconds(1.5f);
 
-        Color c = avatarRenderer.material.color;
-        avatarRenderer.material.color = new Color(c.r, c.g, c.b, 1.0f);
+        // Safely snap visibility color parameters back to 100% opaque without breaking custom characters
+        if (avatarRenderer != null)
+        {
+            Color c = avatarRenderer.material.color;
+            avatarRenderer.material.color = new Color(c.r, c.g, c.b, 1.0f);
+        }
+        if (_avatarSkinnedRenderer != null)
+        {
+            Color c = _avatarSkinnedRenderer.material.color;
+            _avatarSkinnedRenderer.material.color = new Color(c.r, c.g, c.b, 1.0f);
+        }
 
-        // Trigger "Nod" animation as confirmation back to user
+        // Trigger "Nod" animation confirmation back to user
         Debug.Log("Avatar plays confirmation 'Nod' animation.");
 
-        TransitionToState(ARVisionState.Normal);
+        TransitionToState(ARVisionState.Normal); // Handshake complete
     }
 }

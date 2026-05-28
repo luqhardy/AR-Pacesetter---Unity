@@ -6,6 +6,8 @@ public class AvatarVisualsAndActions : MonoBehaviour
     [SerializeField] private Transform userCamera;       // XR Origin Main Camera
     [SerializeField] private MeshRenderer avatarRenderer; // Capsule Mesh Renderer
 
+    private SkinnedMeshRenderer _avatarSkinnedRenderer;   // Added for VRChat model compatibility
+
     [Header("Vital Sync (Bio-Luminescence)")]
     [SerializeField] private float baseIntensity = 1.0f;
     [SerializeField] private float pulseAmplitude = 1.5f;
@@ -19,11 +21,7 @@ public class AvatarVisualsAndActions : MonoBehaviour
 
     void Start()
     {
-        if (avatarRenderer != null)
-        {
-            // Create a local instance of the material so we don't overwrite the project file
-            _glowMaterial = avatarRenderer.material;
-        }
+        RefreshMaterialReference();
     }
 
     void Update()
@@ -40,17 +38,9 @@ public class AvatarVisualsAndActions : MonoBehaviour
         {
             // Requirement 4.1: 10m separation switches color to Amber
             targetBaseColor = _amberWarning;
-
-            // Placeholder: Trigger "Hand Wave / Beckon" animation clip here
-            // animator.SetBool("IsBeckoning", true);
-        }
-        else
-        {
-            // animator.SetBool("IsBeckoning", false);
         }
 
         // 3. Compute Bio-Luminescence Pulse Frequency using Heart Rate
-        // Convert Beats Per Minute into a frequency multiplier (hz)
         float pulseFrequency = (_currentHeartRate / 60.0f) * Mathf.PI * 2.0f;
 
         // Use a sine wave to create a smooth, continuous glowing oscillation
@@ -60,6 +50,28 @@ public class AvatarVisualsAndActions : MonoBehaviour
         // 4. Apply Final HDR Color and Light Intensity Matrix to the shader
         Color finalGlowColor = targetBaseColor * currentIntensity;
         _glowMaterial.SetColor("_EmissionColor", finalGlowColor);
+    }
+
+    // --- THE MISSING LINK FOR MODEL SWITCHING ---
+    public void UpdateActiveRenderer(MeshRenderer staticMesh, SkinnedMeshRenderer skinnedMesh)
+    {
+        avatarRenderer = staticMesh;
+        _avatarSkinnedRenderer = skinnedMesh;
+
+        // Dynamically re-grab the correct material so the heart rate pulse doesn't break
+        RefreshMaterialReference();
+    }
+
+    private void RefreshMaterialReference()
+    {
+        if (avatarRenderer != null)
+        {
+            _glowMaterial = avatarRenderer.material;
+        }
+        else if (_avatarSkinnedRenderer != null)
+        {
+            _glowMaterial = _avatarSkinnedRenderer.material;
+        }
     }
 
     // Public gateway method to feed data directly from your Apple Watch BLE script loop
