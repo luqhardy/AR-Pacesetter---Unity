@@ -47,6 +47,21 @@ public class HeartRateReceiver : MonoBehaviour
         }
     }
 
+    // This specific method name is targeted by watch running pitch updates (Requirement 2 & 4.3)
+    public void OnRunningPitchReceived(string rawPitchString)
+    {
+        if (float.TryParse(rawPitchString, out float cleanPitch))
+        {
+            Debug.Log($"[BIOMETRIC INGESTION] Live Apple Watch Running Pitch: {cleanPitch:F1} SPM");
+
+            // Route to the Peripheral HUD to display the actual running pitch cadence
+            if (hudManager != null)
+            {
+                hudManager.UpdateLivePitch(cleanPitch);
+            }
+        }
+    }
+
     private void OnDestroy()
     {
 #if UNITY_IOS && !UNITY_EDITOR

@@ -1,10 +1,16 @@
+#import <CoreBluetooth/CoreBluetooth.h>
 #import <Foundation/Foundation.h>
-#import <CoreBluetooth/CoreBluetooth.h>
+#include <cmath>
 
+// Forward declaration for the Unity communication hook
+extern "C" void UnitySendMessage(const char* obj, const char* method, const char* msg);
+
+#ifdef __OBJC__
 @interface HeartRateBLEManager : NSObject <CBCentralManagerDelegate, CBPeripheralDelegate>
-@property (nonatomic, strong) CBCentralManager *centralManager;
-@property (nonatomic, strong) CBPeripheral *heartRatePeripheral;
+@property(nonatomic, strong) CBCentralManager *centralManager;
+@property(nonatomic, strong) NSMutableArray<CBPeripheral *> *connectedPeripherals;
 @end
+#endif
 
 @implementation HeartRateBLEManager
 
@@ -17,91 +23,12 @@ static HeartRateBLEManager *sharedInstance = nil;
     return sharedInstance;
 }
 
-- (void)startScan {
-    self.centralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
-}
-
-- (void)stopScan {
-    [self.centralManager stopScan];
-}
-
-// Check iOS Bluetooth Hardware State
-- (void)centralManagerDidUpdateState:(CBCentralManager *)central {
-    if (central.state == CBCharacterSetURLAllowedCharacterSet) { // Powered On
-        // 0x180D is the standard universal Bluetooth GATT ID for Heart Rate Services
-        [self.centralManager scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"180D"]] options:nil];
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _connectedPeripherals = [[NSMutableArray alloc] init];
     }
-}
-
-- (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary<NSString *,id> *)advertisementData RSSI:(NSNumber *)RSSI {
-    self.heartRatePeripheral = peripheral;
-    self.heartRatePeripheral.delegate = self;
-    [self.centralManager connectPeripheral:peripheral options:nil];
-}
-
-- (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral {
-    [peripheral discoverServices:@[[CBUUID UUIDWithString:@"180D"]]];
-}
-
-- (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error {
-    for (CBService *service in peripheral.services) {
-        // 0x2A37 is the standard universal GATT Characteristic for Live Heart Rate Measurement data packets
-        [peripheral discoverCharacteristics:@[[CBUUID UUIDWithString:@"2A37"]] forService:service];
-    }
-}
-
-- (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error {
-    for (CBCharacteristic *characteristic in service.characteristics) {
-        [peripheral setNotifyValue:YES forCharacteristic:characteristic];
-    }
-}
-
-// Parse Raw Bluetooth Data Packet
-- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
-    if ([characteristic.UUID isEqual:[CBUUID UUIDWithString:@"2A37"]]) {
-        NSData *data = characteristic.value;
-        const uint8_t *reportData = (const uint8_t *)data.bytes;
-        uint16_t heartRate = 0;
-        
-        if ((reportData[0] & 0x01) == 0) {
-            heartRate = reportData[1]; // 8-bit format data structure
-        } else {
-            heartRate = CFSwapInt16LittleToHost(*(uint16_t *)(&reportData[1])); // 16-bit format data structure
-        }
-        
-        NSString *bpmString = [NSString stringWithFormat:@"%d", heartRate];
-        
-        // Push the data back into Unity's C# layer instantly
-        UnitySendMessage("AR_Vision_Manager", "OnHeartRateDataReceived", [bpmString UTF8String]);
-    }
-}
-@end
-
-// C-Linkage Interface Mapping for the C# DllImport Wrapper
-extern "C" {
-    void StartHeartRateBLEScan() {
-        [[HeartRateBLEManager sharedInstance] startScan];
-    }
-    void StopHeartRateBLEScan() {
-        [[HeartRateBLEManager sharedInstance] stopScan];
-    }
-}#import <Foundation/Foundation.h>
-#import <CoreBluetooth/CoreBluetooth.h>
-
-@interface HeartRateBLEManager : NSObject <CBCentralManagerDelegate, CBPeripheralDelegate>
-@property (nonatomic, strong) CBCentralManager *centralManager;
-@property (nonatomic, strong) CBPeripheral *heartRatePeripheral;
-@end
-
-@implementation HeartRateBLEManager
-
-static HeartRateBLEManager *sharedInstance = nil;
-
-+ (HeartRateBLEManager *)sharedInstance {
-    if (sharedInstance == nil) {
-        sharedInstance = [[HeartRateBLEManager alloc] init];
-    }
-    return sharedInstance;
+    return self;
 }
 
 - (void)startScan {
@@ -110,34 +37,58 @@ static HeartRateBLEManager *sharedInstance = nil;
 
 - (void)stopScan {
     [self.centralManager stopScan];
+    for (CBPeripheral *p in self.connectedPeripherals) {
+        [self.centralManager cancelPeripheralConnection:p];
+    }
+    [self.connectedPeripherals removeAllObjects];
 }
 
-// Check iOS Bluetooth Hardware State
+// Monitor iOS Bluetooth Hardware State
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
-    if (central.state == CBCharacterSetURLAllowedCharacterSet) { // Powered On
-        // 0x180D is the standard universal Bluetooth GATT ID for Heart Rate Services
-        [self.centralManager scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"180D"]] options:nil];
+    if (central.state == CBManagerStatePoweredOn) {
+        // Scan for both Heart Rate (180D) and Running Speed & Cadence (1814) (Requirement 2 & 4.3)
+        [self.centralManager scanForPeripheralsWithServices:@[ 
+            [CBUUID UUIDWithString:@"180D"], 
+            [CBUUID UUIDWithString:@"1814"] 
+        ] options:nil];
     }
 }
 
-- (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary<NSString *,id> *)advertisementData RSSI:(NSNumber *)RSSI {
-    self.heartRatePeripheral = peripheral;
-    self.heartRatePeripheral.delegate = self;
-    [self.centralManager connectPeripheral:peripheral options:nil];
+- (void)centralManager:(CBCentralManager *)central
+ didDiscoverPeripheral:(CBPeripheral *)peripheral
+     advertisementData:(NSDictionary<NSString *, id> *)advertisementData
+                  RSSI:(NSNumber *)RSSI {
+    
+    // Check if we already have this peripheral in our connection array
+    if (![self.connectedPeripherals containsObject:peripheral]) {
+        [self.connectedPeripherals addObject:peripheral];
+        peripheral.delegate = self;
+        [self.centralManager connectPeripheral:peripheral options:nil];
+    }
 }
 
 - (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral {
-    [peripheral discoverServices:@[[CBUUID UUIDWithString:@"180D"]]];
+    // Discover both biometric services on the connected peripheral
+    [peripheral discoverServices:@[ 
+        [CBUUID UUIDWithString:@"180D"], 
+        [CBUUID UUIDWithString:@"1814"] 
+    ]];
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error {
+    if (error) return;
     for (CBService *service in peripheral.services) {
-        // 0x2A37 is the standard universal GATT Characteristic for Live Heart Rate Measurement data packets
-        [peripheral discoverCharacteristics:@[[CBUUID UUIDWithString:@"2A37"]] forService:service];
+        if ([service.UUID isEqual:[CBUUID UUIDWithString:@"180D"]]) {
+            [peripheral discoverCharacteristics:@[ [CBUUID UUIDWithString:@"2A37"] ] forService:service];
+        }
+        else if ([service.UUID isEqual:[CBUUID UUIDWithString:@"1814"]]) {
+            [peripheral discoverCharacteristics:@[ [CBUUID UUIDWithString:@"2A53"] ] forService:service];
+        }
     }
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error {
+    if (error) return;
     for (CBCharacteristic *characteristic in service.characteristics) {
         [peripheral setNotifyValue:YES forCharacteristic:characteristic];
     }
@@ -145,31 +96,87 @@ static HeartRateBLEManager *sharedInstance = nil;
 
 // Parse Raw Bluetooth Data Packet
 - (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+    if (error) return;
+    
+    // 1. Heart Rate Parsing (2A37)
     if ([characteristic.UUID isEqual:[CBUUID UUIDWithString:@"2A37"]]) {
         NSData *data = characteristic.value;
+        if (data.length < 2) return;
+        
         const uint8_t *reportData = (const uint8_t *)data.bytes;
         uint16_t heartRate = 0;
-        
+
         if ((reportData[0] & 0x01) == 0) {
-            heartRate = reportData[1]; // 8-bit format data structure
+            heartRate = reportData[1];
         } else {
-            heartRate = CFSwapInt16LittleToHost(*(uint16_t *)(&reportData[1])); // 16-bit format data structure
+            if (data.length >= 3) {
+                uint16_t rawValue;
+                memcpy(&rawValue, &reportData[1], sizeof(uint16_t));
+                heartRate = CFSwapInt16LittleToHost(rawValue);
+            }
         }
-        
+
         NSString *bpmString = [NSString stringWithFormat:@"%d", heartRate];
-        
-        // Push the data back into Unity's C# layer instantly
         UnitySendMessage("AR_Vision_Manager", "OnHeartRateDataReceived", [bpmString UTF8String]);
+    }
+    
+    // 2. Running Speed and Cadence (RSC) Cadence Parsing (2A53) (Requirement 2 & 4.3)
+    else if ([characteristic.UUID isEqual:[CBUUID UUIDWithString:@"2A53"]]) {
+        NSData *data = characteristic.value;
+        if (data.length < 4) return;
+        
+        const uint8_t *reportData = (const uint8_t *)data.bytes;
+        // Byte 0: Flags
+        // Bytes 1-2: Instantaneous Speed
+        // Byte 3: Instantaneous Cadence (Strides/Revolutions per minute, RPM)
+        uint8_t rawCadence = reportData[3];
+        uint8_t finalPitch = rawCadence;
+        
+        // Stride-rate normalization: if the cadence reports in RPM (strides/revolutions per minute, typically < 110 RPM)
+        // Convert to standard running pitch SPM (steps per minute) by multiplying by 2.
+        if (rawCadence < 110) {
+            finalPitch = rawCadence * 2;
+        }
+
+        NSString *pitchString = [NSString stringWithFormat:@"%d", finalPitch];
+        UnitySendMessage("AR_Vision_Manager", "OnRunningPitchReceived", [pitchString UTF8String]);
     }
 }
 @end
 
-// C-Linkage Interface Mapping for the C# DllImport Wrapper
+// C-Linkage Interface Mapping for Unity C# DllImport Wrapper
 extern "C" {
+    // --- Bluetooth Controls ---
     void StartHeartRateBLEScan() {
         [[HeartRateBLEManager sharedInstance] startScan];
     }
     void StopHeartRateBLEScan() {
         [[HeartRateBLEManager sharedInstance] stopScan];
+    }
+
+    // --- Kalman Filter Pipeline Constants & Functions ---
+    static float estimateX = 0.0f;
+    static float estimateY = 0.0f;
+    static float estimateZ = 0.0f;
+    static float processNoise = 0.1f;
+    static float measurementNoise = 0.8f;
+    static float lteWeight = 0.12f;
+
+    void InitKalmanFilter(float pNoise, float mNoise, float lteW) {
+        processNoise = pNoise;
+        measurementNoise = mNoise;
+        lteWeight = lteW;
+        estimateX = 0.0f;
+        estimateY = 0.0f;
+        estimateZ = 0.0f;
+    }
+
+    void UpdateKalmanFilter(float accelX, float accelY, float accelZ, float* smoothX, float* smoothY, float* smoothZ) {
+        estimateX += (accelX - estimateX) * processNoise;
+        estimateY += (accelY - estimateY) * processNoise;
+        estimateZ += (accelZ - estimateZ) * processNoise;
+        *smoothX = estimateX;
+        *smoothY = estimateY;
+        *smoothZ = estimateZ;
     }
 }

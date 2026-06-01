@@ -4,104 +4,110 @@ using UnityEngine.UI;
 public class SafetyAndSystemController : MonoBehaviour
 {
     [Header("Dependencies")]
-    [SerializeField] private GameObject avatarContainer;       // The 3D avatar companion
-    [SerializeField] private GameStateController stateController; // Our main state machine
+    [SerializeField] private GameObject avatarContainer;
+    [SerializeField] private GameStateController stateController;
+    [SerializeField] private Transform userCamera;
+    [SerializeField] private AvatarEngine avatarEngine;
 
     [Header("Safety UI Elements")]
-    [SerializeField] private Image redFlashScreenOverlay;       // Screen-space UI overlay for danger
-    [SerializeField] private GameObject minimalistHudPanel;     // Clean, high-contrast numeric panel
+    [SerializeField] private Image redFlashScreenOverlay;
+    [SerializeField] private GameObject minimalistHudPanel;
 
     [Header("Acoustic Alerting")]
     [SerializeField] private AudioSource alertAudioSource;
     [SerializeField] private AudioClip ttcWarningChime;
 
-    [Header("System Tuning")]
-    [SerializeField] private float ttcDangerThreshold = 1.5f;   // Trigger warning if collision is < 1.5s away
+    [Header("TTC LiDAR Settings")]
+    [SerializeField] private float ttcDangerThreshold = 1.5f;
+    [SerializeField] private float ttcScanRadius = 0.4f;
+    [SerializeField] private float ttcScanRange = 8.0f;
+    [SerializeField] private LayerMask obstacleLayerMask = ~0;
 
     private bool _hasEvacuatedDueToBattery = false;
     private bool _isTtcWarningActive = false;
+    private bool _simulateTtcThreat = false;
 
     void Update()
     {
-        // 1. Monitor Hardware Energy Levels (Requirement 6.2)
-        // SystemInfo.batteryLevel returns a float value spanning 0.0 to 1.0
-        float currentBatteryPercentage = SystemInfo.batteryLevel;
-
-        // If battery drops below 10% (0.1f) and we haven't handled it yet, trigger safety evacuation
-        if (currentBatteryPercentage > 0f && currentBatteryPercentage <= 0.1f && !_hasEvacuatedDueToBattery)
+        // Editor: toggle simulated TTC threat with T
+        if (Input.GetKeyDown(KeyCode.T))
         {
-            ExecuteLowBatteryEmergencyEvacuation();
+            _simulateTtcThreat = !_simulateTtcThreat;
+            Debug.Log($"[SIMULATOR] TTC threat simulation: {_simulateTtcThreat}");
         }
 
-        // 2. Continuous Safety Proximity Auditing (Requirement 7.0)
-        // For testing purposes, we simulate checking an obstacle ahead.
-        // In your physical rollout, this parses your LiDAR spatial mesh delta arrays.
+        // Battery evacuation (fires once)
+        float battery = SystemInfo.batteryLevel;
+        if (battery > 0f && battery <= 0.1f && !_hasEvacuatedDueToBattery)
+            ExecuteLowBatteryEmergencyEvacuation();
+
+        // Live TTC evaluation
         EvaluateTimeToCollision();
     }
 
     private void ExecuteLowBatteryEmergencyEvacuation()
     {
         _hasEvacuatedDueToBattery = true;
-        Debug.LogWarning("SYSTEM ALERT: Battery dropped below 10%. Activating safe HUD mode!");
+        Debug.LogWarning("[SYSTEM] Battery <10% - activating safe HUD mode.");
 
-        // Shut down the heavy 3D rendering container to minimize processor load
-        if (avatarContainer != null)
-        {
-            avatarContainer.SetActive(false);
-        }
-
-        // Force the application state machine into static Standby
+        if (avatarContainer != null) avatarContainer.SetActive(false);
         if (stateController != null)
-        {
             stateController.TransitionToState(GameStateController.ARVisionState.Standby);
-        }
-
-        // Enable your ultra-minimalist, high-contrast, text-only safe numerical UI overlay
-        if (minimalistHudPanel != null)
-        {
-            minimalistHudPanel.SetActive(true);
-        }
+        if (minimalistHudPanel != null) minimalistHudPanel.SetActive(true);
     }
 
     private void EvaluateTimeToCollision()
     {
-        // Conceptual implementation of TTC logic:
-        // TTC = Distance to obstacle / Closing relative velocity
-        float simulatedDistanceToObstacle = 5.0f; // 5 meters away
-        float runnerSprintingSpeed = 4.5f;        // 4.5 meters per second closing speed
+        float distanceToObstacle;
 
-        float calculatedTtc = simulatedDistanceToObstacle / runnerSprintingSpeed;
-
-        // If the calculated window drops below our risk threshold, trigger the high-priority alert matrix
-        if (calculatedTtc <= ttcDangerThreshold)
+        if (_simulateTtcThreat)
         {
-            if (!_isTtcWarningActive)
-            {
-                TriggerCollisionEmergencyWarning(true);
-            }
+            distanceToObstacle = 1.0f;
+        }
+        else if (userCamera != null)
+        {
+            Vector3 forward = userCamera.forward;
+            forward.y = 0;
+            forward.Normalize();
 
-            // Pulsate the red hazard overlay on the screen to grab the runner's attention
+            RaycastHit hit;
+            bool found = Physics.SphereCast(
+                userCamera.position, ttcScanRadius,
+                forward, out hit, ttcScanRange, obstacleLayerMask);
+
+            distanceToObstacle = found ? hit.distance : ttcScanRange;
+        }
+        else
+        {
+            return;
+        }
+
+        float closingSpeed = (avatarEngine != null)
+            ? avatarEngine.GetTargetSpeed()
+            : 3.5f;
+
+        float ttc = distanceToObstacle / Mathf.Max(closingSpeed, 0.1f);
+
+        if (ttc <= ttcDangerThreshold)
+        {
+            if (!_isTtcWarningActive) TriggerCollisionWarning(true);
             if (redFlashScreenOverlay != null)
-            {
-                float pingPongAlpha = Mathf.PingPong(Time.time * 4.0f, 0.6f); // Swift visual pulse modulation
-                redFlashScreenOverlay.color = new Color(1f, 0f, 0f, pingPongAlpha);
-            }
+                redFlashScreenOverlay.color = new Color(1f, 0f, 0f,
+                    Mathf.PingPong(Time.time * 4.0f, 0.6f));
         }
         else if (_isTtcWarningActive)
         {
-            TriggerCollisionEmergencyWarning(false);
+            TriggerCollisionWarning(false);
         }
     }
 
-    private void TriggerCollisionEmergencyWarning(bool activateAlert)
+    private void TriggerCollisionWarning(bool activate)
     {
-        _isTtcWarningActive = activateAlert;
+        _isTtcWarningActive = activate;
 
-        if (activateAlert)
+        if (activate)
         {
-            Debug.LogError("CRITICAL RISK: Imminent collision threat detected! Priority visual warning active.");
-
-            // Execute physical audio chime looping sequences
+            Debug.LogError("[TTC ALERT] Imminent collision threat! Warning active.");
             if (alertAudioSource != null && ttcWarningChime != null && !alertAudioSource.isPlaying)
             {
                 alertAudioSource.clip = ttcWarningChime;
@@ -111,15 +117,9 @@ public class SafetyAndSystemController : MonoBehaviour
         }
         else
         {
-            // Clear warning parameters and restore normal visual state
-            if (alertAudioSource != null)
-            {
-                alertAudioSource.Stop();
-            }
+            if (alertAudioSource != null) alertAudioSource.Stop();
             if (redFlashScreenOverlay != null)
-            {
-                redFlashScreenOverlay.color = new Color(1f, 0f, 0f, 0f); // Make fully transparent
-            }
+                redFlashScreenOverlay.color = new Color(1f, 0f, 0f, 0f);
         }
     }
 }

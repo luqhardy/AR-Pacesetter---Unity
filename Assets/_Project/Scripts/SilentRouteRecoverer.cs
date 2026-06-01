@@ -1,101 +1,135 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class SilentRouteRecoverer : MonoBehaviour
 {
     [Header("Dependencies")]
-    [SerializeField] private Transform userCamera;       // XR Origin Main Camera
-    [SerializeField] private AvatarEngine avatarEngine;   // To toggle normal 3.0m forward logic
+    [SerializeField] private Transform userCamera;
+    [SerializeField] private AvatarEngine avatarEngine;
 
     [Header("Route Settings")]
-    [SerializeField] private float deviationThresholdMeters = 5.0f; // Allowed route drift before recovery triggers
-    [SerializeField] private float recoveryTrailingDistance = 2.5f; // Distance avatar stays behind user
+    [SerializeField] private float deviationThresholdMeters = 5.0f;
+    [SerializeField] private float recoveryTrailingDistance = 2.5f;
+
+    [Header("Route Path (assign in Inspector)")]
+    [Tooltip("Ordered array of transforms defining the real route. Leave empty to use D-key simulation.")]
+    [SerializeField] private Transform[] routeWaypoints;
 
     private bool _isRecoveringSilently = false;
-    private Vector3 _mockTargetRouteWaypoint;
-
-    void Start()
-    {
-        // Initialize a mock waypoint ahead of the user for testing purposes
-        if (userCamera != null)
-        {
-            _mockTargetRouteWaypoint = userCamera.position + (userCamera.forward * 20.0f);
-        }
-    }
+    private int _nearestSegmentIndex = 0;
 
     void Update()
     {
         if (userCamera == null || avatarEngine == null) return;
 
-        // 1. Calculate how far the runner has drifted from the true route path
         float crossTrackError = CalculateRouteDeviation(userCamera.position);
 
-        // 2. Evaluate if a Silent Recovery needs to be initiated (Requirement 7)
         if (crossTrackError >= deviationThresholdMeters && !_isRecoveringSilently)
-        {
             InitiateSilentRouteRecovery();
-        }
         else if (crossTrackError < deviationThresholdMeters && _isRecoveringSilently)
-        {
             CeaseSilentRouteRecovery();
-        }
 
-        // 3. Execute custom behavior matrix if we are in recovery mode
         if (_isRecoveringSilently)
-        {
             ExecuteTrailingAndGuidingLogic();
-        }
     }
 
     private float CalculateRouteDeviation(Vector3 userPos)
     {
-        // For testing in the editor, we simulate deviation tracking.
-        // Pressing the 'D' key simulates drifting 6 meters off-course.
+        // If waypoints are configured, compute real cross-track error
+        if (routeWaypoints != null && routeWaypoints.Length >= 2)
+            return ComputeCrossTrackError(userPos);
+
+        // Fallback: D-key simulation for editor testing
         if (Input.GetKey(KeyCode.D))
-        {
             return 6.0f;
+
+        return 0.0f;
+    }
+
+    // Point-to-line-segment perpendicular distance across all route segments
+    private float ComputeCrossTrackError(Vector3 userPos)
+    {
+        float minDistance = float.MaxValue;
+        int bestIndex = 0;
+
+        for (int i = 0; i < routeWaypoints.Length - 1; i++)
+        {
+            if (routeWaypoints[i] == null || routeWaypoints[i + 1] == null)
+                continue;
+
+            Vector3 a = routeWaypoints[i].position;
+            Vector3 b = routeWaypoints[i + 1].position;
+
+            float dist = PointToSegmentDistance(userPos, a, b);
+            if (dist < minDistance)
+            {
+                minDistance = dist;
+                bestIndex = i;
+            }
         }
 
-        // In your real-world GPS deployment, this calculates the perpendicular 
-        // distance between userPos and the nearest node line on your map vector array.
-        return 0.0f;
+        _nearestSegmentIndex = bestIndex;
+        return minDistance;
+    }
+
+    // Standard point-to-line-segment distance (clamped projection)
+    private float PointToSegmentDistance(Vector3 p, Vector3 a, Vector3 b)
+    {
+        Vector3 ab = b - a;
+        Vector3 ap = p - a;
+
+        float sqrLenAB = ab.sqrMagnitude;
+        if (sqrLenAB < 0.0001f) return Vector3.Distance(p, a);
+
+        float t = Mathf.Clamp01(Vector3.Dot(ap, ab) / sqrLenAB);
+        Vector3 closest = a + t * ab;
+        return Vector3.Distance(p, closest);
     }
 
     private void InitiateSilentRouteRecovery()
     {
         _isRecoveringSilently = true;
-        Debug.Log("[SILENT RECOVERY] Runner deviated from route. Overriding pacer logic—no warnings triggered.");
-
-        // Turn off the standard 3.0m forward moving average calculation loop
+        Debug.Log("[SILENT RECOVERY] Runner deviated from route. Overriding pacer logic.");
         avatarEngine.enabled = false;
     }
 
     private void CeaseSilentRouteRecovery()
     {
         _isRecoveringSilently = false;
-        Debug.Log("[SILENT RECOVERY] Runner safely returned to route vector. Restoring standard pacer logic.");
-
-        // Hand positioning control back over to the standard forward-facing engine
+        Debug.Log("[SILENT RECOVERY] Runner returned to route. Restoring standard pacer logic.");
         avatarEngine.enabled = true;
     }
 
     private void ExecuteTrailingAndGuidingLogic()
     {
-        // Requirement 7: The avatar must move behind the user and run along to guide them back
-        // 1. Calculate the vector pointing from the user back toward the true route waypoint
-        Vector3 directionToRoute = (_mockTargetRouteWaypoint - userCamera.position).normalized;
-        directionToRoute.y = 0; // Keep movement completely horizontal
+        // Determine where to guide the runner
+        Vector3 guideTarget = GetNearestRouteTarget();
+        Vector3 dirToRoute = (guideTarget - userCamera.position).normalized;
+        dirToRoute.y = 0;
 
-        // 2. Position the avatar slightly behind the runner, facing the direction of the real path
-        Vector3 targetTrailingPosition = userCamera.position - (userCamera.forward * recoveryTrailingDistance);
+        // Position avatar behind runner, facing true route
+        Vector3 trailPos = userCamera.position - (userCamera.forward * recoveryTrailingDistance);
+        transform.position = Vector3.Lerp(transform.position, trailPos, Time.deltaTime * 3.0f);
 
-        // Smoothly glide the avatar to this new tracking position
-        transform.position = Vector3.Lerp(transform.position, targetTrailingPosition, Time.deltaTime * 3.0f);
-
-        // Rotate the avatar so it looks toward the true path, guiding the runner's gaze via peripheral vision
-        if (directionToRoute != Vector3.zero)
+        if (dirToRoute != Vector3.zero)
         {
-            Quaternion targetRotation = Quaternion.LookRotation(directionToRoute);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 5.0f);
+            Quaternion targetRot = Quaternion.LookRotation(dirToRoute);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * 5.0f);
         }
+    }
+
+    private Vector3 GetNearestRouteTarget()
+    {
+        if (routeWaypoints != null && routeWaypoints.Length >= 2)
+        {
+            int nextIdx = Mathf.Min(_nearestSegmentIndex + 1, routeWaypoints.Length - 1);
+            if (routeWaypoints[nextIdx] != null)
+                return routeWaypoints[nextIdx].position;
+        }
+
+        // Fallback mock target
+        if (userCamera != null)
+            return userCamera.position + (userCamera.forward * 20.0f);
+
+        return transform.position;
     }
 }
