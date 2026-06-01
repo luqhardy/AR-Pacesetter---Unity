@@ -8,7 +8,7 @@ public class PeripheralHUDManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI textHeartRate;
     [SerializeField] private TextMeshProUGUI textTime;
     [SerializeField] private TextMeshProUGUI textDistance;
-    [SerializeField] private TextMeshProUGUI textPace;
+    [SerializeField] private TextMeshProUGUI textPace;　
 
     [Header("UI Text Components (Advanced Telemetry)")]
     [SerializeField] private TextMeshProUGUI textPitch;              // Cadence (SPM)
