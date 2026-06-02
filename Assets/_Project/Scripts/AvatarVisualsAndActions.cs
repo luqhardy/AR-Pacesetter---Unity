@@ -58,12 +58,15 @@ public class AvatarVisualsAndActions : MonoBehaviour
         avatarRenderer = staticMesh;
         _avatarSkinnedRenderer = skinnedMesh;
 
-        // Dynamically re-grab the correct material so the heart rate pulse doesn't break
+        // Reset the cached material reference so it grabs from the new renderer
+        _glowMaterial = null; 
         RefreshMaterialReference();
     }
 
     private void RefreshMaterialReference()
     {
+        if (_glowMaterial != null) return;
+
         if (avatarRenderer != null)
         {
             _glowMaterial = avatarRenderer.material;

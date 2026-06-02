@@ -11,8 +11,12 @@ public class AnalyticsManager : MonoBehaviour
     [Range(15f, 40f)]
     [SerializeField] private float ambientTemperatureCelsius = 25.0f; // Fed from smartphone weather API
 
-    // Internal scoring arrays
-    private List<float> _synchronizationHistory = new List<float>();
+    // Internal scoring aggregates (Requirement 4.3)
+    private float _totalSyncSum = 0.0f;
+    private int   _totalSyncCount = 0;
+    private float _currentKmSyncSum = 0.0f;
+    private int   _currentKmSyncCount = 0;
+
     private float _lastEvaluatedKilometerMarker = 0.0f;
     private float _cumulativeFatigueIndex = 0.0f;
 
@@ -40,7 +44,11 @@ public class AnalyticsManager : MonoBehaviour
             currentSyncRate = 100.0f * (1.0f - (separationDistance / 10.0f));
         }
 
-        _synchronizationHistory.Add(currentSyncRate);
+        // Update aggregates instead of adding to a list (Fix: Memory Bloat)
+        _totalSyncSum += currentSyncRate;
+        _totalSyncCount++;
+        _currentKmSyncSum += currentSyncRate;
+        _currentKmSyncCount++;
 
         // 2. Compute Temperature-Compensated Fatigue Index (Requirement 4.3)
         CalculateDynamicFatigue(currentSyncRate);
@@ -67,7 +75,15 @@ public class AnalyticsManager : MonoBehaviour
         if (totalKilometers - _lastEvaluatedKilometerMarker >= 1.0f)
         {
             _lastEvaluatedKilometerMarker = Mathf.Floor(totalKilometers);
-            float averageSyncForThisKm = ComputeAverageSyncOverLastWindow(300); // Check past frame records
+            
+            float averageSyncForThisKm = _currentKmSyncCount > 0 
+                ? _currentKmSyncSum / _currentKmSyncCount 
+                : 0f;
+
+            // Reset window for next km
+            _currentKmSyncSum = 0.0f;
+            _currentKmSyncCount = 0;
+
             Debug.Log($"[SPLIT ALERT] 1KM Mark Reached. Current Kilometer Sync Rate: {averageSyncForThisKm:F1}%");
 
             // Trigger the split event for HUD display
@@ -83,12 +99,10 @@ public class AnalyticsManager : MonoBehaviour
 
     public string EvaluateFinalSessionPerformanceRank()
     {
-        if (_synchronizationHistory.Count == 0) return "D";
+        if (_totalSyncCount == 0) return "D";
 
         // Calculate overarching mean performance rating
-        float sum = 0f;
-        foreach (float rate in _synchronizationHistory) sum += rate;
-        float totalAverageSync = sum / _synchronizationHistory.Count;
+        float totalAverageSync = _totalSyncSum / _totalSyncCount;
 
         // Section 4.3 Ranking Matrix Evaluation (S ~ D)
         if (totalAverageSync >= 90.0f) return "S";
@@ -97,19 +111,6 @@ public class AnalyticsManager : MonoBehaviour
         if (totalAverageSync >= 50.0f) return "C";
 
         return "D"; // Low compliance bounds
-    }
-
-    private float ComputeAverageSyncOverLastWindow(int frameCount)
-    {
-        if (_synchronizationHistory.Count == 0) return 0f;
-        int lookbackCount = Mathf.Min(frameCount, _synchronizationHistory.Count);
-
-        float aggregate = 0f;
-        for (int i = _synchronizationHistory.Count - lookbackCount; i < _synchronizationHistory.Count; i++)
-        {
-            aggregate += _synchronizationHistory[i];
-        }
-        return aggregate / lookbackCount;
     }
 
     // --- HUD Telemetry Getters ---

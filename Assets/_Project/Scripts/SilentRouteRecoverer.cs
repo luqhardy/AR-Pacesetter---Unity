@@ -96,7 +96,26 @@ public class SilentRouteRecoverer : MonoBehaviour
     {
         _isRecoveringSilently = false;
         Debug.Log("[SILENT RECOVERY] Runner returned to route. Restoring standard pacer logic.");
-        avatarEngine.enabled = true;
+        
+        // Fix: Sync AvatarEngine's internal state before re-enabling to prevent jumps
+        if (avatarEngine != null)
+        {
+            // Use reflection to set private _targetPacingPosition if needed, 
+            // but AvatarEngine.transform.position is already set by us.
+            // We should at least ensure AvatarEngine's 'last frame' variables are fresh.
+            avatarEngine.enabled = true;
+            
+            // Trigger a reset of internal tracking via a public method if it existed,
+            // or just let it resume from current transform.position.
+            // Looking at AvatarEngine, it uses _targetPacingPosition which isn't updated while disabled.
+            var field = typeof(AvatarEngine).GetField("_targetPacingPosition", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            field?.SetValue(avatarEngine, transform.position);
+            
+            var fieldUser = typeof(AvatarEngine).GetField("_lastFrameUserPosition", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            fieldUser?.SetValue(avatarEngine, userCamera.position);
+        }
     }
 
     private void ExecuteTrailingAndGuidingLogic()

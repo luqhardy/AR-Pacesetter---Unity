@@ -19,6 +19,7 @@ public class GameStateController : MonoBehaviour
     [Header("References")]
     [SerializeField] private GameObject avatarTarget;
     [SerializeField] private MeshRenderer avatarRenderer;
+    [SerializeField] private AvatarEngine avatarEngine; // For overtake simulation shortcuts
 
     private SkinnedMeshRenderer _avatarSkinnedRenderer;
     private float _gpsLostTimer = 0.0f;
@@ -46,6 +47,25 @@ public class GameStateController : MonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.G))
             TransitionToState(ARVisionState.InertialMovement);
+
+        // ── Overtake simulation shortcuts (AGENTS.md feature #8 / #9) ──────
+        // O  = Simulate user running faster than avatar (追い抜かされる動作)
+        // P  = Simulate user catching the avatar / avatar surging (追い抜かせる動作)
+        // B  = Toggle 20ms latency benchmark HUD (handled by LatencyBenchmarkRunner)
+        if (Input.GetKeyDown(KeyCode.O))
+        {
+            Debug.Log("[SIMULATOR] Simulating BEING OVERTAKEN (O key). " +
+                      "User is now faster than avatar for 1.5s.");
+            // Directly inject the overtake state for testing
+            SimulateBeingOvertaken();
+        }
+
+        if (Input.GetKeyDown(KeyCode.P))
+        {
+            Debug.Log("[SIMULATOR] Simulating OVERTAKING (P key). " +
+                      "Avatar surging to stay ahead of user.");
+            SimulateAvatarOvertaking();
+        }
     }
 
     private void HandleInertialState()
@@ -80,6 +100,40 @@ public class GameStateController : MonoBehaviour
             SimulatedGPSAccuracyRadius = 4.0f; // inside the 5m gate
             Debug.Log("[SIMULATOR] GPS accuracy settled to 4m — ReAccumulation gate now open.");
         }
+    }
+
+    // ── Overtake simulation helpers ─────────────────────────────────────────
+    /// <summary>
+    /// Directly triggers the BeingOvertaken state in AvatarEngine for editor testing.
+    /// In production this is driven automatically by AvatarEngine's speed comparison.
+    /// </summary>
+    private void SimulateBeingOvertaken()
+    {
+        if (avatarEngine == null)
+        {
+            avatarEngine = FindObjectOfType<AvatarEngine>();
+            if (avatarEngine == null)
+            {
+                Debug.LogWarning("[SIMULATOR] AvatarEngine not found — assign it in GameStateController Inspector.");
+                return;
+            }
+        }
+        // Use reflection to call the private method for simulation only
+        var method = typeof(AvatarEngine).GetMethod("EnterBeingOvertakenState",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        method?.Invoke(avatarEngine, null);
+    }
+
+    private void SimulateAvatarOvertaking()
+    {
+        if (avatarEngine == null)
+        {
+            avatarEngine = FindObjectOfType<AvatarEngine>();
+            if (avatarEngine == null) return;
+        }
+        var method = typeof(AvatarEngine).GetMethod("EnterOvertakingState",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        method?.Invoke(avatarEngine, null);
     }
 
     // ── Transition dispatcher ────────────────────────────────────────────────
@@ -122,8 +176,14 @@ public class GameStateController : MonoBehaviour
     // ── Renderer hot-swap (called by AvatarModelSwitcher) ───────────────────
     public void UpdateActiveRenderer(MeshRenderer staticMesh, SkinnedMeshRenderer skinnedMesh)
     {
+        float currentAlpha = GetCurrentAlpha();
         avatarRenderer        = staticMesh;
         _avatarSkinnedRenderer = skinnedMesh;
+        _activeMaterial        = null; // Reset cached material for new renderer
+
+        Material mat = GetActiveMaterial();
+        Color baseColor = mat != null ? mat.color : Color.white;
+        ApplyAlpha(baseColor, currentAlpha);
     }
 
     // ── Coroutines ───────────────────────────────────────────────────────────
@@ -180,25 +240,38 @@ public class GameStateController : MonoBehaviour
         return m != null ? m.color.a : 1.0f;
     }
 
+    private Material _activeMaterial;
+
     private Material GetActiveMaterial()
     {
-        if (avatarRenderer        != null) return avatarRenderer.material;
-        if (_avatarSkinnedRenderer != null) return _avatarSkinnedRenderer.material;
+        if (_activeMaterial != null) return _activeMaterial;
+
+        if (avatarRenderer != null)
+        {
+            _activeMaterial = avatarRenderer.material;
+            return _activeMaterial;
+        }
+        if (_avatarSkinnedRenderer != null)
+        {
+            _activeMaterial = _avatarSkinnedRenderer.material;
+            return _activeMaterial;
+        }
         return null;
     }
 
     private void ApplyAlpha(Color baseColor, float alpha)
     {
+        Material mat = GetActiveMaterial();
+        if (mat == null) return;
+
         Color c = new Color(baseColor.r, baseColor.g, baseColor.b, alpha);
-        if (avatarRenderer        != null) avatarRenderer.material.color        = c;
-        if (_avatarSkinnedRenderer != null) _avatarSkinnedRenderer.material.color = c;
+        mat.color = c;
     }
 
     private void RestoreAvatarAlpha()
     {
         Material m = GetActiveMaterial();
         if (m == null) return;
-        Color c = m.color;
-        ApplyAlpha(c, 1.0f);
+        ApplyAlpha(m.color, 1.0f);
     }
 }

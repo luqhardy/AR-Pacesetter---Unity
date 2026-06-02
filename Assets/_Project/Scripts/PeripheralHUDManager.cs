@@ -101,7 +101,10 @@ public class PeripheralHUDManager : MonoBehaviour
         // 3. Dynamic Performance Pace Formatting
         if (textPace != null && avatarEngine != null)
         {
-            textPace.text = "Target 5:00/km";
+            float targetPace = avatarEngine.TargetPaceMinutesPerKm;
+            int paceMin = Mathf.FloorToInt(targetPace);
+            int paceSec = Mathf.FloorToInt((targetPace - paceMin) * 60f);
+            textPace.text = string.Format("Target {0}:{1:00}/km", paceMin, paceSec);
         }
 
         // 4. Update HUD Fields dynamically from Analytics (Requirement 4.3)

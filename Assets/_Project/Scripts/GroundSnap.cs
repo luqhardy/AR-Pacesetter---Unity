@@ -67,16 +67,20 @@ public class GroundSnap : MonoBehaviour
         // 3. Ground Level Raycast Checking (LiDAR Snapping)
         float currentDetectedGroundHeight = GetCurrentGroundLevel(); 
 
-        // If the vertical delta exceeds 15cm, lock in the new target ground level
+        // If the vertical delta exceeds 15cm, lock in target and transition smoothly
         if (Mathf.Abs(transform.position.y - currentDetectedGroundHeight) > stepThreshold)
         {
             _targetY = currentDetectedGroundHeight;
+            float smoothedY = Mathf.SmoothDamp(transform.position.y, _targetY, ref _currentYVelocity, smoothTime);
+            transform.position = new Vector3(transform.position.x, smoothedY, transform.position.z);
         }
-
-        // Apply a mathematically precise Dampening equation over a 0.3s window
-        float smoothedY = Mathf.SmoothDamp(transform.position.y, _targetY, ref _currentYVelocity, smoothTime);
-        
-        transform.position = new Vector3(transform.position.x, smoothedY, transform.position.z);
+        else
+        {
+            // Small steps (<= 15cm): snap instantly to ground level
+            _targetY = currentDetectedGroundHeight;
+            _currentYVelocity = 0.0f;
+            transform.position = new Vector3(transform.position.x, currentDetectedGroundHeight, transform.position.z);
+        }
     }
 
     private float GetCurrentGroundLevel()
@@ -128,7 +132,7 @@ public class GroundSnap : MonoBehaviour
 
         // 3. Under-foot Cliff Drop checking
         // Perform a vertical raycast down exactly 3.0 meters ahead along user path of progression.
-        // If the ground drops dramatically (cliff edge), halt progression.
+        // If the ground drops dramatically (cliff edge) or is missing, halt progression.
         Vector3 checkAheadPoint = userCamera.position + (rayDirection * obstacleDetectionDistance);
         RaycastHit cliffHit;
         if (Physics.Raycast(checkAheadPoint + (Vector3.up * 2.0f), Vector3.down, out cliffHit, 10.0f, environmentLayerMask))
@@ -141,6 +145,11 @@ public class GroundSnap : MonoBehaviour
             {
                 return true;
             }
+        }
+        else
+        {
+            // If we cast down 10 meters and find no ground, it's definitely a cliff or void!
+            return true;
         }
 
         return false;
