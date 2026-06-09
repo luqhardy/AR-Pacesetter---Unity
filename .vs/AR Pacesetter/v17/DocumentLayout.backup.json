@@ -3,20 +3,28 @@
   "WorkspaceRootPath": "C:\\Users\\luqma\\AR Pacesetter\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\Plugins\\iOS\\HeartRatePlugin.mm.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\Plugins\\iOS\\HeartRatePlugin.mm.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\Editor\\AvatarAnimatorControllerWirer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\Editor\\AvatarAnimatorControllerWirer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\HeartRatereceiver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\HeartRatereceiver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\Editor\\AvatarAnimatorControllerGenerator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\Editor\\AvatarAnimatorControllerGenerator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarEngine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\AvatarEngine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\PaceCalibrationController.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\PaceCalibrationController.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\PeripheralHUDManager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\PeripheralHUDManager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarEngine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\AvatarEngine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\HeartRatereceiver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\_Project\\Scripts\\HeartRatereceiver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarModelSwitcher.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -54,50 +62,37 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 0,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 2,
-              "Title": "PeripheralHUDManager.cs",
-              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\PeripheralHUDManager.cs",
-              "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\PeripheralHUDManager.cs",
-              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\PeripheralHUDManager.cs",
-              "RelativeToolTip": "Assets\\_Project\\Scripts\\PeripheralHUDManager.cs",
-              "ViewState": "AgIAAB0AAAAAAAAAAAAowFoAAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-05-30T05:35:50.449Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "HeartRatePlugin.mm.cs",
-              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\Plugins\\iOS\\HeartRatePlugin.mm.cs",
-              "RelativeDocumentMoniker": "Assets\\Plugins\\iOS\\HeartRatePlugin.mm.cs",
-              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\Plugins\\iOS\\HeartRatePlugin.mm.cs",
-              "RelativeToolTip": "Assets\\Plugins\\iOS\\HeartRatePlugin.mm.cs",
-              "ViewState": "AgIAAKEAAAAAAAAAAAAowK4AAAABAAAAAAAAAA==",
+              "Title": "AvatarAnimatorControllerWirer.cs",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\Editor\\AvatarAnimatorControllerWirer.cs",
+              "RelativeDocumentMoniker": "Assets\\Editor\\AvatarAnimatorControllerWirer.cs",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\Editor\\AvatarAnimatorControllerWirer.cs",
+              "RelativeToolTip": "Assets\\Editor\\AvatarAnimatorControllerWirer.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-05-30T05:31:12.955Z",
+              "WhenOpened": "2026-06-09T01:19:43.709Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 1,
-              "Title": "HeartRatereceiver.cs",
-              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\HeartRateReceiver.cs",
-              "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\HeartRateReceiver.cs",
-              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\HeartRateReceiver.cs",
-              "RelativeToolTip": "Assets\\_Project\\Scripts\\HeartRateReceiver.cs",
-              "ViewState": "AgIAAAkAAAAAAAAAAAAAADcAAAABAAAAAAAAAA==",
+              "Title": "AvatarAnimatorControllerGenerator.cs",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\Editor\\AvatarAnimatorControllerGenerator.cs",
+              "RelativeDocumentMoniker": "Assets\\Editor\\AvatarAnimatorControllerGenerator.cs",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\Editor\\AvatarAnimatorControllerGenerator.cs",
+              "RelativeToolTip": "Assets\\Editor\\AvatarAnimatorControllerGenerator.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAAAhAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-05-30T05:28:38.511Z",
+              "WhenOpened": "2026-06-09T00:52:31.872Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 6,
               "Title": "AvatarModelSwitcher.cs",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarModelSwitcher.cs",
               "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\AvatarModelSwitcher.cs",
@@ -109,7 +104,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 9,
               "Title": "Lit.shader",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Library\\PackageCache\\com.unity.render-pipelines.universal@13e5115b98bf\\Shaders\\Lit.shader",
               "RelativeDocumentMoniker": "Library\\PackageCache\\com.unity.render-pipelines.universal@13e5115b98bf\\Shaders\\Lit.shader",
@@ -121,7 +116,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 10,
               "Title": "SilentRouteRecoverer.cs",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\SilentRouteRecoverer.cs",
               "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\SilentRouteRecoverer.cs",
@@ -133,7 +128,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 9,
+              "DocumentIndex": 11,
               "Title": "AnalyticsManager.cs",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AnalyticsManager.cs",
               "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\AnalyticsManager.cs",
@@ -145,7 +140,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 10,
+              "DocumentIndex": 12,
               "Title": "SafetyAndSystemController.cs",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\SafetyAndSystemController.cs",
               "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\SafetyAndSystemController.cs",
@@ -157,7 +152,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 7,
               "Title": "AvatarVisualsAndActions.cs",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarVisualsAndActions.cs",
               "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\AvatarVisualsAndActions.cs",
@@ -169,19 +164,55 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 2,
               "Title": "AvatarEngine.cs",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarEngine.cs",
               "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\AvatarEngine.cs",
               "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\AvatarEngine.cs",
               "RelativeToolTip": "Assets\\_Project\\Scripts\\AvatarEngine.cs",
-              "ViewState": "AgIAABgAAAAAAAAAAAAowFIAAAAFAAAAAAAAAA==",
+              "ViewState": "AgIAAIQAAAAAAAAAAAAAAIQAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-05-27T11:57:27.048Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 5,
+              "Title": "HeartRatereceiver.cs",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\HeartRateReceiver.cs",
+              "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\HeartRateReceiver.cs",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\HeartRateReceiver.cs",
+              "RelativeToolTip": "Assets\\_Project\\Scripts\\HeartRateReceiver.cs",
+              "ViewState": "AgIAAAkAAAAAAAAAAAAAADcAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-05-30T05:28:38.511Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "PeripheralHUDManager.cs",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\PeripheralHUDManager.cs",
+              "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\PeripheralHUDManager.cs",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\PeripheralHUDManager.cs",
+              "RelativeToolTip": "Assets\\_Project\\Scripts\\PeripheralHUDManager.cs",
+              "ViewState": "AgIAACUAAAAAAAAAAAAowGIAAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-05-30T05:35:50.449Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "PaceCalibrationController.cs",
+              "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\PaceCalibrationController.cs",
+              "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\PaceCalibrationController.cs",
+              "ToolTip": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\PaceCalibrationController.cs",
+              "RelativeToolTip": "Assets\\_Project\\Scripts\\PaceCalibrationController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABgAAAAoAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-05-30T05:50:07.953Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
               "Title": "GameStateController.cs",
               "DocumentMoniker": "C:\\Users\\luqma\\AR Pacesetter\\Assets\\_Project\\Scripts\\GameStateController.cs",
               "RelativeDocumentMoniker": "Assets\\_Project\\Scripts\\GameStateController.cs",

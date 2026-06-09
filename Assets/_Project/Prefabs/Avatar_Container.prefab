@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 7968730633914488675}
   - component: {fileID: 7935015696959049751}
   - component: {fileID: 8816428073617439416}
+  - component: {fileID: 3622009638464823632}
   m_Layer: 0
   m_Name: Avatar_Container
   m_TagString: Untagged
@@ -114,3 +115,25 @@ CapsuleCollider:
   m_Height: 2
   m_Direction: 1
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!95 &3622009638464823632
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4106087056068559537}
+  m_Enabled: 1
+  m_Avatar: {fileID: 9000000, guid: 804fbd3f94886ef4b8f0d05154af4d56, type: 3}
+  m_Controller: {fileID: 9100000, guid: f887f86a88fafa74d9c8e31c48c4dcf7, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0

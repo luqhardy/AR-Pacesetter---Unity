@@ -75,5 +75,13 @@ public class AvatarModelSwitcher : MonoBehaviour
         {
             visualsController.UpdateActiveRenderer(activeRenderer, activeSkinnedRenderer);
         }
+
+        // --- Animator Hot-Swapping ---
+        Animator activeAnimator = currentActiveTarget.GetComponentInChildren<Animator>();
+        OvertakeBehaviourController overtakeController = GetComponent<OvertakeBehaviourController>();
+        if (overtakeController != null)
+        {
+            overtakeController.UpdateActiveAnimator(activeAnimator);
+        }
     }
 }

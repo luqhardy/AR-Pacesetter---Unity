@@ -51,6 +51,14 @@ public class OvertakeBehaviourController : MonoBehaviour
     {
         if (_engine == null) return;
 
+        // ── Update Animator Speed and Halt parameters safely ───────────────
+        if (avatarAnimator != null)
+        {
+            float currentSpeed = _engine.GetTargetSpeed();
+            SetAnimatorFloatSafe("Speed", _engine.IsHalted ? 0f : currentSpeed);
+            SetAnimatorBoolSafe("IsHalted", _engine.IsHalted);
+        }
+
         AvatarEngine.OvertakeState currentState = _engine.CurrentOvertakeState;
 
         // ── React to state transitions ─────────────────────────────────────
@@ -70,6 +78,42 @@ public class OvertakeBehaviourController : MonoBehaviour
             case AvatarEngine.OvertakeState.None:
                 if (_isLookingAtUser) ReturnHeadToForward();
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Updates the active animator when switching avatar models.
+    /// </summary>
+    public void UpdateActiveAnimator(Animator newAnimator)
+    {
+        avatarAnimator = newAnimator;
+    }
+
+    private void SetAnimatorFloatSafe(string paramName, float value)
+    {
+        if (avatarAnimator == null) return;
+        foreach (var param in avatarAnimator.parameters)
+        {
+            if (param.type == AnimatorControllerParameterType.Float
+             && param.name == paramName)
+            {
+                avatarAnimator.SetFloat(paramName, value);
+                return;
+            }
+        }
+    }
+
+    private void SetAnimatorBoolSafe(string paramName, bool value)
+    {
+        if (avatarAnimator == null) return;
+        foreach (var param in avatarAnimator.parameters)
+        {
+            if (param.type == AnimatorControllerParameterType.Bool
+             && param.name == paramName)
+            {
+                avatarAnimator.SetBool(paramName, value);
+                return;
+            }
         }
     }
 
