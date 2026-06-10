@@ -6828,8 +6828,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AvatarModelSwitcher
   activeAvatar: 1
-  defaultCapsuleObject: {fileID: 899606527}
-  customVRChatObject: {fileID: 899606527}
+  defaultCapsuleObject: {fileID: 332374253}
+  customVRChatObject: {fileID: 1905935980}
   gameStateController: {fileID: 1554467202}
   visualsController: {fileID: 1362694750}
 --- !u!114 &1362694755

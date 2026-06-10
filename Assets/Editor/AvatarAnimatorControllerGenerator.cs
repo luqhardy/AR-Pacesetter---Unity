@@ -36,6 +36,9 @@ public class AvatarAnimatorControllerGenerator
     [MenuItem("Assets/Create Avatar Animator Controller")]
     public static void GenerateAvatarAnimatorController()
     {
+        // Enforce humanoid type on models and animations before generator runs
+        PrepareRigs();
+
         // Ensure Resources folder exists
         string resourcesPath = "Assets/_Project/Resources";
         if (!AssetDatabase.IsValidFolder(resourcesPath))
@@ -234,5 +237,79 @@ public class AvatarAnimatorControllerGenerator
         nodToLocomotion.duration = 0.25f;
 
         Debug.Log("✓ Created all state transitions");
+    }
+
+    private static void PrepareRigs()
+    {
+        // Enforce humanoid type on Y Bot model first to get its avatar reference
+        EnsureModelIsHumanoid("Assets/Y Bot.fbx", null, false);
+
+        // Find the Y Bot avatar in sub-assets
+        Avatar ybotAvatar = null;
+        var subAssets = AssetDatabase.LoadAllAssetsAtPath("Assets/Y Bot.fbx");
+        foreach (var asset in subAssets)
+        {
+            if (asset is Avatar avatar)
+            {
+                ybotAvatar = avatar;
+                break;
+            }
+        }
+
+        if (ybotAvatar == null)
+        {
+            Debug.LogError("[AvatarAnimatorControllerGenerator] Could not find humanoid avatar on Assets/Y Bot.fbx!");
+        }
+
+        // Configure all animation FBX rigs to copy the Y Bot avatar
+        EnsureModelIsHumanoid(Y_BOT_IDLE, ybotAvatar, true);
+        EnsureModelIsHumanoid(Y_BOT_JOGGING, ybotAvatar, true);
+        EnsureModelIsHumanoid(Y_BOT_RUNNING, ybotAvatar, true);
+        EnsureModelIsHumanoid(Y_BOT_RUNNING2, ybotAvatar, true);
+
+        // Enforce humanoid setup on the custom companion model as well
+        EnsureModelIsHumanoid("Assets/Avatar.fbx", null, false);
+    }
+
+    private static void EnsureModelIsHumanoid(string assetPath, Avatar sourceAvatar, bool isAnimationOnly)
+    {
+        ModelImporter importer = AssetImporter.GetAtPath(assetPath) as ModelImporter;
+        if (importer == null)
+        {
+            Debug.LogWarning($"[RIG REPAIR] Could not find asset at path: {assetPath}");
+            return;
+        }
+
+        bool changed = false;
+
+        if (importer.animationType != ModelImporterAnimationType.Human)
+        {
+            importer.animationType = ModelImporterAnimationType.Human;
+            changed = true;
+        }
+
+        if (isAnimationOnly)
+        {
+            if (sourceAvatar != null && importer.sourceAvatar != sourceAvatar)
+            {
+                importer.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
+                importer.sourceAvatar = sourceAvatar;
+                changed = true;
+            }
+        }
+        else
+        {
+            if (importer.avatarSetup != ModelImporterAvatarSetup.CreateFromThisModel)
+            {
+                importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            importer.SaveAndReimport();
+            Debug.Log($"[RIG REPAIR] Successfully configured model/animation import settings for humanoid compatibility: {assetPath}");
+        }
     }
 }
