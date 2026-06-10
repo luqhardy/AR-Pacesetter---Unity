@@ -37,7 +37,7 @@ public class AvatarAnimatorControllerWirer
         }
 
         // Find the Animator component on the prefab
-        var animator = avatarPrefab.GetComponent<Animator>();
+        var animator = avatarPrefab.GetComponentInChildren<Animator>();
         if (animator == null)
         {
             Debug.LogError("[AvatarAnimatorControllerWirer] Avatar_Container does not have an Animator component!");
