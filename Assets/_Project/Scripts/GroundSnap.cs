@@ -157,8 +157,8 @@ public class GroundSnap : MonoBehaviour
 
     private void UpdateAnimatorState(bool isHalted)
     {
-        // Recursively locate an Animator on this pacing companion model
-        Animator animator = GetComponentInChildren<Animator>();
+        OvertakeBehaviourController overtake = GetComponent<OvertakeBehaviourController>();
+        Animator animator = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : GetComponentInChildren<Animator>();
         if (animator != null)
         {
             animator.SetBool("IsInPlaceJog", isHalted);

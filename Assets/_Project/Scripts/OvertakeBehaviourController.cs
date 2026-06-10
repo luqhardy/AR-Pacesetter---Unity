@@ -81,6 +81,8 @@ public class OvertakeBehaviourController : MonoBehaviour
         }
     }
 
+    public Animator ActiveAnimator => avatarAnimator;
+
     /// <summary>
     /// Updates the active animator when switching avatar models.
     /// </summary>

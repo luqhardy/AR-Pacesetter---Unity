@@ -190,9 +190,6 @@ public class AvatarEngine : MonoBehaviour
         // ── Vector_Forward Purification (AGENTS.md §4.1) ─────────────────────
         UpdatePurifiedHeading();
 
-        // ── Speed Maintenance elastic band (Feature #3) ───────────────────────
-        UpdateSpeedMaintenance();
-
         // ── Overtake detection & state machine (Features #8 & #9) ────────────
         UpdateOvertakeState();
 
@@ -226,7 +223,7 @@ public class AvatarEngine : MonoBehaviour
     {
         if (!IsHalted)
         {
-            float speed = GetTargetSpeed() * _effectiveSpeedMultiplier;
+            float speed = GetTargetSpeed();
             _targetPacingPosition += _currentLinearDirection * speed * Time.deltaTime;
             transform.position     = _targetPacingPosition;
             ApplySmoothRotation(_currentLinearDirection);
@@ -346,7 +343,7 @@ public class AvatarEngine : MonoBehaviour
         userFrameMove.y       = 0;
         float userSpeed       = userFrameMove.magnitude / Mathf.Max(Time.deltaTime, 0.001f);
 
-        float avatarSpeed     = GetTargetSpeed() * _effectiveSpeedMultiplier;
+        float avatarSpeed     = GetTargetSpeed();
 
         switch (_overtakeState)
         {
@@ -431,7 +428,8 @@ public class AvatarEngine : MonoBehaviour
 
     private void SendOvertakeAnimatorTrigger(string triggerName)
     {
-        Animator anim = GetComponentInChildren<Animator>();
+        OvertakeBehaviourController overtake = GetComponent<OvertakeBehaviourController>();
+        Animator anim = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : GetComponentInChildren<Animator>();
         if (anim != null) anim.SetTrigger(triggerName);
     }
 

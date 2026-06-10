@@ -94,6 +94,14 @@ public class AvatarAnimatorControllerGenerator
 
     private static void CreateAnimationLayers(AnimatorController controller)
     {
+        // Enable IK Pass on base layer
+        var layers = controller.layers;
+        if (layers.Length > 0)
+        {
+            layers[0].iKPass = true;
+            controller.layers = layers;
+        }
+
         // Get the base layer (default layer)
         var rootStateMachine = controller.layers[0].stateMachine;
         rootStateMachine.name = "Base Layer";

@@ -224,9 +224,8 @@ public class GameStateController : MonoBehaviour
         // Step 3: Materialize and confirm
         RestoreAvatarAlpha();
 
-        Animator anim = avatarTarget != null
-            ? avatarTarget.GetComponentInChildren<Animator>()
-            : null;
+        OvertakeBehaviourController overtake = avatarTarget != null ? avatarTarget.GetComponent<OvertakeBehaviourController>() : null;
+        Animator anim = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : (avatarTarget != null ? avatarTarget.GetComponentInChildren<Animator>() : null);
         if (anim != null) anim.SetTrigger("Nod");
 
         Debug.Log("[REACCUMULATION] GPS lock confirmed. Returning to Normal.");
