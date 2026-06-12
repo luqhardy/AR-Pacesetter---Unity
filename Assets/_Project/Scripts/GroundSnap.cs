@@ -20,10 +20,12 @@ public class GroundSnap : MonoBehaviour
     private float _currentYVelocity;
     private bool _simulateObstacleActive = false;
     private bool _wasHaltedLastFrame = false;
+    private bool _isEasing = false;
 
     private void Start()
     {
-        _targetY = transform.position.y;
+        _targetY = GetCurrentGroundLevel();
+        transform.position = new Vector3(transform.position.x, _targetY, transform.position.z);
         
         if (avatarEngine == null)
         {
@@ -67,16 +69,29 @@ public class GroundSnap : MonoBehaviour
         // 3. Ground Level Raycast Checking (LiDAR Snapping)
         float currentDetectedGroundHeight = GetCurrentGroundLevel(); 
 
-        // If the vertical delta exceeds 15cm, lock in target and transition smoothly
-        if (Mathf.Abs(transform.position.y - currentDetectedGroundHeight) > stepThreshold)
+        // If the target ground level changed by more than 15cm, trigger/update easing
+        if (Mathf.Abs(currentDetectedGroundHeight - _targetY) > stepThreshold)
         {
             _targetY = currentDetectedGroundHeight;
+            _isEasing = true;
+        }
+
+        if (_isEasing)
+        {
             float smoothedY = Mathf.SmoothDamp(transform.position.y, _targetY, ref _currentYVelocity, smoothTime);
             transform.position = new Vector3(transform.position.x, smoothedY, transform.position.z);
+
+            // Once we are extremely close to the target, end easing to prevent floating precision jitter
+            if (Mathf.Abs(transform.position.y - _targetY) < 0.001f)
+            {
+                transform.position = new Vector3(transform.position.x, _targetY, transform.position.z);
+                _currentYVelocity = 0.0f;
+                _isEasing = false;
+            }
         }
         else
         {
-            // Small steps (<= 15cm): snap instantly to ground level
+            // Small steps (<= 15cm) and no active transition: snap instantly to ground level
             _targetY = currentDetectedGroundHeight;
             _currentYVelocity = 0.0f;
             transform.position = new Vector3(transform.position.x, currentDetectedGroundHeight, transform.position.z);

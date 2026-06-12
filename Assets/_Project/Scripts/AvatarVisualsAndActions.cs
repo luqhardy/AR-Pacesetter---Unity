@@ -75,6 +75,11 @@ public class AvatarVisualsAndActions : MonoBehaviour
         {
             _glowMaterial = _avatarSkinnedRenderer.material;
         }
+
+        if (_glowMaterial != null)
+        {
+            _glowMaterial.EnableKeyword("_EMISSION");
+        }
     }
 
     // Public gateway method to feed data directly from your Apple Watch BLE script loop

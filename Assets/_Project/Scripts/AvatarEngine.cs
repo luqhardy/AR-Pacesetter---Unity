@@ -179,7 +179,7 @@ public class AvatarEngine : MonoBehaviour
             // Fix: Use last GOOD delta time instead of the spiked one to prevent jumps
             float predictDelta = _lastFrameDeltaTime;
             _targetPacingPosition += _lastCleanKalmanVelocity * predictDelta;
-            transform.position     = _targetPacingPosition + _sidestepOffset;
+            transform.position     = _targetPacingPosition;
             
             // Fix: DO NOT update _lastFrameDeltaTime with the spiked value
             // This prevents the "return to normal" frame from also being flagged as a spike
