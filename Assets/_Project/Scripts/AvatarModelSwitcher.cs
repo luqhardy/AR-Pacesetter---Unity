@@ -78,6 +78,17 @@ public class AvatarModelSwitcher : MonoBehaviour
 
         // --- Animator Hot-Swapping ---
         Animator activeAnimator = currentActiveTarget.GetComponentInChildren<Animator>();
+        if (activeAnimator != null)
+        {
+            RuntimeAnimatorController correctController = Resources.Load<RuntimeAnimatorController>("AvatarAnimatorController");
+            if (activeAnimator.runtimeAnimatorController != correctController)
+            {
+                activeAnimator.runtimeAnimatorController = correctController;
+            }
+            // Prevent Root Motion from conflicting with our scripted movement
+            activeAnimator.applyRootMotion = false;
+        }
+        
         OvertakeBehaviourController overtakeController = GetComponent<OvertakeBehaviourController>();
         if (overtakeController != null)
         {

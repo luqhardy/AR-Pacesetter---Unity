@@ -100,13 +100,28 @@ public class GroundSnap : MonoBehaviour
 
     private float GetCurrentGroundLevel()
     {
-        // Perform standard vertical down-cast from above the avatar coordinates to snap precisely to colliders
-        RaycastHit hit;
-        Vector3 rayOrigin = new Vector3(transform.position.x, transform.position.y + 10.0f, transform.position.z);
-        if (Physics.Raycast(rayOrigin, Vector3.down, out hit, 20.0f, environmentLayerMask))
+        // Perform standard vertical down-cast to snap precisely to colliders
+        // Use a safe height (at least camera height) to prevent falling through the floor forever
+        float safeY = Mathf.Max(transform.position.y, userCamera != null ? userCamera.position.y : 0f) + 10.0f;
+        Vector3 rayOrigin = new Vector3(transform.position.x, safeY, transform.position.z);
+        
+        RaycastHit[] hits = Physics.RaycastAll(rayOrigin, Vector3.down, 20.0f, environmentLayerMask);
+        float highestGround = -1000f;
+        bool found = false;
+        
+        foreach (var h in hits)
         {
-            return hit.point.y;
+            // Ignore the avatar's own colliders
+            if (h.transform.root == transform.root) continue;
+            
+            if (h.point.y > highestGround)
+            {
+                highestGround = h.point.y;
+                found = true;
+            }
         }
+        
+        if (found) return highestGround;
 
         // Fallback baseline zero-plane
         return 0f; 
@@ -131,13 +146,15 @@ public class GroundSnap : MonoBehaviour
         rayDirection.Normalize();
 
         // Cast a sphere forward up to 3.0 meters (Requirement 4.2)
-        if (Physics.SphereCast(rayOrigin, 0.4f, rayDirection, out hit, obstacleDetectionDistance, obstacleLayerMask))
+        RaycastHit[] hits = Physics.SphereCastAll(rayOrigin, 0.4f, rayDirection, obstacleDetectionDistance, obstacleLayerMask);
+        foreach (var h in hits)
         {
+            if (h.transform.root == transform.root) continue;
+            
             // Verify if the height of the obstruction qualifies as a solid cliff or wall (>= 1.5m)
-            // By checking the hit collider bounds size or the absolute distance to the hit normal surface
-            if (hit.collider != null)
+            if (h.collider != null)
             {
-                float boundsHeight = hit.collider.bounds.size.y;
+                float boundsHeight = h.collider.bounds.size.y;
                 if (boundsHeight >= minObstacleHeight)
                 {
                     return true;
@@ -149,10 +166,22 @@ public class GroundSnap : MonoBehaviour
         // Perform a vertical raycast down exactly 3.0 meters ahead along user path of progression.
         // If the ground drops dramatically (cliff edge) or is missing, halt progression.
         Vector3 checkAheadPoint = userCamera.position + (rayDirection * obstacleDetectionDistance);
-        RaycastHit cliffHit;
-        if (Physics.Raycast(checkAheadPoint + (Vector3.up * 2.0f), Vector3.down, out cliffHit, 10.0f, environmentLayerMask))
+        RaycastHit[] cliffHits = Physics.RaycastAll(checkAheadPoint + (Vector3.up * 2.0f), Vector3.down, 10.0f, environmentLayerMask);
+        
+        bool foundGroundAhead = false;
+        float groundLevelAhead = -1000f;
+        foreach (var h in cliffHits)
         {
-            float groundLevelAhead = cliffHit.point.y;
+            if (h.transform.root == transform.root) continue;
+            if (h.point.y > groundLevelAhead)
+            {
+                groundLevelAhead = h.point.y;
+                foundGroundAhead = true;
+            }
+        }
+        
+        if (foundGroundAhead)
+        {
             float currentGroundLevel = transform.position.y;
             
             // If the ground drop ahead is greater than or equal to 1.5m, qualify it as a cliff
@@ -163,8 +192,15 @@ public class GroundSnap : MonoBehaviour
         }
         else
         {
-            // If we cast down 10 meters and find no ground, it's definitely a cliff or void!
-            return true;
+            // If we cast down 10 meters and find no ground, check if there is ground under the user.
+            // If there is ground under the user, then missing ground ahead is a real cliff/void.
+            // If there is no ground under the user either, we are in a colliderless scene, so do not halt.
+            RaycastHit userGroundHit;
+            bool groundUnderUser = Physics.Raycast(userCamera.position + Vector3.up * 2.0f, Vector3.down, out userGroundHit, 20.0f, environmentLayerMask);
+            if (groundUnderUser)
+            {
+                return true;
+            }
         }
 
         return false;

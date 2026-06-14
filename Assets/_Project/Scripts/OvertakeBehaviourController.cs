@@ -202,8 +202,8 @@ public class OvertakeBehaviourController : MonoBehaviour
         }
     }
 
-    /// <summary>Unity Animator IK callback — drives humanoid head look-at toward user.</summary>
-    private void OnAnimatorIK(int layerIndex)
+    /// <summary>Called by AvatarIKRelay to drive humanoid head look-at toward user.</summary>
+    public void HandleAnimatorIK(int layerIndex)
     {
         if (avatarAnimator == null || userCamera == null) return;
         if (!_isLookingAtUser) return;
