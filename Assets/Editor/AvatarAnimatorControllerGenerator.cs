@@ -324,13 +324,27 @@ public class AvatarAnimatorControllerGenerator
     private static AnimationClip LoadAnimationClipFromFBX(string path)
     {
         var allAssets = AssetDatabase.LoadAllAssetsAtPath(path);
+        AnimationClip fallback = null;
+        
         foreach (var asset in allAssets)
         {
-            if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__"))
+            if (asset is AnimationClip clip)
             {
-                return clip;
+                if (!clip.name.StartsWith("__preview__"))
+                {
+                    return clip; // Found the real clip
+                }
+                fallback = clip; // Store preview clip just in case
             }
         }
+        
+        if (fallback != null)
+        {
+            Debug.LogError($"[RIG ERROR] Could not find a real animation clip in {path}! Falling back to empty dummy clip '{fallback.name}'. Ensure you downloaded the animation from Mixamo, not just the T-Pose character!");
+            return fallback;
+        }
+
+        Debug.LogError($"[RIG ERROR] The file {path} has NO animation clips whatsoever! Animations will be completely broken.");
         return null;
     }
 }

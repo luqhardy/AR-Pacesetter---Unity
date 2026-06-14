@@ -5,7 +5,7 @@ public class AvatarModelSwitcher : MonoBehaviour
     public enum AvatarType { DefaultCapsule, CustomVRChat }
 
     [Header("Active Model Toggle")]
-    public AvatarType activeAvatar = AvatarType.DefaultCapsule;
+    public AvatarType activeAvatar = AvatarType.CustomVRChat;
 
     [Header("Model References")]
     [SerializeField] private GameObject defaultCapsuleObject;
