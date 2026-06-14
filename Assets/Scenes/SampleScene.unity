@@ -6476,15 +6476,7 @@ PrefabInstance:
       objectReference: {fileID: 9100000, guid: f887f86a88fafa74d9c8e31c48c4dcf7, type: 2}
     - target: {fileID: 5866666021909216657, guid: 804fbd3f94886ef4b8f0d05154af4d56, type: 3}
       propertyPath: m_WarningMessage
-      value: "\nBinding warning: Some generic clip(s) animate transforms that are
-        already bound by a Humanoid avatar. These transforms can only be changed
-        by Humanoid clips.\n\tTransform 'mixamorig:Hips'\n\tTransform 'mixamorig:LeftFoot'\n\tTransform
-        'mixamorig:LeftHandThumb2'\n\tTransform 'mixamorig:LeftHandIndex1'\n\tTransform
-        'mixamorig:LeftHandPinky2'\n\tTransform 'mixamorig:RightHandRing2'\n\tTransform
-        'mixamorig:Spine1'\n\tTransform 'mixamorig:LeftToeBase'\n\tTransform 'mixamorig:LeftHandThumb3'\n\tTransform
-        'mixamorig:RightArm'\n\tand more ...\n\tFrom animation clip 'Jogging'\n\tFrom
-        animation clip 'Idle'\n\tFrom animation clip 'Jogging'\n\tFrom animation
-        clip 'Running'\n\tFrom animation clip 'Idle'"
+      value: 
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -6865,7 +6857,7 @@ Animator:
   m_GameObject: {fileID: 1362694749}
   m_Enabled: 1
   m_Avatar: {fileID: 9000000, guid: 804fbd3f94886ef4b8f0d05154af4d56, type: 3}
-  m_Controller: {fileID: 9100000, guid: f887f86a88fafa74d9c8e31c48c4dcf7, type: 2}
+  m_Controller: {fileID: 0}
   m_CullingMode: 0
   m_UpdateMode: 0
   m_ApplyRootMotion: 0
