@@ -304,6 +304,31 @@ public class AvatarAnimatorControllerGenerator
                 importer.sourceAvatar = sourceAvatar;
                 changed = true;
             }
+
+            // Enforce loop settings on Mixamo animations
+            ModelImporterClipAnimation[] clips = importer.clipAnimations;
+            if (clips == null || clips.Length == 0)
+            {
+                clips = importer.defaultClipAnimations;
+            }
+            if (clips != null && clips.Length > 0)
+            {
+                bool clipChanged = false;
+                foreach (var c in clips)
+                {
+                    if (!c.loopTime || !c.loopPose)
+                    {
+                        c.loopTime = true;
+                        c.loopPose = true;
+                        clipChanged = true;
+                    }
+                }
+                if (clipChanged)
+                {
+                    importer.clipAnimations = clips;
+                    changed = true;
+                }
+            }
         }
         else
         {
@@ -317,7 +342,7 @@ public class AvatarAnimatorControllerGenerator
         if (changed)
         {
             importer.SaveAndReimport();
-            Debug.Log($"[RIG REPAIR] Successfully configured model/animation import settings for humanoid compatibility: {assetPath}");
+            Debug.Log($"[RIG REPAIR] Successfully configured model/animation import settings for humanoid compatibility and looping: {assetPath}");
         }
     }
 

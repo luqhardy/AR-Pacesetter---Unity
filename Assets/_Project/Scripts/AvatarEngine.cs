@@ -172,37 +172,37 @@ public class AvatarEngine : MonoBehaviour
         float frameDeltaDrift = Mathf.Abs(Time.deltaTime - _lastFrameDeltaTime);
         bool  jitterSpike     = (_lastFrameDeltaTime > 0f) && (frameDeltaDrift > JitterThresholdSeconds);
 
+        Vector3 filtered;
         if (jitterSpike)
         {
             Debug.LogWarning($"[JITTER GUARD] Frame-delta spike: {frameDeltaDrift * 1000f:F2}ms. Using prediction based on last good delta.");
             
             // Fix: Use last GOOD delta time instead of the spiked one to prevent jumps
             float predictDelta = _lastFrameDeltaTime;
-            _targetPacingPosition += _lastCleanKalmanVelocity * predictDelta;
-            transform.position     = _targetPacingPosition;
+            filtered = _targetPacingPosition + _lastCleanKalmanVelocity * predictDelta;
             
             // Update _lastFrameDeltaTime slightly so we adapt to new framerates and don't get permanently stuck
             _lastFrameDeltaTime = Mathf.Lerp(_lastFrameDeltaTime, Time.deltaTime, 0.1f);
-            _lastFrameUserPosition = userCamera.position;
-            return;
         }
-
-        // ── Vector_Forward Purification (AGENTS.md §4.1) ─────────────────────
-        UpdatePurifiedHeading();
-
-        // ── Overtake detection & state machine (Features #8 & #9) ────────────
-        UpdateOvertakeState();
-
-        // ── Compute filtered anchor position ──────────────────────────────────
-        Vector3 rawAnchor = userCamera.position
-                          + (_currentLinearDirection * leadDistanceMeters)
-                          + _sidestepOffset;
-        Vector3 filtered  = SmoothSpatialData(rawAnchor);
-        
-        // Safety guard against C++ Kalman Filter returning NaN during initialization
-        if (float.IsNaN(filtered.x) || float.IsNaN(filtered.y) || float.IsNaN(filtered.z))
+        else
         {
-            filtered = rawAnchor;
+            // ── Vector_Forward Purification (AGENTS.md §4.1) ─────────────────────
+            UpdatePurifiedHeading();
+
+            // ── Overtake detection & state machine (Features #8 & #9) ────────────
+            UpdateOvertakeState();
+
+            // ── Compute filtered anchor position ──────────────────────────────────
+            Vector3 rawAnchor = userCamera.position
+                              + (_currentLinearDirection * leadDistanceMeters)
+                              + _sidestepOffset;
+            filtered  = SmoothSpatialData(rawAnchor);
+            
+            // Safety guard against C++ Kalman Filter returning NaN during initialization
+            if (float.IsNaN(filtered.x) || float.IsNaN(filtered.y) || float.IsNaN(filtered.z))
+            {
+                filtered = rawAnchor;
+            }
         }
 
         // Track Kalman velocity for jitter-fallback use next frame, clamped to a safe sprint speed
@@ -213,6 +213,9 @@ public class AvatarEngine : MonoBehaviour
         float posLerpSpeed = GetEffectivePositionLerpSpeed();
         _targetPacingPosition = Vector3.Lerp(_targetPacingPosition, filtered,
                                              Time.deltaTime * posLerpSpeed);
+        
+        // Align our internal tracking position with GroundSnap's actual height to avoid Y drift fighting
+        _targetPacingPosition.y = transform.position.y;
         transform.position = _targetPacingPosition;
 
         // ── Smooth curved rotation (Feature #5) ──────────────────────────────

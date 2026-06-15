@@ -78,6 +78,11 @@ public class AvatarModelSwitcher : MonoBehaviour
 
         // --- Animator Hot-Swapping ---
         Animator activeAnimator = currentActiveTarget.GetComponentInChildren<Animator>();
+        if (activeAnimator == null)
+        {
+            activeAnimator = GetComponent<Animator>();
+        }
+
         if (activeAnimator != null)
         {
             RuntimeAnimatorController correctController = Resources.Load<RuntimeAnimatorController>("AvatarAnimatorController");
