@@ -34,8 +34,8 @@ public class AnalyticsManager : MonoBehaviour
     {
         if (userCamera == null || avatarContainer == null) return;
 
-        // 1. Calculate Real-Time Sync Rate (Requirement 4.3)
-        float separationDistance = Vector3.Distance(userCamera.position, avatarContainer.position);
+        // 1. Calculate Real-Time Sync Rate (Requirement 4.3) - horizontal plane only
+        float separationDistance = GetHorizontalSeparationDistance();
         
         // Distance deviation of >= 10m drops Synchronicity instantly to 0%
         float currentSyncRate = 0.0f;
@@ -113,11 +113,18 @@ public class AnalyticsManager : MonoBehaviour
         return "D"; // Low compliance bounds
     }
 
-    // --- HUD Telemetry Getters ---
+    private float GetHorizontalSeparationDistance()
+    {
+        if (userCamera == null || avatarContainer == null) return 0f;
+        Vector3 userPosHorizontal = new Vector3(userCamera.position.x, 0f, userCamera.position.z);
+        Vector3 avatarPosHorizontal = new Vector3(avatarContainer.position.x, 0f, avatarContainer.position.z);
+        return Vector3.Distance(userPosHorizontal, avatarPosHorizontal);
+    }
+
     public float GetLiveSyncRate()
     {
         if (userCamera == null || avatarContainer == null) return 0.0f;
-        float separationDistance = Vector3.Distance(userCamera.position, avatarContainer.position);
+        float separationDistance = GetHorizontalSeparationDistance();
         if (separationDistance >= 10.0f) return 0.0f;
         return Mathf.Max(0.0f, 100.0f * (1.0f - (separationDistance / 10.0f)));
     }

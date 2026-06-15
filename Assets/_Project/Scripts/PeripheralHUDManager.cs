@@ -79,11 +79,17 @@ public class PeripheralHUDManager : MonoBehaviour
         }
 
         // 2. Track Cumulative Distance Covered (Meters -> Kilometers)
-        float frameMovementDistance = Vector3.Distance(userCamera.position, _lastUserPosition);
-        if (frameMovementDistance > 0.01f)
+        Vector3 currentHorizontal = new Vector3(userCamera.position.x, 0f, userCamera.position.z);
+        Vector3 lastHorizontal = new Vector3(_lastUserPosition.x, 0f, _lastUserPosition.z);
+        float frameMovementDistance = Vector3.Distance(currentHorizontal, lastHorizontal);
+        
+        // Calculate instantaneous speed from horizontal movement to filter out tracking jitter
+        float instSpeed = frameMovementDistance / Mathf.Max(Time.deltaTime, 0.001f);
+        
+        // Only accumulate distance if movement is significant and speed is within normal human range (0.2 m/s to 15 m/s)
+        if (frameMovementDistance > 0.005f && instSpeed > 0.2f && instSpeed < 15.0f)
         {
             _cumulativeDistanceMeters += frameMovementDistance;
-            _lastUserPosition = userCamera.position;
 
             // Pass the distance directly to the analytics manager for split testing
             if (analytics != null)
@@ -91,6 +97,9 @@ public class PeripheralHUDManager : MonoBehaviour
                 analytics.CheckDistanceIntervalSplits(_cumulativeDistanceMeters);
             }
         }
+        
+        // Always update tracking position to prevent accumulation of ignored deltas or jumps
+        _lastUserPosition = userCamera.position;
 
         if (textDistance != null)
         {
