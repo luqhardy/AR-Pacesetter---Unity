@@ -106,11 +106,11 @@ public class AvatarAnimatorControllerGenerator
         var rootStateMachine = controller.layers[0].stateMachine;
         rootStateMachine.name = "Base Layer";
 
-        // Load animation clips
-        var idleClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(Y_BOT_IDLE);
-        var joggingClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(Y_BOT_JOGGING);
-        var runningClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(Y_BOT_RUNNING);
-        var running2Clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(Y_BOT_RUNNING2);
+        // Load animation clips properly
+        var idleClip = LoadAnimationClipFromFBX(Y_BOT_IDLE);
+        var joggingClip = LoadAnimationClipFromFBX(Y_BOT_JOGGING);
+        var runningClip = LoadAnimationClipFromFBX(Y_BOT_RUNNING);
+        var running2Clip = LoadAnimationClipFromFBX(Y_BOT_RUNNING2);
 
         if (idleClip == null || joggingClip == null || runningClip == null)
         {
@@ -319,5 +319,32 @@ public class AvatarAnimatorControllerGenerator
             importer.SaveAndReimport();
             Debug.Log($"[RIG REPAIR] Successfully configured model/animation import settings for humanoid compatibility: {assetPath}");
         }
+    }
+
+    private static AnimationClip LoadAnimationClipFromFBX(string path)
+    {
+        var allAssets = AssetDatabase.LoadAllAssetsAtPath(path);
+        AnimationClip fallback = null;
+        
+        foreach (var asset in allAssets)
+        {
+            if (asset is AnimationClip clip)
+            {
+                if (!clip.name.StartsWith("__preview__"))
+                {
+                    return clip; // Found the real clip
+                }
+                fallback = clip; // Store preview clip just in case
+            }
+        }
+        
+        if (fallback != null)
+        {
+            Debug.LogError($"[RIG ERROR] Could not find a real animation clip in {path}! Falling back to empty dummy clip '{fallback.name}'. Ensure you downloaded the animation from Mixamo, not just the T-Pose character!");
+            return fallback;
+        }
+
+        Debug.LogError($"[RIG ERROR] The file {path} has NO animation clips whatsoever! Animations will be completely broken.");
+        return null;
     }
 }

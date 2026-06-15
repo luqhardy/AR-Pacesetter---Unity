@@ -181,8 +181,8 @@ public class AvatarEngine : MonoBehaviour
             _targetPacingPosition += _lastCleanKalmanVelocity * predictDelta;
             transform.position     = _targetPacingPosition;
             
-            // Fix: DO NOT update _lastFrameDeltaTime with the spiked value
-            // This prevents the "return to normal" frame from also being flagged as a spike
+            // Update _lastFrameDeltaTime slightly so we adapt to new framerates and don't get permanently stuck
+            _lastFrameDeltaTime = Mathf.Lerp(_lastFrameDeltaTime, Time.deltaTime, 0.1f);
             _lastFrameUserPosition = userCamera.position;
             return;
         }
@@ -198,10 +198,16 @@ public class AvatarEngine : MonoBehaviour
                           + (_currentLinearDirection * leadDistanceMeters)
                           + _sidestepOffset;
         Vector3 filtered  = SmoothSpatialData(rawAnchor);
+        
+        // Safety guard against C++ Kalman Filter returning NaN during initialization
+        if (float.IsNaN(filtered.x) || float.IsNaN(filtered.y) || float.IsNaN(filtered.z))
+        {
+            filtered = rawAnchor;
+        }
 
-        // Track Kalman velocity for jitter-fallback use next frame
-        _lastCleanKalmanVelocity = (filtered - _targetPacingPosition)
-                                 / Mathf.Max(Time.deltaTime, 0.001f);
+        // Track Kalman velocity for jitter-fallback use next frame, clamped to a safe sprint speed
+        Vector3 rawVelocity = (filtered - _targetPacingPosition) / Mathf.Max(Time.deltaTime, 0.001f);
+        _lastCleanKalmanVelocity = Vector3.ClampMagnitude(rawVelocity, 10.0f);
 
         // Blend position with elastic catchup speed (Feature #3)
         float posLerpSpeed = GetEffectivePositionLerpSpeed();
