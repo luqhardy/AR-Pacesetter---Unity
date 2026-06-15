@@ -54,9 +54,11 @@ public class OvertakeBehaviourController : MonoBehaviour
         // ── Update Animator Speed and Halt parameters safely ───────────────
         if (avatarAnimator != null)
         {
-            float currentSpeed = _engine.GetTargetSpeed();
-            SetAnimatorFloatSafe("Speed", _engine.IsHalted ? 0f : currentSpeed);
-            SetAnimatorBoolSafe("IsHalted", _engine.IsHalted);
+            bool isWaitingOrHalted = !_engine.HasStarted || _engine.IsHalted;
+            float currentSpeed = isWaitingOrHalted ? 0f : _engine.GetTargetSpeed();
+            SetAnimatorFloatSafe("Speed", currentSpeed);
+            SetAnimatorBoolSafe("IsHalted", isWaitingOrHalted);
+            SetAnimatorBoolSafe("IsInPlaceJog", isWaitingOrHalted);
         }
 
         AvatarEngine.OvertakeState currentState = _engine.CurrentOvertakeState;

@@ -106,11 +106,27 @@ public class AvatarEngine : MonoBehaviour
     private float _overtakenTimer   = 0f;  // how long user has been faster
     private float _sprintTimer      = 0f;  // how long sprint has been held
     private Vector3 _sidestepOffset = Vector3.zero; // lateral shift when yielding
+    
+    private bool _hasStarted = false; // Start command state
 
     // ── Public API ───────────────────────────────────────────────────────────
     public bool IsHalted { get; set; } = false;
     public float TargetPaceMinutesPerKm => targetPaceMinutesPerKm;
     public OvertakeState CurrentOvertakeState => _overtakeState;
+    public bool HasStarted => _hasStarted;
+
+    public void StartPacing()
+    {
+        if (!_hasStarted)
+        {
+            _hasStarted = true;
+            Debug.Log("[PACER ENGINE] Start pacing command received! Commencing pacer movement.");
+            
+            OvertakeBehaviourController overtake = GetComponent<OvertakeBehaviourController>();
+            Animator anim = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : GetComponentInChildren<Animator>();
+            if (anim != null) anim.SetTrigger("RunResume");
+        }
+    }
 
     // ════════════════════════════════════════════════════════════════════════
     // Unity lifecycle
@@ -154,6 +170,13 @@ public class AvatarEngine : MonoBehaviour
 
         // Always update speed maintenance to ensure multipliers are fresh
         UpdateSpeedMaintenance();
+
+        // ── Pre-start halt control ──────────────────────────────────────────
+        if (!_hasStarted)
+        {
+            RunHaltedFaceUser();
+            return;
+        }
 
         if (gpsLost)
         {
@@ -230,6 +253,12 @@ public class AvatarEngine : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     private void RunInertialLinearMotion()
     {
+        if (!_hasStarted)
+        {
+            RunHaltedFaceUser();
+            return;
+        }
+
         if (!IsHalted)
         {
             float speed = GetTargetSpeed();

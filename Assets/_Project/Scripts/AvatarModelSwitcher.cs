@@ -83,6 +83,8 @@ public class AvatarModelSwitcher : MonoBehaviour
             activeAnimator = GetComponent<Animator>();
         }
 
+        OvertakeBehaviourController overtakeController = GetComponent<OvertakeBehaviourController>();
+
         if (activeAnimator != null)
         {
             RuntimeAnimatorController correctController = Resources.Load<RuntimeAnimatorController>("AvatarAnimatorController");
@@ -92,9 +94,16 @@ public class AvatarModelSwitcher : MonoBehaviour
             }
             // Prevent Root Motion from conflicting with our scripted movement
             activeAnimator.applyRootMotion = false;
+
+            // Wire up AvatarIKRelay dynamically so OnAnimatorIK is correctly relayed to OvertakeBehaviourController
+            AvatarIKRelay relay = activeAnimator.GetComponent<AvatarIKRelay>();
+            if (relay == null)
+            {
+                relay = activeAnimator.gameObject.AddComponent<AvatarIKRelay>();
+            }
+            relay.TargetController = overtakeController;
         }
         
-        OvertakeBehaviourController overtakeController = GetComponent<OvertakeBehaviourController>();
         if (overtakeController != null)
         {
             overtakeController.UpdateActiveAnimator(activeAnimator);

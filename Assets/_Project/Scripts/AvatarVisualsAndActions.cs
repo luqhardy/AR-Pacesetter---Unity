@@ -28,8 +28,10 @@ public class AvatarVisualsAndActions : MonoBehaviour
     {
         if (userCamera == null || _glowMaterial == null) return;
 
-        // 1. Calculate Spatial Distance to User
-        float distanceToUser = Vector3.Distance(transform.position, userCamera.position);
+        // 1. Calculate Spatial Distance to User (Horizontal X-Z plane only to remove vertical height bias)
+        Vector3 userPosHorizontal = new Vector3(userCamera.position.x, 0f, userCamera.position.z);
+        Vector3 avatarPosHorizontal = new Vector3(transform.position.x, 0f, transform.position.z);
+        float distanceToUser = Vector3.Distance(userPosHorizontal, avatarPosHorizontal);
 
         // 2. Handle Autonomous Action Logic based on 10m separation
         Color targetBaseColor = _normalCyan;
