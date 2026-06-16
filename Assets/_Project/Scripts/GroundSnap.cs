@@ -114,6 +114,9 @@ public class GroundSnap : MonoBehaviour
             // Ignore the avatar's own colliders
             if (h.transform.root == transform.root) continue;
             
+            // Fix: Ignore the user camera's root as well to prevent snapping to the player's head/body
+            if (userCamera != null && h.transform.root == userCamera.root) continue;
+            
             if (h.point.y > highestGround)
             {
                 highestGround = h.point.y;

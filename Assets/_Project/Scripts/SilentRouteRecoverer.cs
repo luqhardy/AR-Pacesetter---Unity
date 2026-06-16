@@ -127,6 +127,10 @@ public class SilentRouteRecoverer : MonoBehaviour
 
         // Position avatar behind runner, facing true route
         Vector3 trailPos = userCamera.position - (userCamera.forward * recoveryTrailingDistance);
+        
+        // Fix: Use current Y to prevent floating to eye level
+        trailPos.y = transform.position.y;
+        
         transform.position = Vector3.Lerp(transform.position, trailPos, Time.deltaTime * 3.0f);
 
         if (dirToRoute != Vector3.zero)

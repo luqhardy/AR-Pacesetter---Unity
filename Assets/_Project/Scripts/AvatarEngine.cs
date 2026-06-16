@@ -140,6 +140,10 @@ public class AvatarEngine : MonoBehaviour
             _currentLinearDirection.y = 0;
             _currentLinearDirection.Normalize();
             _targetPacingPosition    = userCamera.position + (_currentLinearDirection * leadDistanceMeters);
+            
+            // Fix: Initialize tracking height to current transform (ground) height instead of camera height
+            _targetPacingPosition.y = transform.position.y;
+            
             _smoothRotation          = Quaternion.LookRotation(_currentLinearDirection);
         }
 
@@ -263,7 +267,11 @@ public class AvatarEngine : MonoBehaviour
         {
             float speed = GetTargetSpeed();
             _targetPacingPosition += _currentLinearDirection * speed * Time.deltaTime;
+            
+            // Fix: Align Y with ground snap height even during inertial motion
+            _targetPacingPosition.y = transform.position.y;
             transform.position     = _targetPacingPosition;
+            
             ApplySmoothRotation(_currentLinearDirection);
         }
         _lastFrameDeltaTime    = Time.deltaTime;
