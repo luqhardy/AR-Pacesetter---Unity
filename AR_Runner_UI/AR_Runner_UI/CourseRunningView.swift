@@ -6,116 +6,124 @@ import Combine
 struct CourseSetupView: View {
     let onStart: () -> Void
     let onSettings: () -> Void
-    let onBack: () -> Void // FIXED: Added the back closure property
+    let onBack: () -> Void
 
     @State private var region = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 34.6937, longitude: 135.5023), // 三宮
+        center: CLLocationCoordinate2D(latitude: 34.6937, longitude: 135.5023),
         span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
     )
 
     var body: some View {
         ARScreen {
-            // Using a ZStack allows the back button to overlay nicely on top of the Map
-            ZStack(alignment: .topLeading) {
-                
-                VStack(spacing: 0) {
-                    // Map
+            VStack(spacing: 0) {
+                // Map fills the top portion; back button floats over it
+                ZStack(alignment: .topLeading) {
                     Map(coordinateRegion: $region)
-                        .environment(\.locale, Locale(identifier: "ja_JP")) // Forces Japanese map labels
-                        .frame(maxHeight: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 0))
+                        .environment(\.locale, Locale(identifier: "ja_JP"))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .overlay(
-                            // Route overlay dots
                             VStack {
                                 Spacer()
-                                HStack {
-                                    Spacer()
-                                    // Start dot
-                                    Circle()
-                                        .fill(Color.arYellow)
-                                        .frame(width: 14, height: 14)
-                                        .offset(x: -120, y: -180)
-                                }
+                                LinearGradient(
+                                    colors: [.clear, Color.arBG.opacity(0.5)],
+                                    startPoint: .top, endPoint: .bottom
+                                )
+                                .frame(height: 60)
                             }
                         )
+                        .ignoresSafeArea(edges: .top)
 
-                    // Course info + buttons
-                    VStack(spacing: 16) {
-                        // Route info
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("三宮駅 → 市役所")
-                                    .font(.system(size: 17, weight: .bold))
-                                    .foregroundColor(.white)
-                                Text("伴走距離：2.1km")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.arGrayText)
-                            }
-                            Spacer()
-                            // Distance badge
-                            Text("2.1km")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(.arYellow)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(Color.arYellow.opacity(0.15))
-                                .clipShape(Capsule())
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.top, 20)
-
-                        // Action buttons
-                        HStack(spacing: 12) {
-                            Button {
-                                onSettings()
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Text("コース設定")
-                                        .font(.system(size: 15, weight: .medium))
-                                    Image(systemName: "gearshape")
-                                        .font(.system(size: 14))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 52)
-                                .background(Color.arCard)
-                                .foregroundColor(.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 26))
-                                .overlay(RoundedRectangle(cornerRadius: 26).stroke(Color.arBorder, lineWidth: 1))
-                            }
-
-                            Button {
-                                onStart()
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Text("開始")
-                                        .font(.system(size: 15, weight: .bold))
-                                    Image(systemName: "play.fill")
-                                        .font(.system(size: 13))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 52)
-                                .background(Color.arYellow)
-                                .foregroundColor(.black)
-                                .clipShape(RoundedRectangle(cornerRadius: 26))
-                            }
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 40)
-                    }
-                    .background(Color.arBG)
+                    // Back button floats over map with notch clearance
+                    ARBackButton(action: onBack)
+                        .padding(.leading, 20)
+                        .padding(.top, 56)
                 }
-                .ignoresSafeArea(edges: .top)
-                
-                // FLOATING BACK BUTTON
-                ARBackButton(action: onBack)
-                    .padding(.leading, 20)
-                    .padding(.top, 56) // Provides enough notch clearance for iOS devices
+
+                // Bottom info panel (never overlaps map content)
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        VStack(spacing: 3) {
+                            Circle().fill(Color.arYellow).frame(width: 9, height: 9)
+                            ForEach(0..<4) { _ in
+                                Rectangle()
+                                    .fill(Color.arBorder)
+                                    .frame(width: 1, height: 4)
+                            }
+                            Circle().fill(Color.arGrayText).frame(width: 9, height: 9)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("三宮駅")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.white)
+                            Text("市役所前")
+                                .font(.system(size: 15))
+                                .foregroundColor(.arGrayText)
+                        }
+
+                        Spacer()
+
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("2.1")
+                                .font(.system(size: 26, weight: .bold))
+                                .foregroundColor(.arYellow)
+                            Text("km")
+                                .font(.system(size: 12))
+                                .foregroundColor(.arGrayText)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 22)
+                    .padding(.bottom, 18)
+
+                    ARDivider()
+                        .padding(.horizontal, 24)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            onSettings()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "gearshape")
+                                    .font(.system(size: 14))
+                                Text("設定")
+                                    .font(.system(size: 15, weight: .medium))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(Color.arCard)
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 26))
+                            .overlay(RoundedRectangle(cornerRadius: 26).stroke(Color.arBorder, lineWidth: 1))
+                        }
+
+                        Button {
+                            onStart()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 13))
+                                Text("開始")
+                                    .font(.system(size: 15, weight: .bold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(Color.arYellow)
+                            .foregroundColor(.black)
+                            .clipShape(RoundedRectangle(cornerRadius: 26))
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
+                    .padding(.bottom, 40)
+                }
+                .background(Color.arBG)
             }
         }
     }
 }
 
-// MARK: - 4. Running Screen (AR伴走中)
+// MARK: - 4. Running Screen
 struct RunningView: View {
     let onEnd: () -> Void
     @State private var elapsed = 0
@@ -134,89 +142,78 @@ struct RunningView: View {
     var body: some View {
         ARScreen {
             ZStack {
-                // AR camera feed placeholder
-                ZStack {
-                    LinearGradient(
-                        colors: [Color(red:0.08, green:0.10, blue:0.08), Color.black],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                    .ignoresSafeArea()
+                LinearGradient(
+                    colors: [Color(red: 0.07, green: 0.10, blue: 0.07), Color.black],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .ignoresSafeArea()
 
-                    // Avatar placeholder (Unity sends frames here via UnityBridge)
-                    VStack {
-                        Spacer()
-                        // Geometric avatar shapes as placeholder
-                        HStack(spacing: 12) {
-                            ForEach(0..<3) { i in
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.arYellow.opacity(0.85 - Double(i)*0.2))
-                                    .frame(width: 56, height: 56)
-                                    .rotationEffect(.degrees(Double(i) * 8 - 8))
-                            }
+                // Avatar placeholder
+                VStack {
+                    Spacer()
+                    HStack(spacing: 10) {
+                        ForEach(0..<3) { i in
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.arYellow.opacity(0.85 - Double(i) * 0.22))
+                                .frame(width: 52, height: 52)
+                                .rotationEffect(.degrees(Double(i) * 8 - 8))
                         }
-                        .padding(.bottom, 120)
                     }
+                    .padding(.bottom, 130)
+                }
 
-                    // Ground grid (AR visual)
-                    Canvas { ctx, size in
-                        for i in 0..<8 {
-                            let y = size.height * 0.65 + CGFloat(i) * 20
-                            let compress = CGFloat(i) * 0.08
-                            var path = Path()
-                            path.move(to: CGPoint(x: 0, y: y))
-                            path.addLine(to: CGPoint(x: size.width, y: y))
-                            ctx.stroke(path, with: .color(.arYellow.opacity(0.08 - compress.clamped(to:0...0.08))), lineWidth: 1)
-                        }
+                // Ground grid
+                Canvas { ctx, size in
+                    for i in 0..<8 {
+                        let y = size.height * 0.65 + CGFloat(i) * 18
+                        let compress = CGFloat(i) * 0.09
+                        var path = Path()
+                        path.move(to: CGPoint(x: 0, y: y))
+                        path.addLine(to: CGPoint(x: size.width, y: y))
+                        let opacity = max(0.0, 0.08 - Double(compress.clamped(to: 0...0.08)))
+                        ctx.stroke(path, with: .color(.arYellow.opacity(opacity)), lineWidth: 1)
                     }
                 }
 
-                // HUD overlay
-                VStack {
-                    // Top HUD
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("伴走中")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.arGrayText)
+                // HUD
+                VStack(spacing: 0) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            ARLabel(text: "伴走中")
                             Text(elapsedStr)
-                                .font(.system(size: 32, weight: .bold, design: .monospaced))
+                                .font(.system(size: 34, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
                         }
-
                         Spacer()
-
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("距離")
-                                .font(.system(size: 12))
-                                .foregroundColor(.arGrayText)
-                            Text(String(format: "%.1fkm", distance))
-                                .font(.system(size: 32, weight: .bold, design: .monospaced))
+                        VStack(alignment: .trailing, spacing: 1) {
+                            ARLabel(text: "距離")
+                            Text(String(format: "%.2fkm", distance))
+                                .font(.system(size: 34, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
                         }
                     }
                     .padding(.horizontal, 24)
-                    .padding(.top, 56)
+                    .padding(.top, 60)
+                    .padding(.bottom, 20)
                     .background(
-                        LinearGradient(colors: [.black.opacity(0.6), .clear],
+                        LinearGradient(colors: [.black.opacity(0.65), .clear],
                                        startPoint: .top, endPoint: .bottom)
                     )
 
                     Spacer()
 
-                    // Bottom HUD
                     VStack(spacing: 0) {
-                        LinearGradient(colors: [.clear, .black.opacity(0.7)],
+                        LinearGradient(colors: [.clear, .black.opacity(0.72)],
                                        startPoint: .top, endPoint: .bottom)
-                            .frame(height: 60)
+                            .frame(height: 56)
 
                         HStack(alignment: .center, spacing: 0) {
-                            // BPM
-                            VStack(spacing: 2) {
+                            VStack(spacing: 3) {
                                 Image(systemName: "heart.fill")
-                                    .foregroundColor(.red)
-                                    .font(.system(size: 14))
+                                    .foregroundColor(Color(red: 1, green: 0.25, blue: 0.25))
+                                    .font(.system(size: 13))
                                 Text("\(bpm)")
-                                    .font(.system(size: 22, weight: .bold))
+                                    .font(.system(size: 24, weight: .bold, design: .monospaced))
                                     .foregroundColor(.white)
                                 Text("bpm")
                                     .font(.system(size: 11))
@@ -224,10 +221,9 @@ struct RunningView: View {
                             }
                             .frame(maxWidth: .infinity)
 
-                            // Pace
-                            VStack(spacing: 2) {
+                            VStack(spacing: 3) {
                                 Text(pace)
-                                    .font(.system(size: 28, weight: .bold, design: .monospaced))
+                                    .font(.system(size: 30, weight: .bold, design: .monospaced))
                                     .foregroundColor(.arYellow)
                                 Text("ペース /km")
                                     .font(.system(size: 11))
@@ -235,10 +231,9 @@ struct RunningView: View {
                             }
                             .frame(maxWidth: .infinity)
 
-                            // Sync rate
-                            VStack(spacing: 2) {
+                            VStack(spacing: 3) {
                                 Text("\(syncRate)%")
-                                    .font(.system(size: 22, weight: .bold))
+                                    .font(.system(size: 24, weight: .bold, design: .monospaced))
                                     .foregroundColor(syncRate >= 80 ? .arYellow : .orange)
                                 Text("シンクロ率")
                                     .font(.system(size: 11))
@@ -248,27 +243,24 @@ struct RunningView: View {
                         }
                         .padding(.horizontal, 24)
                         .padding(.vertical, 20)
-                        .background(Color.black.opacity(0.75))
+                        .background(Color.black.opacity(0.78))
                     }
                 }
 
-                // End button (Top Right overlay)
+                // Stop button
                 VStack {
                     HStack {
                         Spacer()
-                        Button {
-                            showEndAlert = true
-                        } label: {
+                        Button { showEndAlert = true } label: {
                             Image(systemName: "stop.fill")
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(.white)
-                                .frame(width: 44, height: 44)
-                                .background(Color.black.opacity(0.6))
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.arBorder, lineWidth: 1))
+                                .frame(width: 42, height: 42)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().strokeBorder(Color.arBorder, lineWidth: 1))
                         }
                         .padding(.trailing, 20)
-                        .padding(.top, 56)
+                        .padding(.top, 60)
                     }
                     Spacer()
                 }
@@ -287,7 +279,6 @@ struct RunningView: View {
     }
 }
 
-// Extension for clamped
 extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)

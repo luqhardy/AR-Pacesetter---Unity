@@ -7,6 +7,7 @@ extension Color {
     static let arCard      = Color(red: 0.13, green: 0.13, blue: 0.13) // #212121
     static let arBorder    = Color(red: 0.22, green: 0.22, blue: 0.22) // #383838
     static let arGrayText  = Color(red: 0.55, green: 0.55, blue: 0.55)
+    static let arYellowDim = Color(red: 0.82, green: 0.95, blue: 0.10).opacity(0.12)
 }
 
 // MARK: - Primary Button
@@ -26,19 +27,27 @@ struct ARButton: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Text(title)
-                    .font(.system(size: 17, weight: .bold))
-                if let icon { Image(systemName: icon).font(.system(size: 15, weight: .bold)) }
+                    .font(.system(size: 16, weight: .bold))
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .bold))
+                }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 56)
-            .background(style == .primary ? Color.arYellow : Color.arCard)
+            .frame(height: 54)
+            .background(
+                style == .primary
+                    ? AnyShapeStyle(Color.arYellow)
+                    : AnyShapeStyle(Color.arCard)
+            )
             .foregroundColor(style == .primary ? .black : .white)
-            .clipShape(RoundedRectangle(cornerRadius: 28))
+            .clipShape(RoundedRectangle(cornerRadius: 27))
             .overlay(
-                RoundedRectangle(cornerRadius: 28)
+                RoundedRectangle(cornerRadius: 27)
                     .stroke(style == .secondary ? Color.arBorder : .clear, lineWidth: 1)
             )
         }
+        .buttonStyle(.plain)
     }
 }
 
@@ -51,6 +60,26 @@ struct ARScreen<Content: View>: View {
             Color.arBG.ignoresSafeArea()
             content
         }
+    }
+}
+
+// MARK: - Eyebrow Label  (e.g.  "ACTIVITY" in yellow tracking)
+struct ARLabel: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundColor(.arYellow)
+            .tracking(2.5)
+    }
+}
+
+// MARK: - Divider
+struct ARDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.arBorder)
+            .frame(height: 0.5)
     }
 }
 
@@ -80,7 +109,7 @@ struct TabBarView: View {
         .padding(.top, 12)
         .padding(.bottom, 24)
         .background(Color.arCard)
-        .overlay(Rectangle().frame(height: 0.5).foregroundColor(.arBorder), alignment: .top)
+        .overlay(ARDivider(), alignment: .top)
     }
 }
 

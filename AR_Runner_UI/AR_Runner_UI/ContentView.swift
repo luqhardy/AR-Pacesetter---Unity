@@ -2,58 +2,72 @@ import SwiftUI
 
 // MARK: - Navigation State
 enum AppScreen {
-    case connect, onboarding, courseSetup, running, stats, history
+    case onboarding
+    case deviceConnect
+    case runningSettings
+    case mapRoute
+    case lockScreen
+    case stats
+    case history
 }
 
 struct ContentView: View {
-    @State private var screen: AppScreen = .connect
-    @State private var isXREALConnected = false
+    @State private var screen: AppScreen = .onboarding
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            
+
             switch screen {
-            case .connect:
-                ConnectView(
-                    isConnected: $isXREALConnected,
-                    onNext: { screen = .onboarding }
-                )
-                
+
+            // 1. Three-page tutorial
             case .onboarding:
                 OnboardingView(
-                    onNext: { screen = .courseSetup },
-                    onBack: { screen = .connect } // Goes back to Connect
+                    onNext: { screen = .deviceConnect },
+                    onBack: { }
                 )
-                
-            case .courseSetup:
-                // Assuming you add an 'onBack' parameter to CourseSetupView too
-                CourseSetupView(
-                    onStart: { screen = .running },
-                    onSettings: { /* Handle settings */ },
-                    onBack: { screen = .onboarding } // Goes back to Onboarding
+
+            // 2. Connect AR glasses + Apple Watch + AirPods
+            case .deviceConnect:
+                DeviceConnectView(
+                    onNext: { screen = .runningSettings },
+                    onBack: { screen = .onboarding }
                 )
-                
-            case .running:
-                RunningView(
-                    onEnd: { screen = .stats }
-                    // Usually you don't want a back button during an active run,
-                    // but you can add one here if needed!
+
+            // 3. Set time, distance, pace
+            case .runningSettings:
+                RunningSettingsView(
+                    onNext: { screen = .mapRoute },
+                    onBack: { screen = .deviceConnect }
                 )
-                
+
+            // 4. Draw route on map
+            case .mapRoute:
+                MapRouteView(
+                    onStart: { screen = .lockScreen }, // Routes back to Lock Screen
+                    onBack: { screen = .runningSettings }
+                )
+
+
+
+            // 7. Stats
             case .stats:
                 StatsView(
                     onHistory: { screen = .history },
-                    onBack: { screen = .courseSetup } // Goes back to setup
+                    onBack: { screen = .mapRoute }
                 )
-                
+
+            // 8. History
             case .history:
                 HistoryView(
-                    onBack: { screen = .stats } // Goes back to stats
+                    onBack: { screen = .stats }
                 )
+            case .lockScreen:
+                        LockScreenView(
+                            onUnlock: { screen = .stats }
+                        )
             }
         }
-        // Optional: Adds a smooth fade transition when switching screens
-        .animation(.easeInOut, value: screen)
+        .animation(.easeInOut(duration: 0.3), value: screen)
     }
 }
