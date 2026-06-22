@@ -1,4 +1,7 @@
 using UnityEngine;
+using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
+using System.Collections.Generic;
 
 public class GroundSnap : MonoBehaviour
 {
@@ -22,9 +25,29 @@ public class GroundSnap : MonoBehaviour
     private bool _wasHaltedLastFrame = false;
     private bool _isEasing = false;
 
+    [Header("Terrain Alignment")]
+    [SerializeField] private bool alignWithTerrainNormal = true;
+    [SerializeField] private float alignmentSpeed = 5.0f;
+    [SerializeField] private float maxTiltAngle = 20.0f;
+
+    private Vector3 _currentNormal = Vector3.up;
+    private ARRaycastManager _arRaycastManager;
+    private static List<ARRaycastHit> s_Hits = new List<ARRaycastHit>();
+
     private void Start()
     {
-        _targetY = GetCurrentGroundLevel();
+#if UNITY_2023_1_OR_NEWER
+        _arRaycastManager = Object.FindFirstObjectByType<ARRaycastManager>();
+#else
+        _arRaycastManager = Object.FindObjectOfType<ARRaycastManager>();
+#endif
+        if (_arRaycastManager == null && userCamera != null)
+        {
+            _arRaycastManager = userCamera.transform.root.gameObject.AddComponent<ARRaycastManager>();
+            Debug.Log("[GroundSnap] Dynamically added ARRaycastManager to XR Origin root.");
+        }
+        // Initial snap
+        _targetY = GetCurrentGroundLevel(out _currentNormal);
         transform.position = new Vector3(transform.position.x, _targetY, transform.position.z);
         
         if (avatarEngine == null)
@@ -65,41 +88,52 @@ public class GroundSnap : MonoBehaviour
                 Debug.Log("[CLIFF EXCEPTION] Path is now clear. Avatar resuming forward pace.");
             }
         }
+    }
 
+    private void LateUpdate()
+    {
         // 3. Ground Level Raycast Checking (LiDAR Snapping)
-        float currentDetectedGroundHeight = GetCurrentGroundLevel(); 
+        // We move this to LateUpdate to ensure we are the final authority on Y height
+        // after AvatarEngine has calculated the horizontal movement.
+        Vector3 groundNormal;
+        float currentDetectedGroundHeight = GetCurrentGroundLevel(out groundNormal); 
 
-        // If the target ground level changed by more than 15cm, trigger/update easing
-        if (Mathf.Abs(currentDetectedGroundHeight - _targetY) > stepThreshold)
-        {
-            _targetY = currentDetectedGroundHeight;
-            _isEasing = true;
-        }
+        // Always smooth to target to absorb LiDAR noise. 
+        // Use 0.3s (smoothTime) for > 15cm changes, and a faster 0.1s for <= 15cm bumps.
+        float activeSmoothTime = Mathf.Abs(currentDetectedGroundHeight - transform.position.y) > stepThreshold ? smoothTime : 0.1f;
+        _targetY = currentDetectedGroundHeight;
 
-        if (_isEasing)
-        {
-            float smoothedY = Mathf.SmoothDamp(transform.position.y, _targetY, ref _currentYVelocity, smoothTime);
-            transform.position = new Vector3(transform.position.x, smoothedY, transform.position.z);
+        float smoothedY = Mathf.SmoothDamp(transform.position.y, _targetY, ref _currentYVelocity, activeSmoothTime);
 
-            // Once we are extremely close to the target, end easing to prevent floating precision jitter
-            if (Mathf.Abs(transform.position.y - _targetY) < 0.001f)
-            {
-                transform.position = new Vector3(transform.position.x, _targetY, transform.position.z);
-                _currentYVelocity = 0.0f;
-                _isEasing = false;
-            }
-        }
-        else
+        // Prevent floating precision jitter when very close
+        if (Mathf.Abs(smoothedY - _targetY) < 0.001f)
         {
-            // Small steps (<= 15cm) and no active transition: snap instantly to ground level
-            _targetY = currentDetectedGroundHeight;
+            smoothedY = _targetY;
             _currentYVelocity = 0.0f;
-            transform.position = new Vector3(transform.position.x, currentDetectedGroundHeight, transform.position.z);
+        }
+
+        transform.position = new Vector3(transform.position.x, smoothedY, transform.position.z);
+
+        // 4. Terrain Normal Alignment
+        if (alignWithTerrainNormal)
+        {
+            _currentNormal = Vector3.Slerp(_currentNormal, groundNormal, Time.deltaTime * alignmentSpeed);
+            
+            // Limit tilt angle
+            float tilt = Vector3.Angle(Vector3.up, _currentNormal);
+            if (tilt > maxTiltAngle)
+            {
+                _currentNormal = Vector3.RotateTowards(Vector3.up, _currentNormal, maxTiltAngle * Mathf.Deg2Rad, 0f);
+            }
+
+            Quaternion targetRot = Quaternion.FromToRotation(transform.up, _currentNormal) * transform.rotation;
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * alignmentSpeed);
         }
     }
 
-    private float GetCurrentGroundLevel()
+    private float GetCurrentGroundLevel(out Vector3 normal)
     {
+        normal = Vector3.up;
         // Perform standard vertical down-cast to snap precisely to colliders
         // Use a safe height (at least camera height) to prevent falling through the floor forever
         float safeY = Mathf.Max(transform.position.y, userCamera != null ? userCamera.position.y : 0f) + 10.0f;
@@ -120,13 +154,43 @@ public class GroundSnap : MonoBehaviour
             if (h.point.y > highestGround)
             {
                 highestGround = h.point.y;
+                normal = h.normal;
                 found = true;
             }
         }
         
         if (found) return highestGround;
 
-        // Fallback baseline zero-plane
+        // Fallback 1: AR Raycast against detected AR Planes
+        if (_arRaycastManager != null)
+        {
+            // ARRaycastManager requires screen point or Ray. We construct a ray from safeY downwards.
+            Ray ray = new Ray(rayOrigin, Vector3.down);
+            if (_arRaycastManager.Raycast(ray, s_Hits, TrackableType.PlaneWithinPolygon))
+            {
+                // Find the highest point
+                highestGround = -1000f;
+                foreach (var hit in s_Hits)
+                {
+                    if (hit.pose.position.y > highestGround)
+                    {
+                        highestGround = hit.pose.position.y;
+                        // For planes, we could use hit.pose.up but Vector3.up is safe
+                        normal = Vector3.up; 
+                        found = true;
+                    }
+                }
+                if (found) return highestGround;
+            }
+        }
+
+        // Fallback 2: Heuristic floor level based on user height
+        if (userCamera != null)
+        {
+            return userCamera.position.y - 1.5f; // Assumes phone is held at 1.5m height
+        }
+
+        // Fallback 3: baseline zero-plane
         return 0f; 
     }
 

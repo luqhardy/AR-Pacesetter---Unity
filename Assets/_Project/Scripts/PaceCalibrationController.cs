@@ -14,12 +14,17 @@ public class PaceCalibrationController : MonoBehaviour
 
     void Start()
     {
+        // 1. Resolve Dependencies
         if (avatarEngine == null)
-            avatarEngine = FindObjectOfType<AvatarEngine>();
+        {
+            // Update: search including inactive objects as the avatar might be in Standby
+            avatarEngine = GetComponent<AvatarEngine>() ?? FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
+        }
 
-        // Try to find the button dynamically if not assigned
+        // 2. Resolve Start Button
         if (startButton == null)
         {
+            // Search for button by name in the scene
             GameObject startBtnObj = GameObject.Find("Start Button") ?? GameObject.Find("StartButton");
             if (startBtnObj != null)
             {
@@ -27,39 +32,57 @@ public class PaceCalibrationController : MonoBehaviour
             }
         }
 
+        // 3. Hook up Start Button
         if (startButton != null)
         {
+            startButton.onClick.RemoveListener(StartRunning); // Avoid duplicate listeners
             startButton.onClick.AddListener(StartRunning);
+            Debug.Log($"[UI] Start Button hooked to {startButton.gameObject.name}");
         }
         else
         {
+            Debug.LogWarning("[UI] Start Button not assigned or found. Attempting dynamic creation.");
             CreateDynamicStartButton();
         }
 
-        if (paceSlider == null || avatarEngine == null) return;
+        // 4. Hook up Pace Slider
+        if (paceSlider != null)
+        {
+            paceSlider.minValue = 3.5f;
+            paceSlider.maxValue = 7.0f;
+            paceSlider.onValueChanged.RemoveListener(OnPaceSliderMoved);
+            paceSlider.onValueChanged.AddListener(OnPaceSliderMoved);
 
-        // Initialize slider properties programmatically
-        paceSlider.minValue = 3.5f; // Elite 3:30/km minimum limit
-        paceSlider.maxValue = 7.0f; // Easy 7:00/km maximum recovery pace
+            // Set default
+            if (avatarEngine != null)
+            {
+                paceSlider.value = avatarEngine.TargetPaceMinutesPerKm;
+                OnPaceSliderMoved(paceSlider.value);
+            }
+            else
+            {
+                paceSlider.value = 5.0f;
+                OnPaceSliderMoved(5.0f);
+            }
+        }
+        else
+        {
+            Debug.LogError("[UI] Pace Slider reference is missing in PaceCalibrationController!");
+        }
 
-        // Add a listener loop to catch updates automatically when the player drags the slider
-        paceSlider.onValueChanged.AddListener(OnPaceSliderMoved);
-
-        // Set baseline default position
-        paceSlider.value = 5.0f;
-        OnPaceSliderMoved(5.0f);
+        if (avatarEngine == null)
+        {
+            Debug.LogError("[UI] AvatarEngine not found! Start Run button will not work. Ensure Avatar is in the scene.");
+        }
     }
 
     public void OnPaceSliderMoved(float sliderValue)
     {
         if (avatarEngine != null)
         {
-            // Update the math engine's target velocity matrix instantly
             avatarEngine.UpdateTargetPace(sliderValue);
         }
 
-        // Format raw mathematical decimals back into readable running splits
-        // Example: 4.5 minutes turns into 4 minutes and 30 seconds (4:30/km)
         int minutes = Mathf.FloorToInt(sliderValue);
         int seconds = Mathf.FloorToInt((sliderValue - minutes) * 60f);
 
@@ -71,26 +94,46 @@ public class PaceCalibrationController : MonoBehaviour
 
     private void StartRunning()
     {
-        if (avatarEngine != null)
+        if (avatarEngine == null)
         {
-            avatarEngine.StartPacing();
+            // Late binding attempt including inactive
+            avatarEngine = FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
         }
 
-        if (startButton != null)
+        if (avatarEngine != null)
         {
-            startButton.gameObject.SetActive(false);
+            Debug.Log("[UI] Start Button Clicked - Starting Pacing.");
+            avatarEngine.StartPacing();
+            
+            // Only hide the button if we actually have an engine to start
+            if (startButton != null)
+            {
+                startButton.gameObject.SetActive(false);
+            }
+        }
+        else
+        {
+            Debug.LogError("[UI] Start Button Clicked but AvatarEngine is still missing! Is the avatar prefab missing?");
         }
     }
 
     private void CreateDynamicStartButton()
     {
         Canvas canvas = null;
-        GameObject hudCanvas = GameObject.Find("HUD_Canvas");
+        GameObject hudCanvas = GameObject.Find("HUD_Canvas") ?? GameObject.Find("Canvas");
         if (hudCanvas != null)
             canvas = hudCanvas.GetComponent<Canvas>();
+        
         if (canvas == null)
-            canvas = FindObjectOfType<Canvas>();
-        if (canvas == null) return;
+            canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
+        
+        if (canvas == null)
+        {
+            Debug.LogError("[UI] Cannot create dynamic button: No Canvas found in scene!");
+            return;
+        }
+
+        Debug.Log($"[UI] Creating dynamic Start Button on {canvas.name}");
 
         // Create Button GameObject
         GameObject btnObj = new GameObject("Dynamic Start Button", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));

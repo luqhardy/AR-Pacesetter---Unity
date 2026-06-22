@@ -136,19 +136,19 @@ public class AvatarEngine : MonoBehaviour
         if (userCamera != null)
         {
             _lastFrameUserPosition   = userCamera.position;
-            _currentLinearDirection  = userCamera.forward;
-            _currentLinearDirection.y = 0;
-            _currentLinearDirection.Normalize();
-            _targetPacingPosition    = userCamera.position + (_currentLinearDirection * leadDistanceMeters);
+            UpdatePurifiedHeading(); // Initial heading calculation
             
-            // Fix: Initialize tracking height to current transform (ground) height instead of camera height
-            _targetPacingPosition.y = transform.position.y;
+            // Set initial position at current lead distance but keep HasStarted false
+            _targetPacingPosition    = userCamera.position + (_currentLinearDirection * leadDistanceMeters);
+            _targetPacingPosition.y  = transform.position.y;
             
             _smoothRotation          = Quaternion.LookRotation(_currentLinearDirection);
+            transform.position       = _targetPacingPosition;
+            transform.rotation       = _smoothRotation;
         }
 
         if (gameStateController == null)
-            gameStateController = FindObjectOfType<GameStateController>();
+            gameStateController = FindFirstObjectByType<GameStateController>();
 
         CalculateVelocityMatrix(targetPaceMinutesPerKm);
 
@@ -156,11 +156,35 @@ public class AvatarEngine : MonoBehaviour
         InitKalmanFilter(0.05f, 0.8f, 0.12f);
         _isKalmanInitialized = true;
 #endif
+        Debug.Log("[PACER ENGINE] Initialized and waiting for Start command.");
     }
 
     void Update()
     {
         if (userCamera == null) return;
+
+        // Always update speed maintenance to ensure multipliers are fresh
+        UpdateSpeedMaintenance();
+
+        // ── Pre-start logic ─────────────────────────────────────────────────
+        if (!_hasStarted)
+        {
+            // Update purified heading but don't move forward yet
+            UpdatePurifiedHeading();
+            
+            // Calculate where the avatar SHOULD be (lead distance ahead of user)
+            Vector3 rawAnchor = userCamera.position + (_currentLinearDirection * leadDistanceMeters);
+            _targetPacingPosition = rawAnchor;
+            
+            // Apply the position immediately so it stays stuck 3m ahead of user
+            // GroundSnap will handle the Y in LateUpdate
+            _targetPacingPosition.y = transform.position.y;
+            transform.position = _targetPacingPosition;
+            
+            // While waiting, look at the user or stay ahead
+            RunHaltedFaceUser();
+            return;
+        }
 
         // ── GPS Drop-out / State Machine (AGENTS.md §5) ──────────────────────
         bool gpsLost = false;
@@ -170,16 +194,6 @@ public class AvatarEngine : MonoBehaviour
             gpsLost = (state == GameStateController.ARVisionState.InertialMovement
                     || state == GameStateController.ARVisionState.FadeOut
                     || state == GameStateController.ARVisionState.Standby);
-        }
-
-        // Always update speed maintenance to ensure multipliers are fresh
-        UpdateSpeedMaintenance();
-
-        // ── Pre-start halt control ──────────────────────────────────────────
-        if (!_hasStarted)
-        {
-            RunHaltedFaceUser();
-            return;
         }
 
         if (gpsLost)
@@ -223,6 +237,7 @@ public class AvatarEngine : MonoBehaviour
             Vector3 rawAnchor = userCamera.position
                               + (_currentLinearDirection * leadDistanceMeters)
                               + _sidestepOffset;
+            rawAnchor.y = transform.position.y;
             filtered  = SmoothSpatialData(rawAnchor);
             
             // Safety guard against C++ Kalman Filter returning NaN during initialization
@@ -234,6 +249,7 @@ public class AvatarEngine : MonoBehaviour
 
         // Track Kalman velocity for jitter-fallback use next frame, clamped to a safe sprint speed
         Vector3 rawVelocity = (filtered - _targetPacingPosition) / Mathf.Max(Time.deltaTime, 0.001f);
+        rawVelocity.y = 0;
         _lastCleanKalmanVelocity = Vector3.ClampMagnitude(rawVelocity, 10.0f);
 
         // Blend position with elastic catchup speed (Feature #3)
