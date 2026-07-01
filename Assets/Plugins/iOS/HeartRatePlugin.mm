@@ -158,8 +158,11 @@ extern "C" {
     static float estimateX = 0.0f;
     static float estimateY = 0.0f;
     static float estimateZ = 0.0f;
-    static float processNoise = 0.1f;
-    static float measurementNoise = 0.8f;
+    static float pX = 1.0f;
+    static float pY = 1.0f;
+    static float pZ = 1.0f;
+    static float processNoise = 0.05f; // Q
+    static float measurementNoise = 0.8f; // R
     static float lteWeight = 0.12f;
 
     void InitKalmanFilter(float pNoise, float mNoise, float lteW) {
@@ -169,12 +172,32 @@ extern "C" {
         estimateX = 0.0f;
         estimateY = 0.0f;
         estimateZ = 0.0f;
+        pX = 1.0f;
+        pY = 1.0f;
+        pZ = 1.0f;
     }
 
     void UpdateKalmanFilter(float accelX, float accelY, float accelZ, float* smoothX, float* smoothY, float* smoothZ) {
-        estimateX += (accelX - estimateX) * processNoise;
-        estimateY += (accelY - estimateY) * processNoise;
-        estimateZ += (accelZ - estimateZ) * processNoise;
+        // Predict stage
+        pX = pX + processNoise;
+        pY = pY + processNoise;
+        pZ = pZ + processNoise;
+
+        // Kalman Gain calculation
+        float kX = pX / (pX + measurementNoise);
+        float kY = pY / (pY + measurementNoise);
+        float kZ = pZ / (pZ + measurementNoise);
+
+        // Correction stage (state update)
+        estimateX = estimateX + kX * (accelX - estimateX);
+        estimateY = estimateY + kY * (accelY - estimateY);
+        estimateZ = estimateZ + kZ * (accelZ - estimateZ);
+
+        // Error covariance update stage
+        pX = (1.0f - kX) * pX;
+        pY = (1.0f - kY) * pY;
+        pZ = (1.0f - kZ) * pZ;
+
         *smoothX = estimateX;
         *smoothY = estimateY;
         *smoothZ = estimateZ;

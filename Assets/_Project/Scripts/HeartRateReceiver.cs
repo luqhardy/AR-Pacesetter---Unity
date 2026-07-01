@@ -31,6 +31,12 @@ public class HeartRateReceiver : MonoBehaviour
     {
         if (int.TryParse(rawBpmString, out int cleanBpm))
         {
+            // Discard invalid zero readings (common transient BLE drops)
+            if (cleanBpm <= 0) return;
+
+            // Clamp to standard human physiological bounds to protect metrics
+            cleanBpm = Mathf.Clamp(cleanBpm, 40, 220);
+
             Debug.Log($"[BIOMETRIC INGESTION] Live BLE Heart Rate Update: {cleanBpm} BPM");
 
             // 1. Route to the Avatar Engine to accelerate/decelerate the color pulse frequency
@@ -52,6 +58,12 @@ public class HeartRateReceiver : MonoBehaviour
     {
         if (float.TryParse(rawPitchString, out float cleanPitch))
         {
+            // Discard invalid zero readings
+            if (cleanPitch <= 0.01f) return;
+
+            // Clamp to normal human running cadences
+            cleanPitch = Mathf.Clamp(cleanPitch, 50f, 250f);
+
             Debug.Log($"[BIOMETRIC INGESTION] Live Apple Watch Running Pitch: {cleanPitch:F1} SPM");
 
             // Route to the Peripheral HUD to display the actual running pitch cadence

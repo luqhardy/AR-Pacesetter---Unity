@@ -6,6 +6,7 @@ public class AnalyticsManager : MonoBehaviour
     [Header("Tracking Parameters")]
     [SerializeField] private Transform userCamera;       // XR Origin Main Camera
     [SerializeField] private Transform avatarContainer;  // Pacing companion anchor
+    [SerializeField] private AvatarEngine avatarEngine;
 
     [Header("Environment Configuration")]
     [Range(15f, 40f)]
@@ -30,9 +31,22 @@ public class AnalyticsManager : MonoBehaviour
         set => ambientTemperatureCelsius = value;
     }
 
+    void Start()
+    {
+        if (avatarEngine == null && avatarContainer != null)
+        {
+            avatarEngine = avatarContainer.GetComponent<AvatarEngine>();
+        }
+        if (avatarEngine == null)
+        {
+            avatarEngine = FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
+        }
+    }
+
     void Update()
     {
         if (userCamera == null || avatarContainer == null) return;
+        if (avatarEngine == null || !avatarEngine.HasStarted) return;
 
         // 1. Calculate Real-Time Sync Rate (Requirement 4.3) - horizontal plane only
         float separationDistance = GetHorizontalSeparationDistance();

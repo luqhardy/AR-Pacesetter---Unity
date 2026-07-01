@@ -24,6 +24,11 @@ public class GroundSnap : MonoBehaviour
     private bool _simulateObstacleActive = false;
     private bool _wasHaltedLastFrame = false;
     private bool _isEasing = false;
+    private float _lerpTimer = 0f;
+    private float _startY = 0f;
+    
+    private static RaycastHit[] s_RaycastHits = new RaycastHit[32];
+    private static RaycastHit[] s_SphereCastHits = new RaycastHit[32];
 
     [Header("Terrain Alignment")]
     [SerializeField] private bool alignWithTerrainNormal = true;
@@ -98,18 +103,44 @@ public class GroundSnap : MonoBehaviour
         Vector3 groundNormal;
         float currentDetectedGroundHeight = GetCurrentGroundLevel(out groundNormal); 
 
-        // Always smooth to target to absorb LiDAR noise. 
-        // Use 0.3s (smoothTime) for > 15cm changes, and a faster 0.1s for <= 15cm bumps.
-        float activeSmoothTime = Mathf.Abs(currentDetectedGroundHeight - transform.position.y) > stepThreshold ? smoothTime : 0.1f;
-        _targetY = currentDetectedGroundHeight;
-
-        float smoothedY = Mathf.SmoothDamp(transform.position.y, _targetY, ref _currentYVelocity, activeSmoothTime);
-
-        // Prevent floating precision jitter when very close
-        if (Mathf.Abs(smoothedY - _targetY) < 0.001f)
+        // Exactly 0.3 seconds easing rule for changes > 15cm
+        if (Mathf.Abs(currentDetectedGroundHeight - _targetY) > stepThreshold)
         {
-            smoothedY = _targetY;
-            _currentYVelocity = 0.0f;
+            _targetY = currentDetectedGroundHeight;
+            _isEasing = true;
+            _lerpTimer = 0f;
+            _startY = transform.position.y;
+        }
+        else if (!_isEasing)
+        {
+            _targetY = currentDetectedGroundHeight;
+        }
+
+        float smoothedY = transform.position.y;
+        
+        if (_isEasing)
+        {
+            _lerpTimer += Time.deltaTime;
+            float t = Mathf.Clamp01(_lerpTimer / smoothTime);
+            // Smooth cubic ease-in-out
+            float easeT = t * t * (3f - 2f * t);
+            smoothedY = Mathf.Lerp(_startY, _targetY, easeT);
+            
+            if (t >= 1.0f)
+            {
+                _isEasing = false;
+                smoothedY = _targetY;
+            }
+        }
+        else
+        {
+            // For <= 15cm bumps, use faster 0.1s smoothdamp to absorb LiDAR noise
+            smoothedY = Mathf.SmoothDamp(transform.position.y, _targetY, ref _currentYVelocity, 0.1f);
+            if (Mathf.Abs(smoothedY - _targetY) < 0.001f)
+            {
+                smoothedY = _targetY;
+                _currentYVelocity = 0.0f;
+            }
         }
 
         transform.position = new Vector3(transform.position.x, smoothedY, transform.position.z);
@@ -139,12 +170,13 @@ public class GroundSnap : MonoBehaviour
         float safeY = Mathf.Max(transform.position.y, userCamera != null ? userCamera.position.y : 0f) + 10.0f;
         Vector3 rayOrigin = new Vector3(transform.position.x, safeY, transform.position.z);
         
-        RaycastHit[] hits = Physics.RaycastAll(rayOrigin, Vector3.down, 20.0f, environmentLayerMask);
+        int hitCount = Physics.RaycastNonAlloc(rayOrigin, Vector3.down, s_RaycastHits, 20.0f, environmentLayerMask);
         float highestGround = -1000f;
         bool found = false;
         
-        foreach (var h in hits)
+        for (int i = 0; i < hitCount; i++)
         {
+            var h = s_RaycastHits[i];
             // Ignore the avatar's own colliders
             if (h.transform.root == transform.root) continue;
             
@@ -206,16 +238,16 @@ public class GroundSnap : MonoBehaviour
 
         // 2. Continuous LiDAR-like spatial scanning
         // Perform a horizontal spherecast/raycast from the user camera forward vector
-        RaycastHit hit;
         Vector3 rayOrigin = userCamera.position;
         Vector3 rayDirection = userCamera.forward;
         rayDirection.y = 0; // Lock to horizontal tracking plane
         rayDirection.Normalize();
 
         // Cast a sphere forward up to 3.0 meters (Requirement 4.2)
-        RaycastHit[] hits = Physics.SphereCastAll(rayOrigin, 0.4f, rayDirection, obstacleDetectionDistance, obstacleLayerMask);
-        foreach (var h in hits)
+        int sphereHitCount = Physics.SphereCastNonAlloc(rayOrigin, 0.4f, rayDirection, s_SphereCastHits, obstacleDetectionDistance, obstacleLayerMask);
+        for (int i = 0; i < sphereHitCount; i++)
         {
+            var h = s_SphereCastHits[i];
             if (h.transform.root == transform.root) continue;
             
             // Verify if the height of the obstruction qualifies as a solid cliff or wall (>= 1.5m)
@@ -233,12 +265,13 @@ public class GroundSnap : MonoBehaviour
         // Perform a vertical raycast down exactly 3.0 meters ahead along user path of progression.
         // If the ground drops dramatically (cliff edge) or is missing, halt progression.
         Vector3 checkAheadPoint = userCamera.position + (rayDirection * obstacleDetectionDistance);
-        RaycastHit[] cliffHits = Physics.RaycastAll(checkAheadPoint + (Vector3.up * 2.0f), Vector3.down, 10.0f, environmentLayerMask);
+        int cliffHitCount = Physics.RaycastNonAlloc(checkAheadPoint + (Vector3.up * 2.0f), Vector3.down, s_RaycastHits, 10.0f, environmentLayerMask);
         
         bool foundGroundAhead = false;
         float groundLevelAhead = -1000f;
-        foreach (var h in cliffHits)
+        for (int i = 0; i < cliffHitCount; i++)
         {
+            var h = s_RaycastHits[i];
             if (h.transform.root == transform.root) continue;
             if (h.point.y > groundLevelAhead)
             {
@@ -246,13 +279,19 @@ public class GroundSnap : MonoBehaviour
                 foundGroundAhead = true;
             }
         }
+
+        float userGroundLevel = transform.position.y;
+        RaycastHit userGroundHit;
+        bool groundUnderUser = Physics.Raycast(userCamera.position + Vector3.up * 2.0f, Vector3.down, out userGroundHit, 20.0f, environmentLayerMask);
+        if (groundUnderUser)
+        {
+            userGroundLevel = userGroundHit.point.y;
+        }
         
         if (foundGroundAhead)
         {
-            float currentGroundLevel = transform.position.y;
-            
-            // If the ground drop ahead is greater than or equal to 1.5m, qualify it as a cliff
-            if (currentGroundLevel - groundLevelAhead >= minObstacleHeight)
+            // Compare ground level ahead with the user's ground level to prevent snapping feedback loop issues
+            if (userGroundLevel - groundLevelAhead >= minObstacleHeight)
             {
                 return true;
             }
@@ -262,8 +301,6 @@ public class GroundSnap : MonoBehaviour
             // If we cast down 10 meters and find no ground, check if there is ground under the user.
             // If there is ground under the user, then missing ground ahead is a real cliff/void.
             // If there is no ground under the user either, we are in a colliderless scene, so do not halt.
-            RaycastHit userGroundHit;
-            bool groundUnderUser = Physics.Raycast(userCamera.position + Vector3.up * 2.0f, Vector3.down, out userGroundHit, 20.0f, environmentLayerMask);
             if (groundUnderUser)
             {
                 return true;
@@ -279,6 +316,7 @@ public class GroundSnap : MonoBehaviour
         Animator animator = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : GetComponentInChildren<Animator>();
         if (animator != null)
         {
+            animator.SetBool("IsHalted", isHalted);
             animator.SetBool("IsInPlaceJog", isHalted);
         }
     }

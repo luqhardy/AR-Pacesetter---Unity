@@ -27,8 +27,29 @@ public class SafetyAndSystemController : MonoBehaviour
     private bool _isTtcWarningActive = false;
     private bool _simulateTtcThreat = false;
 
+    private Vector3 _lastUserPos;
+    private float _userSpeed = 0.0f;
+    private bool _isUserPosInitialized = false;
+
     void Update()
     {
+        // Track user speed
+        if (userCamera != null)
+        {
+            if (!_isUserPosInitialized)
+            {
+                _lastUserPos = userCamera.position;
+                _isUserPosInitialized = true;
+            }
+            else
+            {
+                Vector3 userMove = userCamera.position - _lastUserPos;
+                userMove.y = 0;
+                _userSpeed = userMove.magnitude / Mathf.Max(Time.deltaTime, 0.001f);
+                _lastUserPos = userCamera.position;
+            }
+        }
+
         // Editor: toggle simulated TTC threat with T
         if (Input.GetKeyDown(KeyCode.T))
         {
@@ -82,8 +103,8 @@ public class SafetyAndSystemController : MonoBehaviour
             return;
         }
 
-        float closingSpeed = (avatarEngine != null)
-            ? avatarEngine.GetTargetSpeed()
+        float closingSpeed = (userCamera != null)
+            ? _userSpeed
             : 3.5f;
 
         float ttc = distanceToObstacle / Mathf.Max(closingSpeed, 0.1f);

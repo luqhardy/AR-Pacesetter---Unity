@@ -97,6 +97,7 @@ public class AvatarEngine : MonoBehaviour
     private float   _lastFrameDeltaTime       = 0.0f;
     private Vector3 _lastCleanKalmanVelocity  = Vector3.zero;
     private const float JitterThresholdSeconds = 0.005f;
+    private float   _lastJitterWarningTime    = -99f;
 
     // ── Speed Maintenance state (Feature #3) ────────────────────────────────
     private float _effectiveSpeedMultiplier = 1.0f; // blended each frame
@@ -114,6 +115,7 @@ public class AvatarEngine : MonoBehaviour
     public float TargetPaceMinutesPerKm => targetPaceMinutesPerKm;
     public OvertakeState CurrentOvertakeState => _overtakeState;
     public bool HasStarted => _hasStarted;
+    public bool IsOverriddenByRecovery { get; set; } = false;
 
     public void StartPacing()
     {
@@ -166,6 +168,15 @@ public class AvatarEngine : MonoBehaviour
         // Always update speed maintenance to ensure multipliers are fresh
         UpdateSpeedMaintenance();
 
+        if (IsOverriddenByRecovery)
+        {
+            // Skip positioning, but keep histories and trackers fresh
+            UpdatePurifiedHeading();
+            _lastFrameUserPosition = userCamera.position;
+            _lastFrameDeltaTime = Time.deltaTime;
+            return;
+        }
+
         // ── Pre-start logic ─────────────────────────────────────────────────
         if (!_hasStarted)
         {
@@ -216,11 +227,14 @@ public class AvatarEngine : MonoBehaviour
         Vector3 filtered;
         if (jitterSpike)
         {
-            Debug.LogWarning($"[JITTER GUARD] Frame-delta spike: {frameDeltaDrift * 1000f:F2}ms. Using prediction based on last good delta.");
+            if (Time.time - _lastJitterWarningTime > 2.0f)
+            {
+                Debug.LogWarning($"[JITTER GUARD] Frame-delta spike: {frameDeltaDrift * 1000f:F2}ms. Using prediction based on last good delta.");
+                _lastJitterWarningTime = Time.time;
+            }
             
-            // Fix: Use last GOOD delta time instead of the spiked one to prevent jumps
-            float predictDelta = _lastFrameDeltaTime;
-            filtered = _targetPacingPosition + _lastCleanKalmanVelocity * predictDelta;
+            // Fix: Advance by the current spiked Time.deltaTime since that represents actual elapsed time
+            filtered = _targetPacingPosition + _lastCleanKalmanVelocity * Time.deltaTime;
             
             // Update _lastFrameDeltaTime slightly so we adapt to new framerates and don't get permanently stuck
             _lastFrameDeltaTime = Mathf.Lerp(_lastFrameDeltaTime, Time.deltaTime, 0.1f);
