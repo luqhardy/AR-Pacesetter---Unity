@@ -2,174 +2,443 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
+/// <summary>
+/// Pre-run setup UI: user enters target pace, then taps Start before pacing begins.
+/// Builds a simple panel at runtime if one is not assigned in the Inspector.
+/// </summary>
 public class PaceCalibrationController : MonoBehaviour
 {
+    private const float MinPaceMinutesPerKm = 3.5f;
+    private const float MaxPaceMinutesPerKm = 7.0f;
+    private const string DefaultPaceText = "5:00";
+
     [Header("Engine Reference")]
     [SerializeField] private AvatarEngine avatarEngine;
 
-    [Header("UI Component Hookups")]
+    [Header("UI (optional — built at runtime if empty)")]
+    [SerializeField] private GameObject setupPanel;
+    [SerializeField] private TMP_InputField paceInputField;
+    [SerializeField] private TextMeshProUGUI paceHintLabel;
+    [SerializeField] private TextMeshProUGUI validationLabel;
+    [SerializeField] private Button startButton;
+
+    [Header("Legacy slider support")]
     [SerializeField] private Slider paceSlider;
     [SerializeField] private TextMeshProUGUI paceDisplayLabel;
-    [SerializeField] private Button startButton;
+
+    [Header("Setup")]
+    [SerializeField] private bool buildSetupPanelAtRuntime = true;
+
+    private float _selectedPaceMinutesPerKm = 5.0f;
+    private bool _hasStarted;
+
+    void Awake()
+    {
+        if (avatarEngine == null)
+            avatarEngine = FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
+    }
 
     void Start()
     {
-        // 1. Resolve Dependencies
-        if (avatarEngine == null)
+        if (buildSetupPanelAtRuntime && setupPanel == null)
+            BuildSetupPanel();
+
+        EnsureCanvasVisible();
+
+        if (paceInputField != null)
         {
-            // Update: search including inactive objects as the avatar might be in Standby
-            avatarEngine = GetComponent<AvatarEngine>() ?? FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
+            paceInputField.text = DefaultPaceText;
+            paceInputField.onEndEdit.AddListener(OnPaceInputChanged);
+            OnPaceInputChanged(paceInputField.text);
         }
 
-        // 2. Resolve Start Button
-        if (startButton == null)
-        {
-            // Search for button by name in the scene
-            GameObject startBtnObj = GameObject.Find("Start Button") ?? GameObject.Find("StartButton");
-            if (startBtnObj != null)
-            {
-                startButton = startBtnObj.GetComponent<Button>();
-            }
-        }
-
-        // 3. Hook up Start Button
-        if (startButton != null)
-        {
-            startButton.onClick.RemoveListener(StartRunning); // Avoid duplicate listeners
-            startButton.onClick.AddListener(StartRunning);
-            Debug.Log($"[UI] Start Button hooked to {startButton.gameObject.name}");
-        }
-        else
-        {
-            Debug.LogWarning("[UI] Start Button not assigned or found. Attempting dynamic creation.");
-            CreateDynamicStartButton();
-        }
-
-        // 4. Hook up Pace Slider
         if (paceSlider != null)
         {
-            paceSlider.minValue = 3.5f;
-            paceSlider.maxValue = 7.0f;
-            paceSlider.onValueChanged.RemoveListener(OnPaceSliderMoved);
+            paceSlider.minValue = MinPaceMinutesPerKm;
+            paceSlider.maxValue = MaxPaceMinutesPerKm;
             paceSlider.onValueChanged.AddListener(OnPaceSliderMoved);
-
-            // Set default
-            if (avatarEngine != null)
-            {
-                paceSlider.value = avatarEngine.TargetPaceMinutesPerKm;
-                OnPaceSliderMoved(paceSlider.value);
-            }
-            else
-            {
-                paceSlider.value = 5.0f;
-                OnPaceSliderMoved(5.0f);
-            }
+            paceSlider.value = _selectedPaceMinutesPerKm;
+            OnPaceSliderMoved(paceSlider.value);
         }
-        else
+
+        if (startButton != null)
         {
-            Debug.LogError("[UI] Pace Slider reference is missing in PaceCalibrationController!");
+            startButton.onClick.RemoveListener(StartRunning);
+            startButton.onClick.AddListener(StartRunning);
         }
 
         if (avatarEngine == null)
-        {
-            Debug.LogError("[UI] AvatarEngine not found! Start Run button will not work. Ensure Avatar is in the scene.");
-        }
+            SetValidationMessage("Avatar not found in scene.", true);
     }
 
     public void OnPaceSliderMoved(float sliderValue)
     {
-        if (avatarEngine != null)
-        {
-            avatarEngine.UpdateTargetPace(sliderValue);
-        }
-
-        int minutes = Mathf.FloorToInt(sliderValue);
-        int seconds = Mathf.FloorToInt((sliderValue - minutes) * 60f);
+        ApplyPace(sliderValue);
 
         if (paceDisplayLabel != null)
-        {
-            paceDisplayLabel.text = string.Format("Target Pace: {0}:{1:00} /km", minutes, seconds);
-        }
+            paceDisplayLabel.text = $"Target Pace: {FormatPace(sliderValue)}";
+
+        if (paceInputField != null)
+            paceInputField.SetTextWithoutNotify(FormatPaceInput(sliderValue));
     }
 
-    private void StartRunning()
+    public void OnPaceInputChanged(string rawInput)
     {
-        if (avatarEngine == null)
+        if (TryParsePace(rawInput, out float pace))
         {
-            // Late binding attempt including inactive
-            avatarEngine = FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
-        }
+            ApplyPace(pace);
+            SetValidationMessage($"Target: {FormatPace(pace)}", false);
 
-        if (avatarEngine != null)
-        {
-            Debug.Log("[UI] Start Button Clicked - Starting Pacing.");
-            avatarEngine.StartPacing();
-            
-            // Only hide the button if we actually have an engine to start
-            if (startButton != null)
-            {
-                startButton.gameObject.SetActive(false);
-            }
+            if (paceSlider != null)
+                paceSlider.SetValueWithoutNotify(pace);
+
+            if (paceDisplayLabel != null)
+                paceDisplayLabel.text = $"Target Pace: {FormatPace(pace)}";
         }
         else
         {
-            Debug.LogError("[UI] Start Button Clicked but AvatarEngine is still missing! Is the avatar prefab missing?");
+            SetValidationMessage("Enter pace as M:SS (e.g. 5:30) or decimal (e.g. 5.5). Range: 3:30–7:00 /km.", true);
         }
     }
 
-    private void CreateDynamicStartButton()
+    public void StartRunning()
     {
-        Canvas canvas = null;
-        GameObject hudCanvas = GameObject.Find("HUD_Canvas") ?? GameObject.Find("Canvas");
-        if (hudCanvas != null)
-            canvas = hudCanvas.GetComponent<Canvas>();
-        
-        if (canvas == null)
-            canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
-        
-        if (canvas == null)
+        if (_hasStarted) return;
+
+        string paceText = paceInputField != null ? paceInputField.text : DefaultPaceText;
+        if (!TryParsePace(paceText, out float pace))
         {
-            Debug.LogError("[UI] Cannot create dynamic button: No Canvas found in scene!");
+            SetValidationMessage("Invalid pace. Use M:SS between 3:30 and 7:00 per km.", true);
             return;
         }
 
-        Debug.Log($"[UI] Creating dynamic Start Button on {canvas.name}");
+        if (avatarEngine == null)
+            avatarEngine = FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
 
-        // Create Button GameObject
-        GameObject btnObj = new GameObject("Dynamic Start Button", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
-        btnObj.transform.SetParent(canvas.transform, false);
+        if (avatarEngine == null)
+        {
+            SetValidationMessage("Cannot start — AvatarEngine is missing.", true);
+            return;
+        }
 
-        // Position it nicely above the slider (slider is usually centered bottom)
-        RectTransform rt = btnObj.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0.5f, 0f);
-        rt.anchorMax = new Vector2(0.5f, 0f);
-        rt.anchoredPosition = new Vector2(0f, 250f); // Positioned above the slider
-        rt.sizeDelta = new Vector2(180f, 60f);
+        ApplyPace(pace);
+        avatarEngine.StartPacing();
+        _hasStarted = true;
 
-        // Styling
-        Image img = btnObj.GetComponent<Image>();
-        img.color = new Color(0f, 0.73f, 1f, 0.95f); // Tech Cyan
+        if (setupPanel != null)
+            setupPanel.SetActive(false);
 
-        Button btn = btnObj.GetComponent<Button>();
-        btn.onClick.AddListener(StartRunning);
-        startButton = btn;
+        if (paceSlider != null)
+            paceSlider.gameObject.SetActive(false);
 
-        // Create Text child
-        GameObject txtObj = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer));
-        txtObj.transform.SetParent(btnObj.transform, false);
-        
-        RectTransform txtRt = txtObj.GetComponent<RectTransform>();
-        txtRt.anchorMin = Vector2.zero;
-        txtRt.anchorMax = Vector2.one;
-        txtRt.sizeDelta = Vector2.zero;
+        if (paceDisplayLabel != null)
+            paceDisplayLabel.gameObject.SetActive(false);
+    }
 
-        TextMeshProUGUI tmpText = txtObj.AddComponent<TextMeshProUGUI>();
-        if (paceDisplayLabel != null && paceDisplayLabel.font != null)
-            tmpText.font = paceDisplayLabel.font;
-        tmpText.text = "START RUN";
-        tmpText.alignment = TextAlignmentOptions.Center;
-        tmpText.fontSize = 18f;
-        tmpText.color = Color.white;
-        tmpText.fontStyle = FontStyles.Bold;
+    private void ApplyPace(float paceMinutesPerKm)
+    {
+        _selectedPaceMinutesPerKm = Mathf.Clamp(paceMinutesPerKm, MinPaceMinutesPerKm, MaxPaceMinutesPerKm);
+        if (avatarEngine != null)
+            avatarEngine.UpdateTargetPace(_selectedPaceMinutesPerKm);
+    }
+
+    private void BuildSetupPanel()
+    {
+        Canvas canvas = FindCanvas();
+        if (canvas == null)
+        {
+            Debug.LogError("[UI] No Canvas found — cannot build run setup panel.");
+            return;
+        }
+
+        EnsureCanvasVisible(canvas);
+
+        if (paceSlider != null)
+            paceSlider.gameObject.SetActive(false);
+
+        if (paceDisplayLabel != null)
+            paceDisplayLabel.gameObject.SetActive(false);
+
+        setupPanel = CreatePanel(canvas.transform, "RunSetupPanel",
+            new Color(0.04f, 0.06f, 0.1f, 0.92f));
+
+        RectTransform panelRt = setupPanel.GetComponent<RectTransform>();
+        panelRt.anchorMin = Vector2.zero;
+        panelRt.anchorMax = Vector2.one;
+        panelRt.offsetMin = Vector2.zero;
+        panelRt.offsetMax = Vector2.zero;
+
+        RectTransform card = CreateCard(setupPanel.transform);
+
+        CreateLabel(card, "AR Pacesetter", 34, FontStyles.Bold,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -28f), new Vector2(420f, 48f));
+
+        CreateLabel(card, "Set your target pace, then start the run.", 18, FontStyles.Normal,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -78f), new Vector2(420f, 32f),
+            new Color(0.75f, 0.82f, 0.9f, 1f));
+
+        CreateLabel(card, "Pace (min/km)", 16, FontStyles.Bold,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -128f), new Vector2(420f, 28f),
+            new Color(0.6f, 0.75f, 0.95f, 1f));
+
+        paceInputField = CreateInputField(card, new Vector2(0f, -168f));
+        paceInputField.text = DefaultPaceText;
+
+        paceHintLabel = CreateLabel(card, "Examples: 5:00, 5:30, 6:15  •  Range: 3:30 – 7:00 /km", 14,
+            FontStyles.Italic, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -228f),
+            new Vector2(420f, 28f), new Color(0.55f, 0.65f, 0.78f, 1f));
+
+        validationLabel = CreateLabel(card, "", 14, FontStyles.Normal,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -262f), new Vector2(420f, 28f),
+            new Color(1f, 0.55f, 0.45f, 1f));
+
+        startButton = CreateStartButton(card, new Vector2(0f, -318f));
+        startButton.onClick.AddListener(StartRunning);
+
+        OnPaceInputChanged(DefaultPaceText);
+    }
+
+    private void EnsureCanvasVisible()
+    {
+        Canvas canvas = FindCanvas();
+        if (canvas != null)
+            EnsureCanvasVisible(canvas);
+    }
+
+    private static void EnsureCanvasVisible(Canvas canvas)
+    {
+        if (canvas.transform.localScale == Vector3.zero)
+            canvas.transform.localScale = Vector3.one;
+    }
+
+    private Canvas FindCanvas()
+    {
+        GameObject hud = GameObject.Find("HUD_Canvas") ?? GameObject.Find("Canvas");
+        if (hud != null)
+        {
+            Canvas c = hud.GetComponent<Canvas>();
+            if (c != null) return c;
+        }
+
+        return FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
+    }
+
+    private void SetValidationMessage(string message, bool isError)
+    {
+        if (validationLabel == null) return;
+        validationLabel.text = message;
+        validationLabel.color = isError
+            ? new Color(1f, 0.55f, 0.45f, 1f)
+            : new Color(0.45f, 1f, 0.75f, 1f);
+    }
+
+    public static bool TryParsePace(string input, out float minutesPerKm)
+    {
+        minutesPerKm = 5f;
+        if (string.IsNullOrWhiteSpace(input))
+            return false;
+
+        input = input.Trim().ToLowerInvariant();
+        input = input.Replace("/km", string.Empty).Trim();
+
+        if (input.Contains(":"))
+        {
+            string[] parts = input.Split(':');
+            if (parts.Length != 2)
+                return false;
+
+            if (!int.TryParse(parts[0], out int minutes))
+                return false;
+            if (!int.TryParse(parts[1], out int seconds))
+                return false;
+
+            if (seconds < 0 || seconds >= 60)
+                return false;
+
+            minutesPerKm = minutes + seconds / 60f;
+            return minutesPerKm >= MinPaceMinutesPerKm && minutesPerKm <= MaxPaceMinutesPerKm;
+        }
+
+        if (!float.TryParse(input, out minutesPerKm))
+            return false;
+
+        return minutesPerKm >= MinPaceMinutesPerKm && minutesPerKm <= MaxPaceMinutesPerKm;
+    }
+
+    private static string FormatPace(float minutesPerKm)
+    {
+        int minutes = Mathf.FloorToInt(minutesPerKm);
+        int seconds = Mathf.RoundToInt((minutesPerKm - minutes) * 60f);
+        if (seconds >= 60)
+        {
+            minutes++;
+            seconds = 0;
+        }
+
+        return $"{minutes}:{seconds:00} /km";
+    }
+
+    private static string FormatPaceInput(float minutesPerKm)
+    {
+        int minutes = Mathf.FloorToInt(minutesPerKm);
+        int seconds = Mathf.RoundToInt((minutesPerKm - minutes) * 60f);
+        if (seconds >= 60)
+        {
+            minutes++;
+            seconds = 0;
+        }
+
+        return $"{minutes}:{seconds:00}";
+    }
+
+    private static GameObject CreatePanel(Transform parent, string name, Color color)
+    {
+        GameObject panel = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        panel.transform.SetParent(parent, false);
+        panel.GetComponent<Image>().color = color;
+        return panel;
+    }
+
+    private static RectTransform CreateCard(Transform parent)
+    {
+        GameObject card = new GameObject("SetupCard", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        card.transform.SetParent(parent, false);
+
+        Image img = card.GetComponent<Image>();
+        img.color = new Color(0.08f, 0.12f, 0.18f, 0.98f);
+
+        RectTransform rt = card.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0.5f);
+        rt.anchorMax = new Vector2(0.5f, 0.5f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = new Vector2(480f, 380f);
+        rt.anchoredPosition = Vector2.zero;
+        return rt;
+    }
+
+    private static TextMeshProUGUI CreateLabel(RectTransform parent, string text, float fontSize,
+        FontStyles style, Vector2 anchorMin, Vector2 anchorMax, Vector2 anchoredPos, Vector2 size,
+        Color? color = null)
+    {
+        GameObject go = new GameObject("Label", typeof(RectTransform), typeof(CanvasRenderer));
+        go.transform.SetParent(parent, false);
+
+        TextMeshProUGUI label = go.AddComponent<TextMeshProUGUI>();
+        label.text = text;
+        label.fontSize = fontSize;
+        label.fontStyle = style;
+        label.alignment = TextAlignmentOptions.Center;
+        label.color = color ?? Color.white;
+        label.raycastTarget = false;
+
+        RectTransform rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = anchorMin;
+        rt.anchorMax = anchorMax;
+        rt.pivot = new Vector2(0.5f, 1f);
+        rt.anchoredPosition = anchoredPos;
+        rt.sizeDelta = size;
+        return label;
+    }
+
+    private static TMP_InputField CreateInputField(RectTransform parent, Vector2 anchoredPos)
+    {
+        GameObject fieldRoot = new GameObject("PaceInput", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        fieldRoot.transform.SetParent(parent, false);
+
+        Image bg = fieldRoot.GetComponent<Image>();
+        bg.color = new Color(0.12f, 0.16f, 0.22f, 1f);
+
+        RectTransform fieldRt = fieldRoot.GetComponent<RectTransform>();
+        fieldRt.anchorMin = new Vector2(0.5f, 1f);
+        fieldRt.anchorMax = new Vector2(0.5f, 1f);
+        fieldRt.pivot = new Vector2(0.5f, 1f);
+        fieldRt.anchoredPosition = anchoredPos;
+        fieldRt.sizeDelta = new Vector2(220f, 52f);
+
+        GameObject textArea = new GameObject("Text Area", typeof(RectTransform));
+        textArea.transform.SetParent(fieldRoot.transform, false);
+        RectTransform textAreaRt = textArea.GetComponent<RectTransform>();
+        textAreaRt.anchorMin = Vector2.zero;
+        textAreaRt.anchorMax = Vector2.one;
+        textAreaRt.offsetMin = new Vector2(12f, 8f);
+        textAreaRt.offsetMax = new Vector2(-12f, -8f);
+
+        GameObject placeholderGo = new GameObject("Placeholder", typeof(RectTransform), typeof(CanvasRenderer));
+        placeholderGo.transform.SetParent(textArea.transform, false);
+        TextMeshProUGUI placeholder = placeholderGo.AddComponent<TextMeshProUGUI>();
+        placeholder.text = "5:00";
+        placeholder.fontSize = 28;
+        placeholder.color = new Color(1f, 1f, 1f, 0.35f);
+        placeholder.alignment = TextAlignmentOptions.MidlineLeft;
+
+        RectTransform placeholderRt = placeholderGo.GetComponent<RectTransform>();
+        placeholderRt.anchorMin = Vector2.zero;
+        placeholderRt.anchorMax = Vector2.one;
+        placeholderRt.offsetMin = Vector2.zero;
+        placeholderRt.offsetMax = Vector2.zero;
+
+        GameObject textGo = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer));
+        textGo.transform.SetParent(textArea.transform, false);
+        TextMeshProUGUI inputText = textGo.AddComponent<TextMeshProUGUI>();
+        inputText.fontSize = 28;
+        inputText.color = Color.white;
+        inputText.alignment = TextAlignmentOptions.MidlineLeft;
+
+        RectTransform textRt = textGo.GetComponent<RectTransform>();
+        textRt.anchorMin = Vector2.zero;
+        textRt.anchorMax = Vector2.one;
+        textRt.offsetMin = Vector2.zero;
+        textRt.offsetMax = Vector2.zero;
+
+        TMP_InputField input = fieldRoot.AddComponent<TMP_InputField>();
+        input.textViewport = textAreaRt;
+        input.textComponent = inputText;
+        input.placeholder = placeholder;
+        input.contentType = TMP_InputField.ContentType.Custom;
+        input.lineType = TMP_InputField.LineType.SingleLine;
+        input.characterValidation = TMP_InputField.CharacterValidation.None;
+        input.caretColor = new Color(0f, 0.85f, 1f, 1f);
+        input.selectionColor = new Color(0f, 0.85f, 1f, 0.35f);
+
+        return input;
+    }
+
+    private static Button CreateStartButton(RectTransform parent, Vector2 anchoredPos)
+    {
+        GameObject btnGo = new GameObject("Start Run Button", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        btnGo.transform.SetParent(parent, false);
+
+        Image img = btnGo.GetComponent<Image>();
+        img.color = new Color(0f, 0.73f, 1f, 1f);
+
+        RectTransform rt = btnGo.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 1f);
+        rt.anchorMax = new Vector2(0.5f, 1f);
+        rt.pivot = new Vector2(0.5f, 1f);
+        rt.anchoredPosition = anchoredPos;
+        rt.sizeDelta = new Vector2(260f, 56f);
+
+        GameObject textGo = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer));
+        textGo.transform.SetParent(btnGo.transform, false);
+        TextMeshProUGUI label = textGo.AddComponent<TextMeshProUGUI>();
+        label.text = "START RUN";
+        label.fontSize = 22;
+        label.fontStyle = FontStyles.Bold;
+        label.alignment = TextAlignmentOptions.Center;
+        label.color = Color.white;
+
+        RectTransform textRt = textGo.GetComponent<RectTransform>();
+        textRt.anchorMin = Vector2.zero;
+        textRt.anchorMax = Vector2.one;
+        textRt.offsetMin = Vector2.zero;
+        textRt.offsetMax = Vector2.zero;
+
+        Button button = btnGo.GetComponent<Button>();
+        ColorBlock colors = button.colors;
+        colors.highlightedColor = new Color(0.2f, 0.85f, 1f, 1f);
+        colors.pressedColor = new Color(0f, 0.55f, 0.85f, 1f);
+        button.colors = colors;
+
+        return button;
     }
 }
