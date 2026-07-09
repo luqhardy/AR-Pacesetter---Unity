@@ -110,6 +110,11 @@ public class AvatarEngine : MonoBehaviour
     
     private bool _hasStarted = false; // Start command state
 
+    // ── 離隔待機 (企画書 4.1) ────────────────────────────────────────────────
+    private const float WaitForUserEnterMeters = 10.0f; // これ以上離れたら待機
+    private const float WaitForUserExitMeters  = 7.0f;  // ここまで戻ったら再開
+    private bool _isWaitingForUser = false;
+
     // ── Public API ───────────────────────────────────────────────────────────
     public bool IsHalted { get; set; } = false;
     // Set by RunSessionController when the run finishes. Kept separate from
@@ -119,6 +124,7 @@ public class AvatarEngine : MonoBehaviour
     public OvertakeState CurrentOvertakeState => _overtakeState;
     public bool HasStarted => _hasStarted;
     public bool IsOverriddenByRecovery { get; set; } = false;
+    public bool IsWaitingForUser => _isWaitingForUser;
 
     public void StartPacing()
     {
@@ -216,8 +222,13 @@ public class AvatarEngine : MonoBehaviour
             return;
         }
 
+        // ── 離隔待機 (企画書 4.1 自律アクション) ─────────────────────────────
+        // 10m以上離れたら座標を固定してユーザーへ向き、手招きで待つ。7mまで
+        // 戻ったら走行再開(ヒステリシスでチャタリング防止)。
+        UpdateWaitForUserState();
+
         // ── Cliff / Obstacle halting (AGENTS.md §4.2) / Session end ─────────
-        if (IsHalted || IsSessionEnded)
+        if (IsHalted || IsSessionEnded || _isWaitingForUser)
         {
             RunHaltedFaceUser();
             return;
@@ -309,6 +320,50 @@ public class AvatarEngine : MonoBehaviour
         }
         _lastFrameDeltaTime    = Time.deltaTime;
         _lastFrameUserPosition = userCamera.position;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // 離隔待機 — 10m離れたら座標固定+手招き、7mまで戻ったら再開
+    // ════════════════════════════════════════════════════════════════════════
+    private void UpdateWaitForUserState()
+    {
+        Vector3 toAvatar = transform.position - userCamera.position;
+        toAvatar.y = 0;
+        float separation = toAvatar.magnitude;
+
+        if (!_isWaitingForUser && separation >= WaitForUserEnterMeters)
+        {
+            _isWaitingForUser = true;
+            SendSafeAnimatorTrigger("Beckon"); // 手招きアクション (Animator側に用意)
+            Debug.Log($"[PACER ENGINE] User fell {separation:F1}m behind — holding position and beckoning.");
+        }
+        else if (_isWaitingForUser && separation <= WaitForUserExitMeters)
+        {
+            _isWaitingForUser = false;
+            // 内部追従位置を現在位置に同期してから再開(ワープ防止)
+            _targetPacingPosition = transform.position;
+            SendSafeAnimatorTrigger("RunResume");
+            Debug.Log("[PACER ENGINE] User caught up — resuming pace.");
+        }
+    }
+
+    // Animator にパラメータが存在する場合のみトリガーを発火する
+    private void SendSafeAnimatorTrigger(string triggerName)
+    {
+        OvertakeBehaviourController overtake = GetComponent<OvertakeBehaviourController>();
+        Animator anim = (overtake != null && overtake.ActiveAnimator != null)
+            ? overtake.ActiveAnimator
+            : AvatarRigLocator.FindBestAnimator(transform);
+        if (anim == null) return;
+
+        foreach (var param in anim.parameters)
+        {
+            if (param.type == AnimatorControllerParameterType.Trigger && param.name == triggerName)
+            {
+                anim.SetTrigger(triggerName);
+                return;
+            }
+        }
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -550,6 +605,7 @@ public class AvatarEngine : MonoBehaviour
         IsSessionEnded = false;
         IsHalted = false;
         IsOverriddenByRecovery = false;
+        _isWaitingForUser = false;
 
         _movementHistory.Clear();
         _headingHistory.Clear();

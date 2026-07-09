@@ -65,7 +65,8 @@ public class OvertakeBehaviourController : MonoBehaviour
         // ── Update Animator Speed and Halt parameters safely ───────────────
         if (avatarAnimator != null)
         {
-            bool isWaitingOrHalted = !_engine.HasStarted || _engine.IsHalted || _engine.IsSessionEnded;
+            bool isWaitingOrHalted = !_engine.HasStarted || _engine.IsHalted
+                || _engine.IsSessionEnded || _engine.IsWaitingForUser;
             float currentSpeed = isWaitingOrHalted ? 0f : _engine.GetTargetSpeed();
             SetAnimatorFloatSafe("Speed", currentSpeed);
             SetAnimatorBoolSafe("IsHalted", isWaitingOrHalted);

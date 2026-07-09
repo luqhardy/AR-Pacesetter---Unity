@@ -135,6 +135,12 @@ public class SafetyAndSystemController : MonoBehaviour
                 alertAudioSource.loop = true;
                 alertAudioSource.Play();
             }
+
+            // 企画書 §3 マルチモーダル通知: 危険時はスマホ振動も併用
+            // (振動長の使い分けは iOS Haptics ネイティブ実装時に対応)
+#if UNITY_IOS || UNITY_ANDROID
+            Handheld.Vibrate();
+#endif
         }
         else
         {

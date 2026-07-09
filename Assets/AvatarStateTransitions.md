@@ -37,6 +37,7 @@ Create a new Animator Controller (e.g. `AvatarAnimatorController`), assign it to
 | `Sprint` | **Trigger** | Fired when the companion surges to avoid being passed |
 | `RunResume` | **Trigger** | Restores locomotion once overtake events are completed |
 | `Nod` | **Trigger** | Played once GPS signal re-establishes and accuracy settles |
+| `Beckon` | **Trigger** | Fired when the user falls $\ge 10$m behind — avatar holds position and beckons (resumes at 7m) |
 
 ---
 

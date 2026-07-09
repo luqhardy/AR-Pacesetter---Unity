@@ -42,6 +42,15 @@ public class PeripheralHUDManager : MonoBehaviour
     // Editor: V key spikes HR to test the vital-warning (deep blue) state
     private float _hrSpikeUntil = -1f;
 
+    // HUD自動抑制 (企画書 2. スタビライズ — 横を向いた際は表示を自動抑制)
+    private const float GazeSuppressYawRateDegPerSec = 120f; // この角速度を超えたら抑制
+    private const float GazeSuppressHoldSeconds = 0.8f;      // 首振り終了後の抑制保持
+    private const float SuppressedAlpha = 0.15f;
+    private float _lastCameraYaw;
+    private bool _yawInitialized = false;
+    private float _suppressUntil = -1f;
+    private float _hudVisibility = 1.0f;
+
     // Session read access for the result/stop flow
     public float ElapsedTimeSeconds => _elapsedTimeSeconds;
     public float DistanceMeters => _cumulativeDistanceMeters;
@@ -181,6 +190,54 @@ public class PeripheralHUDManager : MonoBehaviour
 
         // 6. Battery <=10% -> flash HUD text yellow (企画書 2. AR HUD ダイナミック・フィードバック)
         UpdateBatteryWarningFlash();
+
+        // 7. 首振り検知 -> HUD自動フェード (企画書 2. スタビライズ)
+        UpdateGazeSuppression();
+    }
+
+    private void UpdateGazeSuppression()
+    {
+        if (userCamera == null) return;
+
+        float currentYaw = userCamera.eulerAngles.y;
+        if (!_yawInitialized)
+        {
+            _lastCameraYaw = currentYaw;
+            _yawInitialized = true;
+            return;
+        }
+
+        float yawRate = Mathf.Abs(Mathf.DeltaAngle(_lastCameraYaw, currentYaw))
+                        / Mathf.Max(Time.deltaTime, 0.001f);
+        _lastCameraYaw = currentYaw;
+
+        // 素早い首振り(横を向く動作)を検知したら一定時間HUDを薄くする
+        if (yawRate > GazeSuppressYawRateDegPerSec)
+            _suppressUntil = Time.time + GazeSuppressHoldSeconds;
+
+        float targetVisibility = Time.time < _suppressUntil ? SuppressedAlpha : 1.0f;
+        _hudVisibility = Mathf.MoveTowards(_hudVisibility, targetVisibility, Time.deltaTime * 4.0f);
+
+        ApplyHudAlpha(_hudVisibility);
+    }
+
+    private void ApplyHudAlpha(float alpha)
+    {
+        SetTextAlpha(textHeartRate, alpha);
+        SetTextAlpha(textTime, alpha);
+        SetTextAlpha(textDistance, alpha);
+        SetTextAlpha(textPace, alpha);
+        SetTextAlpha(textPitch, alpha);
+        SetTextAlpha(textSyncRate, alpha);
+        SetTextAlpha(textFatigueIndex, alpha);
+        SetTextAlpha(textGrade, alpha);
+    }
+
+    private static void SetTextAlpha(TextMeshProUGUI text, float alpha)
+    {
+        if (text == null) return;
+        Color c = text.color;
+        text.color = new Color(c.r, c.g, c.b, alpha);
     }
 
     private void UpdateBatteryWarningFlash()

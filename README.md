@@ -96,6 +96,10 @@ flowchart TD
 | **F** | 長押し1.5秒で走行終了 → リザルト画面 |
 | **F1 / F2 / F3** | ARグラス / Watch / イヤホン 接続切替（Readyチェック） |
 
+Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選択 → Inspectorコンテキストメニュー
+（StartSession / UpdateMetrics / EndSession / Goal Reached / RequestHistory）。
+離隔待機は再生中にSceneビューでカメラ（XR Origin）をアバターから10m以上引き離すと発動。
+
 ### 主要スクリプト一覧
 
 | スクリプト | 役割 |
@@ -497,6 +501,17 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 ---
 
 ## 6. 更新履歴
+
+### 2026-07-09 (3) — 自律アクション・実測センサー・再走行対応
+
+- **離隔待機**（企画書4.1）: ユーザーが10m以上遅れるとアバターが座標固定＋対面＋`Beckon`（手招き）、7mまで戻ると走行再開（`AvatarEngine`）
+- **HUD自動抑制**（企画書2）: 首を素早く振る（横を向く）とHUDを自動フェード、正面復帰で戻る（`PeripheralHUDManager`）
+- **TTC警告時のスマホ振動**（企画書3 マルチモーダル通知）
+- **実測センサー**: CoreLocation距離/速度（`LocationTracker.swift`）・HealthKit心拍（`HeartRateMonitor.swift`）・実測M2Pレイテンシ（`LatencyBenchmarkRunner`連続計測）。未取得時は自動フォールバック
+- **再走行対応**: 走行→終了→再走行を同一起動内でサポート（全コンポーネントに`ResetSession`）
+- **履歴の実データ化**: `RequestHistory`/`HistoryData`でUnityのJSON DB→Swift HistoryViewへ
+- **目標距離ゴール判定**: 到達でUnityから自動終了→SwiftはGOAL演出→統計へ
+- 権限整備: カメラ/位置情報/モーション/Bluetooth/ヘルスケアのINFOPLIST_KEY＋HealthKit entitlements
 
 ### 2026-07-09 (2) — モノレポ化（SwiftUIアプリを ios/ に統合）
 

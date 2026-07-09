@@ -256,6 +256,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (avatarEngine == null || !avatarEngine.HasStarted) return "Idle";
         if (avatarEngine.IsSessionEnded) return "Goal";
         if (_gpsWasLost) return "Lost";
+        if (avatarEngine.IsWaitingForUser) return "Slow"; // 離隔待機(手招き)中
 
         float baseSpeed = avatarEngine.GetBaseTargetSpeed();
         if (baseSpeed > 0.01f)
