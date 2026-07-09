@@ -11,8 +11,16 @@ public static class ARVisionSystemsBootstrap
     private static void EnsureSystems()
     {
         // Only bootstrap in the pacing scene
-        if (Object.FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include) == null)
+        AvatarEngine engine = Object.FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
+        if (engine == null)
             return;
+
+        // VFX演出はアバター本体と同じGameObjectに載せる (企画書 4.1)
+        if (engine.GetComponent<AvatarVFXController>() == null)
+        {
+            engine.gameObject.AddComponent<AvatarVFXController>();
+            Debug.Log("[BOOTSTRAP] AvatarVFXController auto-attached to avatar.");
+        }
 
         Ensure<SafetyEventLogger>();
         Ensure<RunAudioEngine>();

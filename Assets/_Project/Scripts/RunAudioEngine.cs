@@ -55,6 +55,9 @@ public class RunAudioEngine : MonoBehaviour
     private AudioClip _micClip;
     private float[] _micBuffer = new float[256];
 
+    /// <summary>足音の発生タイミング(VFXの接地サイバーパルスが購読)。</summary>
+    public event System.Action FootstepOccurred;
+
     void Start()
     {
         if (avatarEngine == null)
@@ -165,6 +168,8 @@ public class RunAudioEngine : MonoBehaviour
         // Left/right feet get slightly different pitches for realism
         _footstepSource.pitch = (_stepAlternate ? 1.0f : 0.94f) + Random.Range(-0.03f, 0.03f);
         _footstepSource.PlayOneShot(clip, footstepLevel * _masterVolume);
+
+        FootstepOccurred?.Invoke();
     }
 
     private bool IsOnSoftSurface()

@@ -38,6 +38,7 @@ Create a new Animator Controller (e.g. `AvatarAnimatorController`), assign it to
 | `RunResume` | **Trigger** | Restores locomotion once overtake events are completed |
 | `Nod` | **Trigger** | Played once GPS signal re-establishes and accuracy settles |
 | `Beckon` | **Trigger** | Fired when the user falls $\ge 10$m behind — avatar holds position and beckons (resumes at 7m) |
+| `Goodbye` | **Trigger** | Fired on session end — avatar bows/waves before the dissolve VFX |
 
 ---
 

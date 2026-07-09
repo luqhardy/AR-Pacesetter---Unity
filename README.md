@@ -123,6 +123,10 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
 | `SessionDataStore.cs` | セッション永続化（アプリ内JSON DB＋HealthKit同期キュー） |
 | `ReadyCheckController.cs` | Readyチェック（4デバイス4色インジケーター・出走ゲート） |
 | `UserProfile.cs` | オンボーディング身体情報（身長・体重・性別） |
+| `AvatarVFXController.cs` | VFX演出（起動粒子集積・終了挨拶消滅・接地サイバーパルス） |
+| `ARSessionManagerBridge.cs` / `DeviceManagerBridge.cs` | Swift⇄Unityメッセージブリッジ |
+| `SwiftMessageSender.cs` | Unity→Swift送信（SyncRate/状態/GPS/履歴/結果） |
+| `AvatarRigLocator.cs` | 有効なAnimatorの優先解決 |
 | `ARVisionSystemsBootstrap.cs` | 新規マネージャーのシーン自動生成 |
 | `ARSessionManagerBridge.cs` | Swift→Unity受信（StartSession/UpdateMetrics/EndSession）＋1Hz状態レポート |
 | `DeviceManagerBridge.cs` | Swift→Unity受信（ConnectXREAL） |
@@ -501,6 +505,13 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 ---
 
 ## 6. 更新履歴
+
+### 2026-07-09 (4) — VFX演出（企画書4.1）
+
+- **起動時の粒子集積**: 球殻から粒子が中心へ収束しつつアバターがスケールイン
+- **終了時の挨拶と消滅**: `Goodbye`トリガー（お辞儀/手振り）→1.5秒後に粒子拡散とともに消滅。再走行で自動復元
+- **接地サイバーパルス**: 足音（`RunAudioEngine.FootstepOccurred`）に同期して地面にシアンの拡張リング
+- すべて実行時生成（`AvatarVFXController.cs`、Bootstrapがアバターへ自動装着）
 
 ### 2026-07-09 (3) — 自律アクション・実測センサー・再走行対応
 
