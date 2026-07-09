@@ -97,14 +97,19 @@ final class UnityBridge: NSObject, ObservableObject {
     // MARK: Swift → Unity Commands
 
     /// Start the AR running session with pace settings.
-    func startSession(targetPaceKmH: Double, distanceKm: Double) {
-        let payload: [String: Any] = [
+    /// ghostDateIso を渡すと過去セッションと競走するゴーストモードになる。
+    func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil) {
+        var payload: [String: Any] = [
             "command": "StartSession",
             "targetPaceKmH": targetPaceKmH,
             "distanceKm": distanceKm,
             "avatarHeightCm": 175,
             "forwardOffsetM": 3.0
         ]
+        if let ghost = ghostDateIso, !ghost.isEmpty {
+            payload["mode"] = "ghost"
+            payload["ghostDateIso"] = ghost
+        }
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand", payload: payload)
     }
 
@@ -246,14 +251,14 @@ final class ARSessionManager: ObservableObject {
 
     private var timer: Timer?
 
-    func start(paceKmH: Double, distanceKm: Double) {
+    func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil) {
         isSessionActive = true
 
         // 実測センサー起動: CoreLocation(距離/速度) + HealthKit(心拍・Watch経由)
         LocationTracker.shared.start()
         HeartRateMonitor.shared.start()
 
-        bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm)
+        bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm, ghostDateIso: ghostDateIso)
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.elapsedSeconds += 1

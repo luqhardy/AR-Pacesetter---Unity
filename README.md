@@ -124,6 +124,7 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
 | `ReadyCheckController.cs` | Readyチェック（4デバイス4色インジケーター・出走ゲート） |
 | `UserProfile.cs` | オンボーディング身体情報（身長・体重・性別） |
 | `AvatarVFXController.cs` | VFX演出（起動粒子集積・終了挨拶消滅・接地サイバーパルス） |
+| `GhostPaceDriver.cs` | ゴースト機能（過去セッションの速度プロファイル再生） |
 | `ARSessionManagerBridge.cs` / `DeviceManagerBridge.cs` | Swift⇄Unityメッセージブリッジ |
 | `SwiftMessageSender.cs` | Unity→Swift送信（SyncRate/状態/GPS/履歴/結果） |
 | `AvatarRigLocator.cs` | 有効なAnimatorの優先解決 |
@@ -505,6 +506,13 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 ---
 
 ## 6. 更新履歴
+
+### 2026-07-09 (5) — ゴースト機能（企画書§3）
+
+- 走行中に5秒毎の距離サンプル（`paceTimeline`）をセッションへ記録
+- 履歴画面の「この記録と競走（ゴースト）」→ 過去の自分の速度プロファイルでアバターが走る（`GhostPaceDriver.cs`）
+- 旧データ（タイムライン無し）は平均ペースで代替、走行画面は「ゴースト競走中」表示
+- エディタ検証: `ARSessionManager` コンテキストメニュー「Simulate Ghost Run」
 
 ### 2026-07-09 (4) — VFX演出（企画書4.1）
 

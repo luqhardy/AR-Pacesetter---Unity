@@ -22,6 +22,17 @@ public class RunSessionRecord
     public float targetPaceMinutesPerKm;
     public string avatarComment;
     public List<SafetyEventLogger.SafetyEvent> safetyEvents = new List<SafetyEventLogger.SafetyEvent>();
+
+    // ゴースト機能 (企画書§3): 5秒毎の累積距離サンプル。過去の自分の速度
+    // プロファイルを再生するために使う。旧データは空リスト(平均ペースで代替)
+    public List<PaceSample> paceTimeline = new List<PaceSample>();
+}
+
+[Serializable]
+public class PaceSample
+{
+    public float t;      // 走行開始からの秒数
+    public float meters; // その時点の累積距離
 }
 
 public static class SessionDataStore
@@ -80,6 +91,18 @@ public static class SessionDataStore
         {
             return null;
         }
+    }
+
+    /// <summary>ゴースト競走用: dateIso が一致するセッションを返す(なければ null)。</summary>
+    public static RunSessionRecord LoadSessionByDateIso(string dateIso)
+    {
+        if (string.IsNullOrEmpty(dateIso)) return null;
+        foreach (RunSessionRecord record in LoadAllSessions())
+        {
+            if (record != null && record.dateIso == dateIso)
+                return record;
+        }
+        return null;
     }
 
     private static void QueueHealthKitSync(RunSessionRecord record)

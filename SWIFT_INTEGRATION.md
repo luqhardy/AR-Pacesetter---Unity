@@ -82,7 +82,7 @@ UnityContainerView()
 
 | ターゲットGameObject | command | フィールド | Unity側の動作 |
 |---|---|---|---|
-| `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM` | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → `StartPacing()`。UnityのセットアップUIは非表示 |
+| `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → `StartPacing()`。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
 | `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定 |
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
@@ -133,6 +133,15 @@ Xcode 16形式(FileSystemSynchronizedRootGroup)のため、`ios/AR_Runner_UI/AR_
 - 到達すると自動で`EndSession`相当の終了処理 → `AvatarStateChanged: Goal` + `SessionEnded`をSwiftへ送信
 - Swift側: RunningViewが`avatarState == .goal`を検知 → GOALオーバーレイ表示(2.5秒) → 統計画面へ自動遷移
 - エディタ検証: `ARSessionManager`のコンテキストメニュー「Simulate Goal Reached」
+
+## ゴースト機能(実装済み・企画書§3)
+
+過去の自分と競走する。走行中は5秒毎に累積距離をサンプリングして`paceTimeline`として保存し、
+履歴画面の「この記録と競走（ゴースト）」でその速度プロファイルを再生する:
+- Unity側: `GhostPaceDriver.cs`が1秒毎にタイムラインの区間速度からペースを算出し`UpdateTargetPace`
+- タイムラインが無い旧データは平均ペースで代替。タイムライン終端以降も平均ペースで巡航
+- Swift側: `RunSettings.ghostDateIso`に対象セッションを設定 → StartSessionに`mode:"ghost"`が付与される(1走行で自動クリア)
+- エディタ検証: `ARSessionManager`コンテキストメニュー「Simulate Ghost Run (latest saved session)」(事前に1回走行完了が必要)
 
 ## 統計画面(実装済み)
 

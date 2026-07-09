@@ -26,6 +26,8 @@ public class ARSessionManagerBridge : MonoBehaviour
         public int heartRate;
         public int avatarHeightCm;
         public double forwardOffsetM;
+        public string mode;         // "pace"(既定) | "ghost"
+        public string ghostDateIso; // mode=ghost時: 競走相手のセッションdateIso
     }
 
     [Header("Engine Links (auto-found if empty)")]
@@ -37,6 +39,7 @@ public class ARSessionManagerBridge : MonoBehaviour
     [SerializeField] private GameStateController gameStateController;
     [SerializeField] private PeripheralHUDManager hudManager;
     [SerializeField] private LatencyBenchmarkRunner latencyRunner;
+    [SerializeField] private GhostPaceDriver ghostDriver;
 
     private const float ReportIntervalSeconds = 1.0f;
     private const float BaselineAvatarHeightCm = 175f; // 企画書 §4.1
@@ -65,6 +68,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (gameStateController == null) gameStateController = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
         if (hudManager == null) hudManager = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
         if (latencyRunner == null) latencyRunner = FindFirstObjectByType<LatencyBenchmarkRunner>(FindObjectsInactive.Include);
+        if (ghostDriver == null) ghostDriver = FindFirstObjectByType<GhostPaceDriver>(FindObjectsInactive.Include);
     }
 
     // ── Swift → Unity エントリポイント ───────────────────────────────────────
@@ -124,6 +128,23 @@ public class ARSessionManagerBridge : MonoBehaviour
             avatarEngine.UpdateTargetPace(minutesPerKm);
         }
 
+        // ゴーストモード (企画書§3): 過去セッションの速度プロファイルでアバターを駆動
+        if (ghostDriver != null)
+        {
+            if (cmd.mode == "ghost" && !string.IsNullOrEmpty(cmd.ghostDateIso))
+            {
+                RunSessionRecord ghost = SessionDataStore.LoadSessionByDateIso(cmd.ghostDateIso);
+                if (ghost != null)
+                    ghostDriver.Activate(ghost);
+                else
+                    Debug.LogWarning($"[SWIFT BRIDGE] Ghost session not found: {cmd.ghostDateIso} — falling back to pace mode.");
+            }
+            else
+            {
+                ghostDriver.Deactivate();
+            }
+        }
+
         if (cmd.forwardOffsetM > 0.1)
             avatarEngine.SetLeadDistance((float)cmd.forwardOffsetM);
 
@@ -168,6 +189,9 @@ public class ARSessionManagerBridge : MonoBehaviour
     {
         if (latencyRunner != null)
             latencyRunner.SetContinuousMeasurement(false);
+
+        if (ghostDriver != null)
+            ghostDriver.Deactivate();
 
         RunSessionRecord record = sessionController != null
             ? sessionController.FinishRunExternal()
@@ -299,5 +323,19 @@ public class ARSessionManagerBridge : MonoBehaviour
     [ContextMenu("Simulate RequestHistory")]
     private void SimulateRequestHistory()
         => OnSwiftCommand("{\"command\":\"RequestHistory\"}");
+
+    [ContextMenu("Simulate Ghost Run (latest saved session)")]
+    private void SimulateGhostRun()
+    {
+        RunSessionRecord latest = SessionDataStore.LoadLatestSession();
+        if (latest == null)
+        {
+            Debug.LogWarning("[SWIFT BRIDGE] No saved session — run and finish once first.");
+            return;
+        }
+        OnSwiftCommand($"{{\"command\":\"StartSession\",\"targetPaceKmH\":12.0,\"distanceKm\":5.0," +
+                       $"\"avatarHeightCm\":175,\"forwardOffsetM\":3.0," +
+                       $"\"mode\":\"ghost\",\"ghostDateIso\":\"{latest.dateIso}\"}}");
+    }
 #endif
 }

@@ -65,7 +65,8 @@ struct ContentView: View {
             // 8. History
             case .history:
                 HistoryView(
-                    onBack: { screen = .stats }
+                    onBack: { screen = .stats },
+                    onStartGhost: { screen = .running } // ゴースト競走を開始
                 )
             case .lockScreen:
                         LockScreenView(

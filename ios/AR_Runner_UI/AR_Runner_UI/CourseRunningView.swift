@@ -163,7 +163,7 @@ struct RunningView: View {
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 1) {
-                            ARLabel(text: "伴走中")
+                            ARLabel(text: RunSettings.shared.ghostDateIso != nil ? "ゴースト競走中" : "伴走中")
                             Text(elapsedStr)
                                 .font(.system(size: 34, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
@@ -292,9 +292,14 @@ struct RunningView: View {
                 if !session.isSessionActive {
                     session.start(
                         paceKmH: RunSettings.shared.paceKmH,
-                        distanceKm: RunSettings.shared.distanceKm
+                        distanceKm: RunSettings.shared.distanceKm,
+                        ghostDateIso: RunSettings.shared.ghostDateIso
                     )
                 }
+            }
+            .onDisappear {
+                // ゴースト指定は1走行限り
+                RunSettings.shared.ghostDateIso = nil
             }
             .onReceive(timer) { _ in
                 // 心拍: HealthKit実測(Watch装着時)を優先、未取得時は仮表示

@@ -39,6 +39,12 @@ public class RunSessionController : MonoBehaviour
     private bool _externalUiMode = false;
     private RunSessionRecord _lastRecord;
 
+    // ゴースト機能用のペース推移サンプリング (5秒毎)
+    private const float PaceSampleIntervalSeconds = 5f;
+    private readonly System.Collections.Generic.List<PaceSample> _paceSamples
+        = new System.Collections.Generic.List<PaceSample>();
+    private float _nextPaceSampleTime = 0f;
+
     public RunSessionRecord LastRecord => _lastRecord;
     public bool IsFinished => _finished;
 
@@ -63,6 +69,17 @@ public class RunSessionController : MonoBehaviour
             OnRunStarted();
 
         if (!_runActive || _finished) return;
+
+        // ゴースト機能: 走行中のペース推移を5秒毎に記録
+        if (hudManager != null && hudManager.ElapsedTimeSeconds >= _nextPaceSampleTime)
+        {
+            _nextPaceSampleTime = hudManager.ElapsedTimeSeconds + PaceSampleIntervalSeconds;
+            _paceSamples.Add(new PaceSample
+            {
+                t = hudManager.ElapsedTimeSeconds,
+                meters = hudManager.DistanceMeters
+            });
+        }
 
         bool holding = _uiHoldActive;
 #if UNITY_EDITOR
@@ -127,6 +144,8 @@ public class RunSessionController : MonoBehaviour
         _finished = false;
         _holdTimer = 0f;
         _uiHoldActive = false;
+        _paceSamples.Clear();
+        _nextPaceSampleTime = 0f;
 
         if (_resultPanel != null) Destroy(_resultPanel);
         if (_guardLayer != null) Destroy(_guardLayer);
@@ -189,6 +208,8 @@ public class RunSessionController : MonoBehaviour
 
         if (safetyLogger != null)
             record.safetyEvents.AddRange(safetyLogger.Events);
+
+        record.paceTimeline.AddRange(_paceSamples);
 
         record.avatarComment = GenerateAvatarComment(record);
         return record;

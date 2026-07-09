@@ -26,6 +26,7 @@ public static class ARVisionSystemsBootstrap
         Ensure<RunAudioEngine>();
         Ensure<RunSessionController>();
         Ensure<ReadyCheckController>();
+        Ensure<GhostPaceDriver>();
 
         // Swiftブリッジ受信オブジェクト — UnitySendMessage のターゲットになるため
         // GameObject名は UnityBridge.swift の sendMessageToGO と完全一致させる

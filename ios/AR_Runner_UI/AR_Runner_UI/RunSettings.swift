@@ -11,6 +11,10 @@ final class RunSettings: ObservableObject {
     @Published var distanceKm: Double = 10.0
     @Published var timeSeconds: Int = 3600
 
+    /// ゴースト競走 (企画書§3): 履歴画面で選んだ過去セッションのdateIso。
+    /// 設定されていると次の走行はゴーストモードで開始される(1回で自動クリア)
+    @Published var ghostDateIso: String? = nil
+
     private init() {}
 
     /// ペース表示文字列 (km/h → 分'秒"/km)

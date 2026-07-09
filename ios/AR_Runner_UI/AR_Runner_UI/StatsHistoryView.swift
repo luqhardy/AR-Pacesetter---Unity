@@ -149,6 +149,8 @@ struct StatsView: View {
 // MARK: - 6. History Screen
 struct HistoryView: View {
     let onBack: () -> Void
+    /// ゴースト競走の開始(RunSettings.ghostDateIso設定後に呼ばれる)
+    var onStartGhost: (() -> Void)? = nil
 
     // Unityのセッション保存(JSON DB)から取得した履歴。未着時はモック表示
     @ObservedObject private var bridge = UnityBridge.shared
@@ -168,6 +170,11 @@ struct HistoryView: View {
              time: entry.timeLabel,
              sync: "\(Int(entry.averageSync.rounded()))%")
         }
+    }
+
+    private func startGhostRace(with entry: UnityBridge.HistoryEntry) {
+        RunSettings.shared.ghostDateIso = entry.dateIso
+        onStartGhost?()
     }
 
     var body: some View {
@@ -195,36 +202,23 @@ struct HistoryView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 10) {
-                        ForEach(historyItems, id: \.date) { item in
-                            HStack(spacing: 16) {
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(item.date)
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(.white)
-                                    HStack(spacing: 10) {
-                                        Label(item.time, systemImage: "clock")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(.arGrayText)
-                                        Label(item.sync, systemImage: "waveform.path.ecg")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(
-                                                item.sync >= "90%" ? .arYellow : .arGrayText
-                                            )
-                                    }
-                                }
-                                Spacer()
-                                Text(item.dist)
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundColor(.arYellow)
+                        if bridge.history.isEmpty {
+                            // モック表示(Unity未接続のUI開発時)— ゴーストボタン無し
+                            ForEach(historyItems, id: \.date) { item in
+                                historyRow(date: item.date, dist: item.dist,
+                                           time: item.time, sync: item.sync, ghostAction: nil)
                             }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 16)
-                            .background(Color.arCard)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.arBorder, lineWidth: 1)
-                            )
+                        } else {
+                            // 実データ: 各記録に「この記録と競走」(ゴースト)ボタン付き
+                            ForEach(bridge.history) { entry in
+                                historyRow(
+                                    date: entry.dateLabel,
+                                    dist: String(format: "%.1fkm", entry.distanceKm),
+                                    time: entry.timeLabel,
+                                    sync: "\(Int(entry.averageSync.rounded()))%",
+                                    ghostAction: { startGhostRace(with: entry) }
+                                )
+                            }
                         }
                     }
                     .padding(.horizontal, 24)
@@ -236,6 +230,56 @@ struct HistoryView: View {
                 bridge.requestHistory()
             }
         }
+    }
+
+    // 履歴1件分の行。ghostAction があると「この記録と競走」ボタンを表示
+    @ViewBuilder
+    private func historyRow(date: String, dist: String, time: String, sync: String,
+                            ghostAction: (() -> Void)?) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(date)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                    HStack(spacing: 10) {
+                        Label(time, systemImage: "clock")
+                            .font(.system(size: 12))
+                            .foregroundColor(.arGrayText)
+                        Label(sync, systemImage: "waveform.path.ecg")
+                            .font(.system(size: 12))
+                            .foregroundColor(sync >= "90%" ? .arYellow : .arGrayText)
+                    }
+                }
+                Spacer()
+                Text(dist)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.arYellow)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+
+            if let ghostAction {
+                Button(action: ghostAction) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "figure.run.circle")
+                            .font(.system(size: 13))
+                        Text("この記録と競走（ゴースト）")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.arYellowDim)
+                    .foregroundColor(.arYellow)
+                }
+            }
+        }
+        .background(Color.arCard)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.arBorder, lineWidth: 1)
+        )
     }
 }
 
