@@ -1,16 +1,75 @@
-# Swift UI 連携ガイド (AR-runner ⇄ AR Pacesetter)
+# Swift UI 連携ガイド (モノレポ構成 / Unity as a Library)
 
-[kyainna/AR-runner](https://github.com/kyainna/AR-runner) のSwiftUIアプリと、本Unityプロジェクトを
-**Unity as a Library (UaaL)** で連携するための手順とメッセージ契約。
+SwiftUIアプリとUnityを**1つのリポジトリ・1つのXcodeアプリ**として管理する。
+SwiftUI側のオリジナルは [kyainna/AR-runner](https://github.com/kyainna/AR-runner)(`ios/AR_Runner_UI/` に取り込み済み)。
+
+## リポジトリ構成
+
+```
+AR Pacesetter/                        ← リポジトリルート = Unityプロジェクト
+├── Assets/ ProjectSettings/ ...      ← Unity本体
+│   └── Editor/IOSBuildExporter.cs    ← メニュー Build → Export iOS
+├── ios/
+│   ├── ARRunner.xcworkspace          ← ★ Macで開くのはこれ
+│   ├── AR_Runner_UI/                 ← SwiftUIアプリ (ホスト側)
+│   │   ├── AR_Runner_UI.xcodeproj
+│   │   └── AR_Runner_UI/
+│   │       ├── UnityBridge.swift     ← 双方向メッセージ (本番配線済み)
+│   │       ├── UnityLauncher.swift   ← UnityFramework起動 + UnityContainerView
+│   │       └── (各View).swift
+│   └── UnityExport/                  ← Unityエクスポート産物 (gitignore・生成物)
+│       └── Unity-iPhone.xcodeproj    ← Build → Export iOS で生成される
+└── SWIFT_INTEGRATION.md              ← このファイル
+```
+
+**考え方**: 最終アプリは常に `AR_Runner_UI` スキームでビルドする。
+Unityは「エクスポートして `ios/UnityExport/` に置かれる部品(UnityFramework)」であり、
+Unity単体をビルドしてもSwiftUI画面は含まれない。
+
+## ビルド手順
+
+### ① Unityエクスポート (Windows可)
+
+Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
+`ios/UnityExport/Unity-iPhone.xcodeproj` が生成される(iOS Build Supportモジュール必須)。
+
+### ② Xcodeで統合ビルド (Mac)
+
+1. `ios/ARRunner.xcworkspace` を開く(両プロジェクトが並んで表示される)
+2. **初回のみ**: `AR_Runner_UI` ターゲット → General → *Frameworks, Libraries, and Embedded Content* →
+   `Unity-iPhone` プロジェクト内の **UnityFramework.framework** を追加し **Embed & Sign** に設定
+3. Unity-iPhone側: `Data` フォルダの Target Membership を **UnityFramework** に変更(UaaL公式手順)
+4. Signing: Automatically manage signing + Team設定
+5. スキーム `AR_Runner_UI` を選択 → **iPhone実機**でRun(ARKit/GPSはシミュレータ不可)
+
+公式リファレンス: https://docs.unity3d.com/Manual/UnityasaLibrary-iOS.html
+
+Unityを再エクスポートしても手順2-3の設定は`Unity-iPhone.xcodeproj`側に保持される
+(まっさらに消して再生成した場合のみ再設定)。
+
+### ③ SwiftUIからUnityを表示
+
+```swift
+// 走行画面に遷移する前に
+UnityLauncher.shared.launch()
+
+// SwiftUI内でARビューを表示
+UnityContainerView()
+    .ignoresSafeArea()
+```
+
+`UnityFramework`未リンクのビルド(シミュレータ・UI単体開発)では自動でプレースホルダー表示と
+シミュレーションモードにフォールバックするため、SwiftUI開発は従来通り継続できる。
 
 ## アーキテクチャ
 
 ```
-┌─ SwiftUI (AR_Runner_UI) ──────────────┐      ┌─ Unity (AR Pacesetter) ────────────┐
+┌─ SwiftUI (ios/AR_Runner_UI) ──────────┐      ┌─ Unity (UnityFramework) ───────────┐
 │ ConnectOnboardingView                 │      │ ARSessionManagerBridge.cs          │
-│ CourseRunningView                     │      │   (GameObject "ARSessionManager")  │
+│ CourseRunningView + UnityContainerView│      │   (GameObject "ARSessionManager")  │
 │ StatsHistoryView                      │      │ DeviceManagerBridge.cs             │
-│                                       │      │   (GameObject "DeviceManager")     │
+│ UnityLauncher.swift (runEmbedded)     │      │   (GameObject "DeviceManager")     │
+│                                       │      │                                    │
 │ UnityBridge.swift ──sendMessageToGO──▶│──────▶ OnSwiftCommand(json)               │
 │ onUnityMessage(_:) ◀─NSNotification──│◀──────  SwiftMessageSender.cs             │
 │                     "UnityToSwiftMessage"     │   + Plugins/iOS/UnitySwiftBridge.mm│
@@ -38,29 +97,10 @@
 | `LatencyReport` | `ms` (double) | 走行中 1Hz(平滑化フレーム時間) |
 | `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds` | EndSession応答 |
 
-## セットアップ手順
+Unity側の受信オブジェクト(`ARSessionManager`/`DeviceManager` GameObject)は
+[ARVisionSystemsBootstrap.cs](Assets/_Project/Scripts/ARVisionSystemsBootstrap.cs) が起動時に自動生成する。シーン配線は不要。
 
-### 1. Unity側 (このリポジトリ — 対応済み)
-
-追加作業なし。以下が起動時に自動生成・動作します:
-- `ARSessionManager` / `DeviceManager` GameObject([ARVisionSystemsBootstrap.cs](Assets/_Project/Scripts/ARVisionSystemsBootstrap.cs))
-- 送信ブリッジ [SwiftMessageSender.cs](Assets/_Project/Scripts/SwiftMessageSender.cs) + [UnitySwiftBridge.mm](Assets/Plugins/iOS/UnitySwiftBridge.mm)
-
-iOSビルド: **File → Build Profiles → iOS** で Export。生成された `Unity-iPhone.xcodeproj` の
-`UnityFramework` をSwiftアプリのワークスペースへ組み込む(UaaL公式手順:
-https://docs.unity3d.com/Manual/UnityasaLibrary-iOS.html)。
-
-### 2. Swift側 (AR-runner リポジトリ)
-
-`AR_Runner_UI/UnityBridge.swift` を [Docs/Swift/UnityBridge.swift](Docs/Swift/UnityBridge.swift) で**置き換える**。
-変更点は3つだけ:
-1. `init()` で NSNotification `UnityToSwiftMessage` を購読 → `onUnityMessage` へ転送
-2. `sendToUnity` が `#if canImport(UnityFramework)` で本番は `sendMessageToGO`、未リンク時は従来のシミュレータにフォールバック
-3. `SessionEnded` イベント受信(`lastResult: SessionResult?` published追加)
-
-UnityFrameworkを組み込むまでは従来どおりシミュレーションで動くので、UI開発は今まで通り継続できます。
-
-## エディタでの連携テスト (Unity単体)
+## エディタでの連携テスト (Unity単体・Windows可)
 
 1. `SampleScene` を再生
 2. Hierarchyで `ARSessionManager` を選択 → Inspector右上の「⋮」→
@@ -69,8 +109,22 @@ UnityFrameworkを組み込むまでは従来どおりシミュレーションで
    - **Simulate EndSession** — 終了+結果送信
 3. Consoleに `[Unity → Swift] {"event":...}` が1Hzで出力されれば送信側もOK
 
+## AR-runnerリポジトリとの関係
+
+`ios/AR_Runner_UI/` は kyainna/AR-runner のスナップショット取り込み+以下の変更:
+- `UnityBridge.swift` — 本番配線版に置き換え(NSNotification購読・sendMessageToGO・SessionEnded受信)
+- `UnityLauncher.swift` — 新規(UnityFramework起動・UnityContainerView)
+- `AR_Runner_UIApp.swift.swift` → `AR_Runner_UIApp.swift` にリネーム
+- `PROJECT_SETUP.md` 削除(本ファイルに統合)
+
+以後の UI開発はこのリポジトリの `ios/` で行い、AR-runner側には必要に応じて還元する。
+Xcode 16形式(FileSystemSynchronizedRootGroup)のため、`ios/AR_Runner_UI/AR_Runner_UI/` に
+.swiftファイルを置くだけでビルド対象になる。
+
 ## 既知の制約 / TODO
 
+- 初回のみ UnityFramework の Embed & Sign と Data フォルダの Target Membership 変更が手動(上記②)
 - `distanceKm`(目標距離)は現在ゴール判定に未使用(Swift側がendSessionを送る設計)
 - `LatencyReport` は実測Motion-to-Photonではなく平滑化フレーム時間(実機ではLatencyBenchmarkRunnerと統合予定)
 - `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)
+- 走行画面(CourseRunningView)への `UnityContainerView` 組み込みはUI担当者の判断で配置

@@ -440,28 +440,39 @@ stateDiagram-v2
 
 ## 5. Swift UI連携（AR-runner）
 
-スマホアプリのUIは別リポジトリ [kyainna/AR-runner](https://github.com/kyainna/AR-runner)（SwiftUI）が担当。
-**Unity as a Library (UaaL)** 方式で、Swiftアプリがホストになり本リポジトリのUnityを内部に取り込む。
+スマホアプリのUI（SwiftUI、元リポジトリ [kyainna/AR-runner](https://github.com/kyainna/AR-runner)）は
+**本リポジトリの `ios/` に取り込み済み（モノレポ構成）**。
+**Unity as a Library (UaaL)** 方式で、Swiftアプリがホストになり Unity を内部に取り込む。
+
+### モノレポ構成
+
+```
+AR Pacesetter/                      ← リポジトリルート = Unityプロジェクト
+├── Assets/ ...                     ← Unity本体
+├── ios/
+│   ├── ARRunner.xcworkspace        ← ★ Macで開くのはこれ（両プロジェクトを束ねる）
+│   ├── AR_Runner_UI/               ← SwiftUIアプリ（ホスト・最終ビルド対象）
+│   └── UnityExport/                ← Unityエクスポート産物（gitignore・生成物）
+└── SWIFT_INTEGRATION.md
+```
 
 ### ビルド構成の考え方（重要）
 
-**本リポジトリ単体をXcodeでビルドしても「Unityだけのアプリ」にしかならない。**
-SwiftUI画面込みの完成アプリは、常に **AR-runner側のXcodeプロジェクトからビルド**する。
+**Unity単体をビルドしても「Unityだけのアプリ」にしかならない。**
+SwiftUI画面込みの完成アプリは、常に **AR_Runner_UIスキームからビルド**する。
 
 ```
-① Unity単体ビルド（切り分けテスト用）
-   AR Pacesetter → iOS Export → Unity-iPhone.xcodeproj → Unityアプリ単体
-   （アバター・HUD・Unity内簡易UIのみ。SwiftUI画面は含まれない）
+① Unityエクスポート（Windows可）
+   Unityメニュー Build → Export iOS (ios/UnityExport)
+   → ios/UnityExport/Unity-iPhone.xcodeproj が生成される
 
-② 統合ビルド（目標の形）
-   AR Pacesetter → iOS Export ──┐
-                                ├─ 同一Xcodeワークスペース
-   AR_Runner_UI（SwiftUI）──────┘
-   → アプリターゲットに UnityFramework.framework を Embed & Sign
-   → AR_Runner_UIのスキームで実機ビルド = SwiftUI + Unity 両方入りの1アプリ
+② 統合ビルド（Mac）
+   ios/ARRunner.xcworkspace を開く
+   → 初回のみ: AR_Runner_UIターゲットに UnityFramework.framework を Embed & Sign
+   → AR_Runner_UIスキームで実機ビルド = SwiftUI + Unity 両方入りの1アプリ
 ```
 
-つまり AR Pacesetter は「ビルドするもの」ではなく「**エクスポートしてAR-runnerに部品として渡すもの**」。
+つまり Unity側は「ビルドするもの」ではなく「**エクスポートして ios/UnityExport に置かれる部品**」。
 
 ### メッセージ契約（実装済み）
 
@@ -471,7 +482,9 @@ SwiftUI画面込みの完成アプリは、常に **AR-runner側のXcodeプロ�
 | Unity → Swift | `UnitySwiftBridge.mm` → NSNotification `UnityToSwiftMessage` → `UnityBridge.onUnityMessage` | `SyncRateUpdated`(1Hz) / `AvatarStateChanged`(Idle・Run・Slow・Fast・Goal・Lost) / `GPSLost`・`GPSRecovered` / `LatencyReport` / `SessionEnded`（グレード・ランク・結果） |
 
 ブリッジ用GameObjectは起動時に自動生成されるためシーン配線は不要。
-Swift側は `AR_Runner_UI/UnityBridge.swift` を [`Docs/Swift/UnityBridge.swift`](Docs/Swift/UnityBridge.swift)（本番配線済み完成版）で置き換えるだけ。UnityFramework未リンク時は自動でシミュレーションモードにフォールバックするため、SwiftUI単体開発も従来通り可能。
+Swift側の本番配線は [`ios/AR_Runner_UI/AR_Runner_UI/UnityBridge.swift`](ios/AR_Runner_UI/AR_Runner_UI/UnityBridge.swift)（置き換え済み）と
+[`UnityLauncher.swift`](ios/AR_Runner_UI/AR_Runner_UI/UnityLauncher.swift)（UnityFramework起動・`UnityContainerView`）。
+UnityFramework未リンク時は自動でシミュレーションモードにフォールバックするため、SwiftUI単体開発（シミュレータ）も従来通り可能。
 
 ### テスト手順（3段階）
 
@@ -484,6 +497,15 @@ Swift側は `AR_Runner_UI/UnityBridge.swift` を [`Docs/Swift/UnityBridge.swift`
 ---
 
 ## 6. 更新履歴
+
+### 2026-07-09 (2) — モノレポ化（SwiftUIアプリを ios/ に統合）
+
+- [kyainna/AR-runner](https://github.com/kyainna/AR-runner) のSwiftUIアプリを `ios/AR_Runner_UI/` に取り込み
+- `ios/ARRunner.xcworkspace` 新設 — AR_Runner_UI と Unityエクスポート産物を1ワークスペースで管理
+- `UnityLauncher.swift` 新規 — UnityFramework起動（runEmbedded）+ SwiftUI用 `UnityContainerView`
+- `UnityBridge.swift` を本番配線版に置き換え（`Docs/Swift/` は廃止しアプリ内へ移動）
+- Unityメニュー **Build → Export iOS (ios/UnityExport)** 追加（`Assets/Editor/IOSBuildExporter.cs`）
+- `.gitignore` に `ios/UnityExport/`（生成物）・xcuserdata を追加
 
 ### 2026-07-09 — 資料ベース機能実装・接地バグ修正・Swift連携
 

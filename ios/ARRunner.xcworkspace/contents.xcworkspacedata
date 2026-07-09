@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <FileRef
+      location = "group:AR_Runner_UI/AR_Runner_UI.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:UnityExport/Unity-iPhone.xcodeproj">
+   </FileRef>
+</Workspace>
