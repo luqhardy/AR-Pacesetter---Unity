@@ -21,22 +21,42 @@ public class PeripheralHUDManager : MonoBehaviour
     [SerializeField] private Transform userCamera;       // XR Origin Main Camera
     [SerializeField] private AvatarEngine avatarEngine;   // For fetching target speed
     [SerializeField] private AnalyticsManager analytics; // For tracking split alerts
+    [SerializeField] private AvatarVisualsAndActions visualsEngine; // Simulated HR feed (editor)
 
     // Telemetry tracking state variables
     private float _elapsedTimeSeconds = 0.0f;
     private float _cumulativeDistanceMeters = 0.0f;
     private Vector3 _lastUserPosition;
-    
+
     // Biometric mock baseline metrics for editor simulation
     private int _simulatedHeartRate = 135;
     private float _simulatedPitch = 172.0f;
     private Coroutine _splitAlertCoroutine;
+
+    // Battery warning flash state (企画書 2 — バッテリー10%以下の黄色点滅)
+    private static readonly Color BatteryWarningYellow = new Color(1f, 0.9f, 0.1f);
+    private Color _hudDefaultColor = Color.white;
+    private bool _hudColorCached = false;
+    private bool _batteryFlashActive = false;
+
+    // Editor: V key spikes HR to test the vital-warning (deep blue) state
+    private float _hrSpikeUntil = -1f;
+
+    // Session read access for the result/stop flow
+    public float ElapsedTimeSeconds => _elapsedTimeSeconds;
+    public float DistanceMeters => _cumulativeDistanceMeters;
+    public int CurrentHeartRate => _simulatedHeartRate;
 
     void Start()
     {
         if (userCamera != null)
         {
             _lastUserPosition = userCamera.position;
+        }
+
+        if (visualsEngine == null)
+        {
+            visualsEngine = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
         }
 
         // Initialize HUD text displays if optional
@@ -69,8 +89,13 @@ public class PeripheralHUDManager : MonoBehaviour
     {
         if (userCamera == null) return;
 
+        // Clock and distance only accumulate once the run has started,
+        // so the session result reflects the actual run (企画書 §4)
+        bool runInProgress = avatarEngine == null || avatarEngine.HasStarted;
+
         // 1. Calculate Runtime Clock (Format: MM:SS)
-        _elapsedTimeSeconds += Time.deltaTime;
+        if (runInProgress)
+            _elapsedTimeSeconds += Time.deltaTime;
         int minutes = Mathf.FloorToInt(_elapsedTimeSeconds / 60f);
         int seconds = Mathf.FloorToInt(_elapsedTimeSeconds % 60f);
         if (textTime != null)
@@ -87,7 +112,7 @@ public class PeripheralHUDManager : MonoBehaviour
         float instSpeed = frameMovementDistance / Mathf.Max(Time.deltaTime, 0.001f);
         
         // Only accumulate distance if movement is significant and speed is within normal human range (0.2 m/s to 15 m/s)
-        if (frameMovementDistance > 0.005f && instSpeed > 0.2f && instSpeed < 15.0f)
+        if (runInProgress && frameMovementDistance > 0.005f && instSpeed > 0.2f && instSpeed < 15.0f)
         {
             _cumulativeDistanceMeters += frameMovementDistance;
 
@@ -144,6 +169,47 @@ public class PeripheralHUDManager : MonoBehaviour
 
         // 5. Run biometric updates & background simulation if inside Editor fallback
         UpdateBiometricsDisplay();
+
+        // 6. Battery <=10% -> flash HUD text yellow (企画書 2. AR HUD ダイナミック・フィードバック)
+        UpdateBatteryWarningFlash();
+    }
+
+    private void UpdateBatteryWarningFlash()
+    {
+        float battery = SystemInfo.batteryLevel;
+        bool lowBattery = battery > 0f && battery <= 0.1f;
+
+#if UNITY_EDITOR
+        // Editor: hold Y to preview the low-battery flash
+        if (Input.GetKey(KeyCode.Y)) lowBattery = true;
+#endif
+
+        if (!_hudColorCached && textTime != null)
+        {
+            _hudDefaultColor = textTime.color;
+            _hudColorCached = true;
+        }
+
+        if (lowBattery)
+        {
+            _batteryFlashActive = true;
+            // 2Hz ping-pong between default and warning yellow
+            Color flash = Color.Lerp(_hudDefaultColor, BatteryWarningYellow, Mathf.PingPong(Time.time * 2f, 1f));
+            ApplyHudTextColor(flash);
+        }
+        else if (_batteryFlashActive)
+        {
+            _batteryFlashActive = false;
+            ApplyHudTextColor(_hudDefaultColor);
+        }
+    }
+
+    private void ApplyHudTextColor(Color color)
+    {
+        if (textHeartRate != null) textHeartRate.color = color;
+        if (textTime != null) textTime.color = color;
+        if (textDistance != null) textDistance.color = color;
+        if (textPace != null) textPace.color = color;
     }
 
     // --- THE BLE INPUT GATEWAYS ---
@@ -168,15 +234,33 @@ public class PeripheralHUDManager : MonoBehaviour
     private void UpdateBiometricsDisplay()
     {
 #if UNITY_EDITOR
+        // V key: spike HR to 195 BPM for 6 seconds to exercise the vital-warning state
+        if (Input.GetKeyDown(KeyCode.V))
+        {
+            _hrSpikeUntil = Time.time + 6.0f;
+            Debug.Log("[SIMULATOR] HR spike to 195 BPM for 6s (vital warning test).");
+        }
+
         // Only run fake jitter simulator inside the Windows/Mac Editor layout
-        if (Time.frameCount % 60 == 0)
+        if (Time.frameCount % 60 == 0 || Time.time < _hrSpikeUntil)
         {
             // Simulate natural heart rate drift
             _simulatedHeartRate += Random.Range(-2, 3);
             _simulatedHeartRate = Mathf.Clamp(_simulatedHeartRate, 120, 175);
+
+            if (Time.time < _hrSpikeUntil)
+                _simulatedHeartRate = 195;
+
             if (textHeartRate != null)
             {
                 textHeartRate.text = string.Format("{0} BPM", _simulatedHeartRate);
+            }
+
+            // Feed the simulated HR to the avatar so bio-luminescence and
+            // vital warning behave in the editor exactly as with real BLE data
+            if (visualsEngine != null)
+            {
+                visualsEngine.UpdateHeartRate(_simulatedHeartRate);
             }
 
             // Simulate natural runner cadence jitter between 165 and 185 SPM (Requirement 2)

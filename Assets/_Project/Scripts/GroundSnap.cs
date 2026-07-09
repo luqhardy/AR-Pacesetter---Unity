@@ -54,10 +54,16 @@ public class GroundSnap : MonoBehaviour
         // Initial snap
         _targetY = GetCurrentGroundLevel(out _currentNormal);
         transform.position = new Vector3(transform.position.x, _targetY, transform.position.z);
-        
-        if (avatarEngine == null)
+
+        // Always prefer the engine on this same GameObject: a stale reference to a
+        // different (orphaned) AvatarEngine would send IsHalted to the wrong object
+        // and the visible avatar would ignore cliffs/obstacles entirely.
+        AvatarEngine localEngine = GetComponent<AvatarEngine>();
+        if (localEngine != null && avatarEngine != localEngine)
         {
-            avatarEngine = GetComponent<AvatarEngine>();
+            if (avatarEngine != null)
+                Debug.LogWarning("[GroundSnap] avatarEngine pointed at a different object — rebound to the engine on this avatar.");
+            avatarEngine = localEngine;
         }
     }
 
@@ -170,7 +176,7 @@ public class GroundSnap : MonoBehaviour
         float safeY = Mathf.Max(transform.position.y, userCamera != null ? userCamera.position.y : 0f) + 10.0f;
         Vector3 rayOrigin = new Vector3(transform.position.x, safeY, transform.position.z);
         
-        int hitCount = Physics.RaycastNonAlloc(rayOrigin, Vector3.down, s_RaycastHits, 20.0f, environmentLayerMask);
+        int hitCount = Physics.RaycastNonAlloc(rayOrigin, Vector3.down, s_RaycastHits, 20.0f, environmentLayerMask, QueryTriggerInteraction.Ignore);
         float highestGround = -1000f;
         bool found = false;
         
@@ -244,7 +250,7 @@ public class GroundSnap : MonoBehaviour
         rayDirection.Normalize();
 
         // Cast a sphere forward up to 3.0 meters (Requirement 4.2)
-        int sphereHitCount = Physics.SphereCastNonAlloc(rayOrigin, 0.4f, rayDirection, s_SphereCastHits, obstacleDetectionDistance, obstacleLayerMask);
+        int sphereHitCount = Physics.SphereCastNonAlloc(rayOrigin, 0.4f, rayDirection, s_SphereCastHits, obstacleDetectionDistance, obstacleLayerMask, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < sphereHitCount; i++)
         {
             var h = s_SphereCastHits[i];
@@ -265,7 +271,7 @@ public class GroundSnap : MonoBehaviour
         // Perform a vertical raycast down exactly 3.0 meters ahead along user path of progression.
         // If the ground drops dramatically (cliff edge) or is missing, halt progression.
         Vector3 checkAheadPoint = userCamera.position + (rayDirection * obstacleDetectionDistance);
-        int cliffHitCount = Physics.RaycastNonAlloc(checkAheadPoint + (Vector3.up * 2.0f), Vector3.down, s_RaycastHits, 10.0f, environmentLayerMask);
+        int cliffHitCount = Physics.RaycastNonAlloc(checkAheadPoint + (Vector3.up * 2.0f), Vector3.down, s_RaycastHits, 10.0f, environmentLayerMask, QueryTriggerInteraction.Ignore);
         
         bool foundGroundAhead = false;
         float groundLevelAhead = -1000f;
@@ -282,7 +288,7 @@ public class GroundSnap : MonoBehaviour
 
         float userGroundLevel = transform.position.y;
         RaycastHit userGroundHit;
-        bool groundUnderUser = Physics.Raycast(userCamera.position + Vector3.up * 2.0f, Vector3.down, out userGroundHit, 20.0f, environmentLayerMask);
+        bool groundUnderUser = Physics.Raycast(userCamera.position + Vector3.up * 2.0f, Vector3.down, out userGroundHit, 20.0f, environmentLayerMask, QueryTriggerInteraction.Ignore);
         if (groundUnderUser)
         {
             userGroundLevel = userGroundHit.point.y;
@@ -313,7 +319,7 @@ public class GroundSnap : MonoBehaviour
     private void UpdateAnimatorState(bool isHalted)
     {
         OvertakeBehaviourController overtake = GetComponent<OvertakeBehaviourController>();
-        Animator animator = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : GetComponentInChildren<Animator>();
+        Animator animator = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : AvatarRigLocator.FindBestAnimator(transform);
         if (animator != null)
         {
             animator.SetBool("IsHalted", isHalted);

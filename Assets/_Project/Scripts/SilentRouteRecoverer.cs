@@ -5,6 +5,7 @@ public class SilentRouteRecoverer : MonoBehaviour
     [Header("Dependencies")]
     [SerializeField] private Transform userCamera;
     [SerializeField] private AvatarEngine avatarEngine;
+    [SerializeField] private SafetyEventLogger safetyLogger;
 
     [Header("Route Settings")]
     [SerializeField] private float deviationThresholdMeters = 5.0f;
@@ -93,6 +94,12 @@ public class SilentRouteRecoverer : MonoBehaviour
         {
             avatarEngine.IsOverriddenByRecovery = true;
         }
+
+        // 企画書 §4: 逸脱地点をルートマップ上にログ記録
+        if (safetyLogger == null)
+            safetyLogger = FindFirstObjectByType<SafetyEventLogger>(FindObjectsInactive.Include);
+        if (safetyLogger != null && userCamera != null)
+            safetyLogger.LogRouteDeviation(userCamera.position);
     }
 
     private void CeaseSilentRouteRecovery()

@@ -10,6 +10,8 @@ ARランニングペーサー — iPhone + XREAL AR Glass + Apple Watch 連携�
 2. [コードに使った物理演算・数式](#2-コードに使った物理演算数式)
 3. [コード実行のフローチャート](#3-コード実行のフローチャート)
 4. [発表資料に使えそうなネタ](#4-発表資料に使えそうなネタ)
+5. [Swift UI連携（AR-runner）](#5-swift-ui連携ar-runner)
+6. [更新履歴](#6-更新履歴)
 
 ---
 
@@ -88,6 +90,11 @@ flowchart TD
 | **B** | レイテンシベンチマークHUD |
 | **T** | TTC衝突警告シミュレーション |
 | **D** | ルート逸脱シミュレーション |
+| **V** | 心拍スパイク（195BPM×6秒 → バイタル警告・深青） |
+| **M** | 環境騒音シミュレーション（>45dB → 自動音量調整） |
+| **Y** | 低バッテリーHUD黄色点滅プレビュー（押している間） |
+| **F** | 長押し1.5秒で走行終了 → リザルト画面 |
+| **F1 / F2 / F3** | ARグラス / Watch / イヤホン 接続切替（Readyチェック） |
 
 ### 主要スクリプト一覧
 
@@ -106,6 +113,18 @@ flowchart TD
 | `LatencyBenchmarkRunner.cs` | レイテンシベンチマーク |
 | `SilentRouteRecoverer.cs` | ルート逸脱リカバリー |
 | `AvatarModelSwitcher.cs` | アバターモデル切替 |
+| `RunAudioEngine.cs` | サウンドシステム（足音・呼吸音・システム音・環境適応音響） |
+| `RunSessionController.cs` | 走行終了フロー・ガードレイヤー・リザルト画面（Perfect〜Try Again＋アバターコメント） |
+| `SafetyEventLogger.cs` | セーフティ・ロギング（急停止・速度超過・逸脱地点） |
+| `SessionDataStore.cs` | セッション永続化（アプリ内JSON DB＋HealthKit同期キュー） |
+| `ReadyCheckController.cs` | Readyチェック（4デバイス4色インジケーター・出走ゲート） |
+| `UserProfile.cs` | オンボーディング身体情報（身長・体重・性別） |
+| `ARVisionSystemsBootstrap.cs` | 新規マネージャーのシーン自動生成 |
+| `ARSessionManagerBridge.cs` | Swift→Unity受信（StartSession/UpdateMetrics/EndSession）＋1Hz状態レポート |
+| `DeviceManagerBridge.cs` | Swift→Unity受信（ConnectXREAL） |
+| `SwiftMessageSender.cs` | Unity→Swift送信（SyncRate/AvatarState/GPS/Latency/SessionEnded） |
+
+> Swift UI（[kyainna/AR-runner](https://github.com/kyainna/AR-runner)）との連携手順は [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) を参照。
 
 ---
 
@@ -419,10 +438,86 @@ stateDiagram-v2
 
 ---
 
+## 5. Swift UI連携（AR-runner）
+
+スマホアプリのUIは別リポジトリ [kyainna/AR-runner](https://github.com/kyainna/AR-runner)（SwiftUI）が担当。
+**Unity as a Library (UaaL)** 方式で、Swiftアプリがホストになり本リポジトリのUnityを内部に取り込む。
+
+### ビルド構成の考え方（重要）
+
+**本リポジトリ単体をXcodeでビルドしても「Unityだけのアプリ」にしかならない。**
+SwiftUI画面込みの完成アプリは、常に **AR-runner側のXcodeプロジェクトからビルド**する。
+
+```
+① Unity単体ビルド（切り分けテスト用）
+   AR Pacesetter → iOS Export → Unity-iPhone.xcodeproj → Unityアプリ単体
+   （アバター・HUD・Unity内簡易UIのみ。SwiftUI画面は含まれない）
+
+② 統合ビルド（目標の形）
+   AR Pacesetter → iOS Export ──┐
+                                ├─ 同一Xcodeワークスペース
+   AR_Runner_UI（SwiftUI）──────┘
+   → アプリターゲットに UnityFramework.framework を Embed & Sign
+   → AR_Runner_UIのスキームで実機ビルド = SwiftUI + Unity 両方入りの1アプリ
+```
+
+つまり AR Pacesetter は「ビルドするもの」ではなく「**エクスポートしてAR-runnerに部品として渡すもの**」。
+
+### メッセージ契約（実装済み）
+
+| 方向 | 経路 | 内容 |
+|---|---|---|
+| Swift → Unity | `sendMessageToGO` → GameObject `ARSessionManager` / `DeviceManager` の `OnSwiftCommand(json)` | `StartSession`（ペースkm/h・目標距離・身長・先行距離）/ `UpdateMetrics`（心拍・距離）/ `EndSession` / `ConnectXREAL` |
+| Unity → Swift | `UnitySwiftBridge.mm` → NSNotification `UnityToSwiftMessage` → `UnityBridge.onUnityMessage` | `SyncRateUpdated`(1Hz) / `AvatarStateChanged`(Idle・Run・Slow・Fast・Goal・Lost) / `GPSLost`・`GPSRecovered` / `LatencyReport` / `SessionEnded`（グレード・ランク・結果） |
+
+ブリッジ用GameObjectは起動時に自動生成されるためシーン配線は不要。
+Swift側は `AR_Runner_UI/UnityBridge.swift` を [`Docs/Swift/UnityBridge.swift`](Docs/Swift/UnityBridge.swift)（本番配線済み完成版）で置き換えるだけ。UnityFramework未リンク時は自動でシミュレーションモードにフォールバックするため、SwiftUI単体開発も従来通り可能。
+
+### テスト手順（3段階）
+
+1. **Unity単体（Windows可・Xcode不要）**: シーン再生 → Hierarchyの`ARSessionManager`を選択 → Inspectorコンテキストメニューの「Simulate StartSession / UpdateMetrics / EndSession」。Consoleに `[Unity → Swift] {"event":...}` が1Hzで出れば送信側OK
+2. **Swift単体（Mac・iOSシミュレータ可）**: 置き換え後のUnityBridge.swiftはUnityFramework未リンク時シミュレーションで動作
+3. **統合（Mac + iPhone実機）**: 上記②の構成でビルド。ARKit/GPSは実機必須
+
+詳細手順: [`SWIFT_INTEGRATION.md`](SWIFT_INTEGRATION.md)
+
+---
+
+## 6. 更新履歴
+
+### 2026-07-09 — 資料ベース機能実装・接地バグ修正・Swift連携
+
+**企画書・要件定義書ベースの新機能**（詳細は各スクリプト参照）
+
+| 機能 | 実装 |
+|---|---|
+| サウンドシステム（足音・心拍連動呼吸音・カウントダウン/ゴール音・45dB環境適応音響） | `RunAudioEngine.cs`（全クリップ実行時手続き生成・アセット不要） |
+| バイタル警告（心拍185BPM以上で深青＋CalmDownSignトリガー） | `AvatarVisualsAndActions.cs` |
+| 走行終了フロー・リザルト（Perfect〜Try Again 4段階＋S〜D＋アバターコメント生成） | `RunSessionController.cs`（HOLD TO FINISH 1.5秒長押し） |
+| セーフティ・ロギング（急停止・速度超過・逸脱地点） | `SafetyEventLogger.cs` |
+| デュアル・データ保存（アプリ内JSON DB＋HealthKit同期キュー） | `SessionDataStore.cs` |
+| Readyチェック（4デバイス4色インジケーター・出走ゲート） | `ReadyCheckController.cs` |
+| オンボーディング（身長・体重・性別）＋ハイブリッド入力（±5秒ボタン）＋ガードレイヤー・スリープ制御 | `PaceCalibrationController.cs` / `UserProfile.cs` |
+| バッテリー10%以下のHUD黄色点滅 | `PeripheralHUDManager.cs` |
+
+**接地バグ修正（アバターが地面の上を正しく走れない問題）**
+
+原因は3つの配線ミスの複合:
+1. シーンに孤立した2つ目のAvatarEngine（カメラ参照null）が存在し、GroundSnapがそれを参照 → 削除・再接続
+2. Animator参照がコンテナ上の無効化されたAnimatorを指し、表示中のY Bot（子の有効Animator）に`Speed`が届かずIdleのまま滑走 → `AvatarRigLocator.cs`で「有効・アクティブ・コントローラ付き」Animatorを優先解決
+3. AvatarModelSwitcherのモデル参照が2つともUIアイコンを誤指定 → 無効参照を検出し実モデルを自動配線
+
+あわせて接地レイキャストにトリガーコライダー無視を追加、`IsSessionEnded`フラグ新設（GroundSnapの`IsHalted`毎フレーム上書きと終了停止の競合を解消）。
+
+**Swift UI連携** — 上記セクション5参照。
+
+---
+
 ## 関連ドキュメント
 
 - [`AGENTS.md`](AGENTS.md) — エージェント向け技術仕様（数式・FSM・レイテンシ予算）
 - [`Assets/AvatarStateTransitions.md`](Assets/AvatarStateTransitions.md) — Animator状態遷移ガイド
+- [`SWIFT_INTEGRATION.md`](SWIFT_INTEGRATION.md) — Swift UI（AR-runner）連携ガイド
 
 ## ライセンス
 

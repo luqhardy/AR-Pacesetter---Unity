@@ -111,6 +111,12 @@ public class AnalyticsManager : MonoBehaviour
         }
     }
 
+    public float GetSessionAverageSync()
+    {
+        if (_totalSyncCount == 0) return 0f;
+        return _totalSyncSum / _totalSyncCount;
+    }
+
     public string EvaluateFinalSessionPerformanceRank()
     {
         if (_totalSyncCount == 0) return "D";

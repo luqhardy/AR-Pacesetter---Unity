@@ -29,13 +29,27 @@ public class PaceCalibrationController : MonoBehaviour
     [Header("Setup")]
     [SerializeField] private bool buildSetupPanelAtRuntime = true;
 
+    [Header("Ready Check / Session (auto-found if empty)")]
+    [SerializeField] private ReadyCheckController readyCheck;
+    [SerializeField] private RunSessionController sessionController;
+
     private float _selectedPaceMinutesPerKm = 5.0f;
     private bool _hasStarted;
+
+    // Onboarding fields (企画書 §5 — 身体情報の初期入力)
+    private TMP_InputField _heightInputField;
+    private TMP_InputField _weightInputField;
+    private TextMeshProUGUI _genderButtonLabel;
+    private string _selectedGender = "Other";
 
     void Awake()
     {
         if (avatarEngine == null)
             avatarEngine = FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
+        if (readyCheck == null)
+            readyCheck = FindFirstObjectByType<ReadyCheckController>(FindObjectsInactive.Include);
+        if (sessionController == null)
+            sessionController = FindFirstObjectByType<RunSessionController>(FindObjectsInactive.Include);
     }
 
     void Start()
@@ -101,9 +115,40 @@ public class PaceCalibrationController : MonoBehaviour
         }
     }
 
+    /// <summary>Swiftブリッジ用: SwiftのUIが設定画面を持つ場合、Unity側のセットアップUIを閉じる。</summary>
+    public void HideSetupUiForExternalControl()
+    {
+        _hasStarted = true; // suppress the local START RUN flow
+        if (setupPanel != null) setupPanel.SetActive(false);
+        if (paceSlider != null) paceSlider.gameObject.SetActive(false);
+        if (paceDisplayLabel != null) paceDisplayLabel.gameObject.SetActive(false);
+    }
+
+    /// <summary>Hybrid input (企画書 §5): +/- buttons adjust pace by ±5 seconds.</summary>
+    public void AdjustPaceSeconds(int deltaSeconds)
+    {
+        float newPace = Mathf.Clamp(_selectedPaceMinutesPerKm + deltaSeconds / 60f,
+            MinPaceMinutesPerKm, MaxPaceMinutesPerKm);
+        ApplyPace(newPace);
+
+        if (paceInputField != null)
+            paceInputField.SetTextWithoutNotify(FormatPaceInput(newPace));
+        if (paceSlider != null)
+            paceSlider.SetValueWithoutNotify(newPace);
+
+        SetValidationMessage($"Target: {FormatPace(newPace)}", false);
+    }
+
     public void StartRunning()
     {
         if (_hasStarted) return;
+
+        // Ready check gate (企画書 §5): required devices must be connected
+        if (readyCheck != null && !readyCheck.AllRequiredReady)
+        {
+            SetValidationMessage("AR Glass not connected — see READY CHECK (F1 to simulate).", true);
+            return;
+        }
 
         string paceText = paceInputField != null ? paceInputField.text : DefaultPaceText;
         if (!TryParsePace(paceText, out float pace))
@@ -121,9 +166,15 @@ public class PaceCalibrationController : MonoBehaviour
             return;
         }
 
+        SaveUserProfile();
+
         ApplyPace(pace);
         avatarEngine.StartPacing();
         _hasStarted = true;
+
+        // Hand off to session controller: sleep lock + guard layer + finish flow
+        if (sessionController != null)
+            sessionController.OnRunStarted();
 
         if (setupPanel != null)
             setupPanel.SetActive(false);
@@ -184,18 +235,75 @@ public class PaceCalibrationController : MonoBehaviour
         paceInputField = CreateInputField(card, new Vector2(0f, -168f));
         paceInputField.text = DefaultPaceText;
 
+        // Hybrid input (企画書 §5): +/- buttons for 5-second fine adjustment
+        CreateSmallButton(card, "−5s", new Vector2(-165f, -168f), () => AdjustPaceSeconds(-5));
+        CreateSmallButton(card, "+5s", new Vector2(165f, -168f), () => AdjustPaceSeconds(+5));
+
         paceHintLabel = CreateLabel(card, "Examples: 5:00, 5:30, 6:15  •  Range: 3:30 – 7:00 /km", 14,
             FontStyles.Italic, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -228f),
             new Vector2(420f, 28f), new Color(0.55f, 0.65f, 0.78f, 1f));
 
+        BuildProfileRow(card);
+
         validationLabel = CreateLabel(card, "", 14, FontStyles.Normal,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -262f), new Vector2(420f, 28f),
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -344f), new Vector2(420f, 28f),
             new Color(1f, 0.55f, 0.45f, 1f));
 
-        startButton = CreateStartButton(card, new Vector2(0f, -318f));
+        startButton = CreateStartButton(card, new Vector2(0f, -384f));
         startButton.onClick.AddListener(StartRunning);
 
         OnPaceInputChanged(DefaultPaceText);
+    }
+
+    // ── Onboarding row (企画書 §5 — 身長・体重・性別の初期入力) ─────────────────
+
+    private void BuildProfileRow(RectTransform card)
+    {
+        CreateLabel(card, "Runner Profile — Height (cm) / Weight (kg) / Gender", 14, FontStyles.Bold,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -262f), new Vector2(440f, 24f),
+            new Color(0.6f, 0.75f, 0.95f, 1f));
+
+        _heightInputField = CreateInputField(card, new Vector2(-150f, -292f));
+        ResizeInputField(_heightInputField, new Vector2(120f, 44f), 20);
+        _heightInputField.text = UserProfile.HeightCm.ToString("F0");
+
+        _weightInputField = CreateInputField(card, new Vector2(0f, -292f));
+        ResizeInputField(_weightInputField, new Vector2(120f, 44f), 20);
+        _weightInputField.text = UserProfile.WeightKg.ToString("F0");
+
+        _selectedGender = UserProfile.Gender;
+        Button genderButton = CreateSmallButton(card, _selectedGender, new Vector2(150f, -292f), CycleGender);
+        genderButton.GetComponent<RectTransform>().sizeDelta = new Vector2(120f, 44f);
+        _genderButtonLabel = genderButton.GetComponentInChildren<TextMeshProUGUI>();
+    }
+
+    private void CycleGender()
+    {
+        _selectedGender = _selectedGender switch
+        {
+            "Male" => "Female",
+            "Female" => "Other",
+            _ => "Male"
+        };
+        if (_genderButtonLabel != null)
+            _genderButtonLabel.text = _selectedGender;
+    }
+
+    private void SaveUserProfile()
+    {
+        if (_heightInputField != null && float.TryParse(_heightInputField.text, out float height))
+            UserProfile.HeightCm = height;
+        if (_weightInputField != null && float.TryParse(_weightInputField.text, out float weight))
+            UserProfile.WeightKg = weight;
+        UserProfile.Gender = _selectedGender;
+        UserProfile.Save();
+    }
+
+    private static void ResizeInputField(TMP_InputField field, Vector2 size, int fontSize)
+    {
+        field.GetComponent<RectTransform>().sizeDelta = size;
+        if (field.textComponent is TextMeshProUGUI text) text.fontSize = fontSize;
+        if (field.placeholder is TextMeshProUGUI ph) ph.fontSize = fontSize;
     }
 
     private void EnsureCanvasVisible()
@@ -311,9 +419,44 @@ public class PaceCalibrationController : MonoBehaviour
         rt.anchorMin = new Vector2(0.5f, 0.5f);
         rt.anchorMax = new Vector2(0.5f, 0.5f);
         rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(480f, 380f);
+        rt.sizeDelta = new Vector2(510f, 500f);
         rt.anchoredPosition = Vector2.zero;
         return rt;
+    }
+
+    private static Button CreateSmallButton(RectTransform parent, string text, Vector2 anchoredPos,
+        UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject btnGo = new GameObject($"Button_{text}", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        btnGo.transform.SetParent(parent, false);
+
+        btnGo.GetComponent<Image>().color = new Color(0.16f, 0.24f, 0.34f, 1f);
+
+        RectTransform rt = btnGo.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 1f);
+        rt.anchorMax = new Vector2(0.5f, 1f);
+        rt.pivot = new Vector2(0.5f, 1f);
+        rt.anchoredPosition = anchoredPos;
+        rt.sizeDelta = new Vector2(80f, 52f);
+
+        GameObject textGo = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer));
+        textGo.transform.SetParent(btnGo.transform, false);
+        TextMeshProUGUI label = textGo.AddComponent<TextMeshProUGUI>();
+        label.text = text;
+        label.fontSize = 18;
+        label.fontStyle = FontStyles.Bold;
+        label.alignment = TextAlignmentOptions.Center;
+        label.color = Color.white;
+
+        RectTransform textRt = textGo.GetComponent<RectTransform>();
+        textRt.anchorMin = Vector2.zero;
+        textRt.anchorMax = Vector2.one;
+        textRt.offsetMin = Vector2.zero;
+        textRt.offsetMax = Vector2.zero;
+
+        Button button = btnGo.GetComponent<Button>();
+        button.onClick.AddListener(onClick);
+        return button;
     }
 
     private static TextMeshProUGUI CreateLabel(RectTransform parent, string text, float fontSize,

@@ -57,7 +57,15 @@ public class AvatarModelSwitcher : MonoBehaviour
 
     private void UpdateActiveAvatarModel()
     {
-        if (defaultCapsuleObject == null || customVRChatObject == null) return;
+        // Guard: the scene may have these fields mis-wired (e.g. pointing at UI
+        // icons). Toggling those would hide UI and rebind renderers/animators to
+        // objects that have none — the visible model then never animates.
+        if (!IsValidModelObject(defaultCapsuleObject) || !IsValidModelObject(customVRChatObject))
+        {
+            if (Application.isPlaying)
+                AutoWireSingleModel();
+            return;
+        }
 
         defaultCapsuleObject.SetActive(activeAvatar == AvatarType.DefaultCapsule);
         customVRChatObject.SetActive(activeAvatar == AvatarType.CustomVRChat);
@@ -108,5 +116,56 @@ public class AvatarModelSwitcher : MonoBehaviour
         {
             overtakeController.UpdateActiveAnimator(activeAnimator);
         }
+    }
+
+    // A usable model reference: a world-space object with a real 3D renderer
+    private static bool IsValidModelObject(GameObject go)
+    {
+        if (go == null) return false;
+        if (go.GetComponent<RectTransform>() != null) return false; // UI element
+        return go.GetComponentInChildren<MeshRenderer>(true) != null
+            || go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
+    }
+
+    /// <summary>
+    /// Fallback when the switcher references are unusable: wire the single model
+    /// that actually lives under this container (animator, glow renderer, IK relay).
+    /// </summary>
+    private void AutoWireSingleModel()
+    {
+        Debug.LogWarning("[MODEL SWITCHER] Model references are invalid (UI objects or missing). " +
+                         "Auto-wiring the child model instead; capsule/VRChat toggling is disabled.");
+
+        Animator activeAnimator = AvatarRigLocator.FindBestAnimator(transform);
+        if (activeAnimator == null)
+        {
+            Debug.LogError("[MODEL SWITCHER] No Animator found under the avatar container.");
+            return;
+        }
+
+        RuntimeAnimatorController correctController =
+            Resources.Load<RuntimeAnimatorController>("AvatarAnimatorController");
+        if (correctController != null && activeAnimator.runtimeAnimatorController != correctController)
+            activeAnimator.runtimeAnimatorController = correctController;
+        activeAnimator.applyRootMotion = false;
+
+        // Route bio-luminescence / fade to the model's actual renderer
+        SkinnedMeshRenderer skinned = activeAnimator.GetComponentInChildren<SkinnedMeshRenderer>(true);
+        MeshRenderer mesh = skinned == null ? activeAnimator.GetComponentInChildren<MeshRenderer>(true) : null;
+
+        if (gameStateController != null)
+            gameStateController.UpdateActiveRenderer(mesh, skinned);
+        if (visualsController != null)
+            visualsController.UpdateActiveRenderer(mesh, skinned);
+
+        // IK relay so OnAnimatorIK reaches the overtake controller
+        OvertakeBehaviourController overtakeController = GetComponent<OvertakeBehaviourController>();
+        AvatarIKRelay relay = activeAnimator.GetComponent<AvatarIKRelay>();
+        if (relay == null)
+            relay = activeAnimator.gameObject.AddComponent<AvatarIKRelay>();
+        relay.TargetController = overtakeController;
+
+        if (overtakeController != null)
+            overtakeController.UpdateActiveAnimator(activeAnimator);
     }
 }

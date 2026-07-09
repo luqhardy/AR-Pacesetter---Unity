@@ -43,8 +43,19 @@ public class OvertakeBehaviourController : MonoBehaviour
     {
         _engine = GetComponent<AvatarEngine>();
 
-        if (avatarAnimator == null)
-            avatarAnimator = GetComponentInChildren<Animator>();
+        // A disabled or controller-less animator (e.g. the legacy one left on the
+        // container) silently swallows Speed/IsHalted and the visible model never
+        // animates. Always resolve to the best usable rig animator instead.
+        if (avatarAnimator == null || !avatarAnimator.enabled
+            || avatarAnimator.runtimeAnimatorController == null)
+        {
+            Animator best = AvatarRigLocator.FindBestAnimator(transform);
+            if (best != null && best != avatarAnimator)
+            {
+                Debug.LogWarning($"[OVERTAKE VISUAL] Assigned animator was unusable — rebound to '{best.gameObject.name}'.");
+                avatarAnimator = best;
+            }
+        }
     }
 
     private void Update()
@@ -54,7 +65,7 @@ public class OvertakeBehaviourController : MonoBehaviour
         // ── Update Animator Speed and Halt parameters safely ───────────────
         if (avatarAnimator != null)
         {
-            bool isWaitingOrHalted = !_engine.HasStarted || _engine.IsHalted;
+            bool isWaitingOrHalted = !_engine.HasStarted || _engine.IsHalted || _engine.IsSessionEnded;
             float currentSpeed = isWaitingOrHalted ? 0f : _engine.GetTargetSpeed();
             SetAnimatorFloatSafe("Speed", currentSpeed);
             SetAnimatorBoolSafe("IsHalted", isWaitingOrHalted);

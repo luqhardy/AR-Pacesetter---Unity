@@ -1,0 +1,96 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+
+/// <summary>
+/// デュアル・データ保存 (企画書 §4):
+///  1) アプリ内DB — persistentDataPath 配下に1セッション1JSONで永続化
+///  2) Apple HealthKit — iOSビルドではネイティブブリッジ経由で自動同期
+///     （ブリッジ実装は Plugins/iOS 側のTODO。ここでは同期キュー通知まで）
+/// </summary>
+[Serializable]
+public class RunSessionRecord
+{
+    public string dateIso;
+    public float distanceMeters;
+    public float elapsedSeconds;
+    public float averageSyncRate;
+    public string grade;           // S / A / B / C / D
+    public string rankLabel;       // Perfect / Great / Good / Try Again
+    public float fatigueIndex;
+    public float targetPaceMinutesPerKm;
+    public string avatarComment;
+    public List<SafetyEventLogger.SafetyEvent> safetyEvents = new List<SafetyEventLogger.SafetyEvent>();
+}
+
+public static class SessionDataStore
+{
+    private static string SessionDirectory =>
+        Path.Combine(Application.persistentDataPath, "RunSessions");
+
+    /// <summary>Persists the record as JSON and queues HealthKit sync. Returns the file path.</summary>
+    public static string SaveSession(RunSessionRecord record)
+    {
+        Directory.CreateDirectory(SessionDirectory);
+
+        string fileName = $"run_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+        string fullPath = Path.Combine(SessionDirectory, fileName);
+
+        File.WriteAllText(fullPath, JsonUtility.ToJson(record, prettyPrint: true));
+        Debug.Log($"[DATA STORE] Session saved: {fullPath}");
+
+        QueueHealthKitSync(record);
+        return fullPath;
+    }
+
+    public static List<RunSessionRecord> LoadAllSessions()
+    {
+        var records = new List<RunSessionRecord>();
+        if (!Directory.Exists(SessionDirectory)) return records;
+
+        foreach (string file in Directory.GetFiles(SessionDirectory, "run_*.json"))
+        {
+            try
+            {
+                records.Add(JsonUtility.FromJson<RunSessionRecord>(File.ReadAllText(file)));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[DATA STORE] Failed to read {file}: {e.Message}");
+            }
+        }
+        return records;
+    }
+
+    /// <summary>Most recent session, or null. Used to prefill the next run's target settings.</summary>
+    public static RunSessionRecord LoadLatestSession()
+    {
+        if (!Directory.Exists(SessionDirectory)) return null;
+
+        string[] files = Directory.GetFiles(SessionDirectory, "run_*.json");
+        if (files.Length == 0) return null;
+
+        Array.Sort(files); // timestamped names sort chronologically
+        try
+        {
+            return JsonUtility.FromJson<RunSessionRecord>(File.ReadAllText(files[files.Length - 1]));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void QueueHealthKitSync(RunSessionRecord record)
+    {
+#if UNITY_IOS && !UNITY_EDITOR
+        // TODO(Plugins/iOS): add HealthKitPlugin.mm exposing
+        //   void SubmitWorkoutToHealthKit(double meters, double seconds)
+        // and route the workout sample (HKWorkoutActivityTypeRunning) here.
+        Debug.Log($"[HEALTHKIT] Workout queued for sync: {record.distanceMeters:F0}m / {record.elapsedSeconds:F0}s");
+#else
+        Debug.Log("[HEALTHKIT] Editor build — HealthKit sync skipped (queued on iOS).");
+#endif
+    }
+}

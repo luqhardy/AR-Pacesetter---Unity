@@ -12,12 +12,22 @@ public class AvatarVisualsAndActions : MonoBehaviour
     [SerializeField] private float baseIntensity = 1.0f;
     [SerializeField] private float pulseAmplitude = 1.5f;
 
+    [Header("Vital Warning (企画書 4.1 — 心拍過負荷)")]
+    [Tooltip("BPM at or above which the avatar turns deep blue and performs the calm-down hand sign.")]
+    [SerializeField] private int vitalWarningBpmThreshold = 185;
+    [Tooltip("Optional avatar Animator. Trigger 'CalmDownSign' fires once per overload episode.")]
+    [SerializeField] private Animator avatarAnimator;
+
     private Material _glowMaterial;
     private int _currentHeartRate = 60; // Baseline default
+    private bool _vitalWarningActive = false;
 
     // Color states from technical specification Section 4.1
     private Color _normalCyan = new Color(0.0f, 0.94f, 1.0f);   // Normal Bio-Luminescence
     private Color _amberWarning = new Color(1.0f, 0.62f, 0.0f); // 10m separation alert
+    private Color _deepBlueVital = new Color(0.05f, 0.15f, 0.9f); // HR overload "calm down" state
+
+    public bool IsVitalWarningActive => _vitalWarningActive;
 
     void Start()
     {
@@ -40,6 +50,26 @@ public class AvatarVisualsAndActions : MonoBehaviour
         {
             // Requirement 4.1: 10m separation switches color to Amber
             targetBaseColor = _amberWarning;
+        }
+
+        // 2b. Vital warning takes priority: HR overload turns avatar deep blue
+        //     and plays the "calm down" hand sign once per episode (企画書 4.1)
+        if (_currentHeartRate >= vitalWarningBpmThreshold)
+        {
+            targetBaseColor = _deepBlueVital;
+
+            if (!_vitalWarningActive)
+            {
+                _vitalWarningActive = true;
+                Debug.LogWarning($"[VITAL WARNING] HR {_currentHeartRate} BPM >= {vitalWarningBpmThreshold}. Deep-blue state + calm-down sign.");
+                if (avatarAnimator != null)
+                    avatarAnimator.SetTrigger("CalmDownSign");
+            }
+        }
+        else if (_vitalWarningActive && _currentHeartRate < vitalWarningBpmThreshold - 5)
+        {
+            // 5 BPM hysteresis so the color does not flicker at the threshold
+            _vitalWarningActive = false;
         }
 
         // 3. Compute Bio-Luminescence Pulse Frequency using Heart Rate

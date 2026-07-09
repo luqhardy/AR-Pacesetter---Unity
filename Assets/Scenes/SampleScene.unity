@@ -1818,63 +1818,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 332374253}
   m_CullTransparentMesh: 1
---- !u!1 &360401913
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 360401915}
-  - component: {fileID: 360401914}
-  m_Layer: 0
-  m_Name: AvatarEngine
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &360401914
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 360401913}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cfca5d96b2adbca4b8dc1a2c85d1a8eb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::AvatarEngine
-  userCamera: {fileID: 0}
-  gameStateController: {fileID: 0}
-  targetPaceMinutesPerKm: 5
-  leadDistanceMeters: 3
-  slowdownFraction: 0.5
-  maxLeadBeforeSlow: 1
-  catchupBoostFraction: 1.2
-  catchupTriggerUnderrun: 0.5
-  maxTurnDegreesPerSecond: 45
-  overtakenConfirmSeconds: 1.5
-  sprintMultiplier: 1.25
-  sprintHoldSeconds: 3
-  overtakenSidestepMeters: 0.8
---- !u!4 &360401915
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 360401913}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.35356, y: -0.38415, z: 0.35355}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &425410336
 GameObject:
   m_ObjectHideFlags: 0
@@ -6816,7 +6759,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GroundSnap
   userCamera: {fileID: 872678045}
-  avatarEngine: {fileID: 360401914}
+  avatarEngine: {fileID: 1362694751}
   smoothTime: 0.3
   stepThreshold: 0.15
   environmentLayerMask:
@@ -11030,5 +10973,4 @@ SceneRoots:
   - {fileID: 2099970469}
   - {fileID: 331264285}
   - {fileID: 1554467199}
-  - {fileID: 360401915}
   - {fileID: 1362694753}

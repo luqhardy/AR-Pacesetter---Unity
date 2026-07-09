@@ -112,6 +112,9 @@ public class AvatarEngine : MonoBehaviour
 
     // ── Public API ───────────────────────────────────────────────────────────
     public bool IsHalted { get; set; } = false;
+    // Set by RunSessionController when the run finishes. Kept separate from
+    // IsHalted because GroundSnap overwrites IsHalted every frame.
+    public bool IsSessionEnded { get; set; } = false;
     public float TargetPaceMinutesPerKm => targetPaceMinutesPerKm;
     public OvertakeState CurrentOvertakeState => _overtakeState;
     public bool HasStarted => _hasStarted;
@@ -125,7 +128,7 @@ public class AvatarEngine : MonoBehaviour
             Debug.Log("[PACER ENGINE] Start pacing command received! Commencing pacer movement.");
             
             OvertakeBehaviourController overtake = GetComponent<OvertakeBehaviourController>();
-            Animator anim = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : GetComponentInChildren<Animator>();
+            Animator anim = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : AvatarRigLocator.FindBestAnimator(transform);
             if (anim != null) anim.SetTrigger("RunResume");
         }
     }
@@ -213,8 +216,8 @@ public class AvatarEngine : MonoBehaviour
             return;
         }
 
-        // ── Cliff / Obstacle halting (AGENTS.md §4.2) ────────────────────────
-        if (IsHalted)
+        // ── Cliff / Obstacle halting (AGENTS.md §4.2) / Session end ─────────
+        if (IsHalted || IsSessionEnded)
         {
             RunHaltedFaceUser();
             return;
@@ -505,7 +508,7 @@ public class AvatarEngine : MonoBehaviour
     private void SendOvertakeAnimatorTrigger(string triggerName)
     {
         OvertakeBehaviourController overtake = GetComponent<OvertakeBehaviourController>();
-        Animator anim = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : GetComponentInChildren<Animator>();
+        Animator anim = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : AvatarRigLocator.FindBestAnimator(transform);
         if (anim != null) anim.SetTrigger(triggerName);
     }
 
@@ -529,6 +532,12 @@ public class AvatarEngine : MonoBehaviour
     {
         targetPaceMinutesPerKm = newPaceMinutesPerKm;
         CalculateVelocityMatrix(newPaceMinutesPerKm);
+    }
+
+    /// <summary>Swiftブリッジ用: 先行距離 (forwardOffsetM) の外部設定。</summary>
+    public void SetLeadDistance(float meters)
+    {
+        leadDistanceMeters = Mathf.Clamp(meters, 1.0f, 10.0f);
     }
 
     public float GetTargetSpeed() => _calculatedTargetSpeedMetersPerSecond * _effectiveSpeedMultiplier;
