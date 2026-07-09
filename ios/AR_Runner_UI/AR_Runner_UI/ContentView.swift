@@ -6,6 +6,7 @@ enum AppScreen {
     case deviceConnect
     case runningSettings
     case mapRoute
+    case running
     case lockScreen
     case stats
     case history
@@ -44,11 +45,15 @@ struct ContentView: View {
             // 4. Draw route on map
             case .mapRoute:
                 MapRouteView(
-                    onStart: { screen = .lockScreen }, // Routes back to Lock Screen
+                    onStart: { screen = .running },
                     onBack: { screen = .runningSettings }
                 )
 
-
+            // 5. Running screen (Unity ARビュー + HUD)
+            case .running:
+                RunningView(
+                    onEnd: { screen = .stats }
+                )
 
             // 7. Stats
             case .stats:

@@ -127,4 +127,15 @@ Xcode 16形式(FileSystemSynchronizedRootGroup)のため、`ios/AR_Runner_UI/AR_
 - `distanceKm`(目標距離)は現在ゴール判定に未使用(Swift側がendSessionを送る設計)
 - `LatencyReport` は実測Motion-to-Photonではなく平滑化フレーム時間(実機ではLatencyBenchmarkRunnerと統合予定)
 - `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)
-- 走行画面(CourseRunningView)への `UnityContainerView` 組み込みはUI担当者の判断で配置
+- 心拍表示はWatch連携までの仮表示(ランダム値)。実測値は`ARSessionManager.start`のTODO参照
+- 統計画面(StatsView)への `UnityBridge.lastResult`(SessionEnded結果)の反映は未実装
+
+## 走行画面の配線(実装済み)
+
+`RunningView`([CourseRunningView.swift](ios/AR_Runner_UI/AR_Runner_UI/CourseRunningView.swift))に統合済み:
+- 背景: UnityFrameworkリンク時は `UnityContainerView`(ARカメラ+アバター)、未リンク時は従来のモック背景に自動フォールバック
+- `onAppear`: `UnityLauncher.launch()` → `ARSessionManager.start(paceKmH:distanceKm:)`(設定値は`RunSettings.shared`経由でRunningSettingsViewから受領)
+- HUD: 距離/経過時間=`ARSessionManager`、シンクロ率=`UnityBridge.avatarSyncRate`(Unityから1Hz)、ペース=設定値の分'秒"換算
+- GPS喪失バナー: `UnityBridge.gpsStatus == .lost` で表示(Unityの`GPSLost`/`GPSRecovered`イベント連動)
+- 終了: `session.end()`(→Unityへ`EndSession`)→ `UnityLauncher.pause()` → 統計画面へ遷移
+- ナビゲーション: マップ画面「開始」→ `.running`(RunningView)→ 終了 → `.stats`

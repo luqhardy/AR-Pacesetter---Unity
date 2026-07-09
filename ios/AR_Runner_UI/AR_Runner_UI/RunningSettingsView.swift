@@ -133,7 +133,13 @@ struct RunningSettingsView: View {
                 Spacer()
 
                 // Next button
-                Button(action: onNext) {
+                Button(action: {
+                    // 設定値を共有ストアへ反映（RunningViewがUnityへ引き渡す）
+                    RunSettings.shared.paceKmH = paceKmh
+                    RunSettings.shared.distanceKm = distanceKm
+                    RunSettings.shared.timeSeconds = timeSeconds
+                    onNext()
+                }) {
                     ZStack {
                         Circle()
                             .fill(Color.arYellow)

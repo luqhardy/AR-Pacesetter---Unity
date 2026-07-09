@@ -126,53 +126,35 @@ struct CourseSetupView: View {
 // MARK: - 4. Running Screen
 struct RunningView: View {
     let onEnd: () -> Void
-    @State private var elapsed = 0
-    @State private var distance = 0.0
+
+    @ObservedObject private var bridge = UnityBridge.shared
+    @ObservedObject private var session = ARSessionManager.shared
+    @ObservedObject private var unity = UnityLauncher.shared
+
     @State private var bpm = 142
-    @State private var pace = "5'24\""
-    @State private var syncRate = 87
     @State private var showEndAlert = false
 
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var elapsedStr: String {
-        String(format: "%02d:%02d", elapsed / 60, elapsed % 60)
+        String(format: "%02d:%02d", session.elapsedSeconds / 60, session.elapsedSeconds % 60)
+    }
+
+    /// UnityFrameworkがリンク済みでARビューを持っているか
+    private var hasUnityView: Bool {
+        unity.isRunning && unity.unityRootView != nil
     }
 
     var body: some View {
         ARScreen {
             ZStack {
-                LinearGradient(
-                    colors: [Color(red: 0.07, green: 0.10, blue: 0.07), Color.black],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .ignoresSafeArea()
-
-                // Avatar placeholder
-                VStack {
-                    Spacer()
-                    HStack(spacing: 10) {
-                        ForEach(0..<3) { i in
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.arYellow.opacity(0.85 - Double(i) * 0.22))
-                                .frame(width: 52, height: 52)
-                                .rotationEffect(.degrees(Double(i) * 8 - 8))
-                        }
-                    }
-                    .padding(.bottom, 130)
-                }
-
-                // Ground grid
-                Canvas { ctx, size in
-                    for i in 0..<8 {
-                        let y = size.height * 0.65 + CGFloat(i) * 18
-                        let compress = CGFloat(i) * 0.09
-                        var path = Path()
-                        path.move(to: CGPoint(x: 0, y: y))
-                        path.addLine(to: CGPoint(x: size.width, y: y))
-                        let opacity = max(0.0, 0.08 - Double(compress.clamped(to: 0...0.08)))
-                        ctx.stroke(path, with: .color(.arYellow.opacity(opacity)), lineWidth: 1)
-                    }
+                if hasUnityView {
+                    // ★ Unity ARビュー（カメラ映像+伴走アバター）が背景全面に描画される
+                    UnityContainerView()
+                        .ignoresSafeArea()
+                } else {
+                    // UnityFramework未リンク時（シミュレータ・UI単体開発）のモック背景
+                    mockBackground
                 }
 
                 // HUD
@@ -187,7 +169,7 @@ struct RunningView: View {
                         Spacer()
                         VStack(alignment: .trailing, spacing: 1) {
                             ARLabel(text: "距離")
-                            Text(String(format: "%.2fkm", distance))
+                            Text(String(format: "%.2fkm", session.currentDistance))
                                 .font(.system(size: 34, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
                         }
@@ -222,7 +204,7 @@ struct RunningView: View {
                             .frame(maxWidth: .infinity)
 
                             VStack(spacing: 3) {
-                                Text(pace)
+                                Text(RunSettings.shared.paceMinPerKmString)
                                     .font(.system(size: 30, weight: .bold, design: .monospaced))
                                     .foregroundColor(.arYellow)
                                 Text("ペース /km")
@@ -232,9 +214,9 @@ struct RunningView: View {
                             .frame(maxWidth: .infinity)
 
                             VStack(spacing: 3) {
-                                Text("\(syncRate)%")
+                                Text("\(bridge.avatarSyncRate)%")
                                     .font(.system(size: 24, weight: .bold, design: .monospaced))
-                                    .foregroundColor(syncRate >= 80 ? .arYellow : .orange)
+                                    .foregroundColor(bridge.avatarSyncRate >= 80 ? .arYellow : .orange)
                                 Text("シンクロ率")
                                     .font(.system(size: 11))
                                     .foregroundColor(.arGrayText)
@@ -264,16 +246,87 @@ struct RunningView: View {
                     }
                     Spacer()
                 }
+
+                // GPS喪失バナー（Unityの GPSLost / GPSRecovered イベント連動）
+                if bridge.gpsStatus == .lost {
+                    VStack {
+                        HStack(spacing: 8) {
+                            Image(systemName: "location.slash.fill")
+                                .font(.system(size: 13))
+                            Text("GPS再取得中 — アバターは慣性走行中")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.arYellow, in: Capsule())
+                        .padding(.top, 116)
+                        Spacer()
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .animation(.easeInOut(duration: 0.25), value: bridge.gpsStatus == .lost)
             .ignoresSafeArea()
+            .onAppear {
+                // Unityランタイム起動 → 走行セッション開始（設定値をUnityへ引き渡す）
+                UnityLauncher.shared.launch()
+                if !session.isSessionActive {
+                    session.start(
+                        paceKmH: RunSettings.shared.paceKmH,
+                        distanceKm: RunSettings.shared.distanceKm
+                    )
+                }
+            }
             .onReceive(timer) { _ in
-                elapsed += 1
-                distance += 0.0028
+                // 心拍はWatch連携までの仮表示（実測値はUnity側へはARSessionManagerが送信）
                 bpm = Int.random(in: 138...148)
             }
             .alert("ランを終了しますか？", isPresented: $showEndAlert) {
-                Button("終了", role: .destructive) { onEnd() }
+                Button("終了", role: .destructive) {
+                    session.end()               // Unityへ EndSession → SessionEnded が返る
+                    UnityLauncher.shared.pause()
+                    onEnd()
+                }
                 Button("続ける", role: .cancel) {}
+            }
+        }
+    }
+
+    // MARK: UnityFramework未リンク時のモック背景（UI単体開発用）
+    private var mockBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color(red: 0.07, green: 0.10, blue: 0.07), Color.black],
+                startPoint: .top, endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            // Avatar placeholder
+            VStack {
+                Spacer()
+                HStack(spacing: 10) {
+                    ForEach(0..<3) { i in
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.arYellow.opacity(0.85 - Double(i) * 0.22))
+                            .frame(width: 52, height: 52)
+                            .rotationEffect(.degrees(Double(i) * 8 - 8))
+                    }
+                }
+                .padding(.bottom, 130)
+            }
+
+            // Ground grid
+            Canvas { ctx, size in
+                for i in 0..<8 {
+                    let y = size.height * 0.65 + CGFloat(i) * 18
+                    let compress = CGFloat(i) * 0.09
+                    var path = Path()
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: size.width, y: y))
+                    let opacity = max(0.0, 0.08 - Double(compress.clamped(to: 0...0.08)))
+                    ctx.stroke(path, with: .color(.arYellow.opacity(opacity)), lineWidth: 1)
+                }
             }
         }
     }
