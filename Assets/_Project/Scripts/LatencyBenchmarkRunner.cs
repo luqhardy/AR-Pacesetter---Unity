@@ -52,6 +52,9 @@ public class LatencyBenchmarkRunner : MonoBehaviour
     // ═══════════════════════════════════════════════════════════════════════
     private bool _benchmarkActive = false;
 
+    // Swiftブリッジ用: HUD非表示のままバックグラウンドで計測し続けるモード
+    private bool _continuousMeasurement = false;
+
     private readonly Stopwatch _sw = new Stopwatch();
 
     // Per-stage rolling queues
@@ -93,13 +96,37 @@ public class LatencyBenchmarkRunner : MonoBehaviour
             SetHUDVisible(_benchmarkActive);
             Debug.Log($"[BENCHMARK] Latency benchmark {(_benchmarkActive ? "STARTED" : "STOPPED")}.");
 
-            if (!_benchmarkActive) ClearQueues();
+            if (!_benchmarkActive && !_continuousMeasurement) ClearQueues();
         }
 
-        if (!_benchmarkActive) return;
+        if (!_benchmarkActive && !_continuousMeasurement) return;
 
         RunBenchmarkFrame();
-        UpdateHUD();
+
+        if (_benchmarkActive)
+            UpdateHUD();
+    }
+
+    // ── Swiftブリッジ用の公開API ─────────────────────────────────────────────
+
+    /// <summary>走行中の実測M2Pレポート用: HUDなしの連続計測を切り替える。</summary>
+    public void SetContinuousMeasurement(bool active)
+    {
+        _continuousMeasurement = active;
+        if (!active && !_benchmarkActive)
+            ClearQueues();
+    }
+
+    /// <summary>ローリング平均のMotion-to-Photon合計 (ms)。未計測なら -1。</summary>
+    public double AverageTotalMs
+    {
+        get
+        {
+            if (_totalTimes.Count == 0) return -1.0;
+            double sum = 0;
+            foreach (double t in _totalTimes) sum += t;
+            return sum / _totalTimes.Count;
+        }
     }
 
     // ════════════════════════════════════════════════════════════════════════

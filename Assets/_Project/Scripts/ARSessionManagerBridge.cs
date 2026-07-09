@@ -36,6 +36,7 @@ public class ARSessionManagerBridge : MonoBehaviour
     [SerializeField] private PaceCalibrationController paceCalibration;
     [SerializeField] private GameStateController gameStateController;
     [SerializeField] private PeripheralHUDManager hudManager;
+    [SerializeField] private LatencyBenchmarkRunner latencyRunner;
 
     private const float ReportIntervalSeconds = 1.0f;
     private const float BaselineAvatarHeightCm = 175f; // 企画書 §4.1
@@ -63,6 +64,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (paceCalibration == null) paceCalibration = FindFirstObjectByType<PaceCalibrationController>(FindObjectsInactive.Include);
         if (gameStateController == null) gameStateController = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
         if (hudManager == null) hudManager = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
+        if (latencyRunner == null) latencyRunner = FindFirstObjectByType<LatencyBenchmarkRunner>(FindObjectsInactive.Include);
     }
 
     // ── Swift → Unity エントリポイント ───────────────────────────────────────
@@ -138,6 +140,10 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         avatarEngine.StartPacing();
 
+        // 実測Motion-to-Photonのバックグラウンド計測を開始 (LatencyReportに使用)
+        if (latencyRunner != null)
+            latencyRunner.SetContinuousMeasurement(true);
+
         SendAvatarStateIfChanged("Run");
         Debug.Log($"[SWIFT BRIDGE] StartSession — pace {cmd.targetPaceKmH}km/h, goal {cmd.distanceKm}km, lead {cmd.forwardOffsetM}m.");
     }
@@ -160,6 +166,9 @@ public class ARSessionManagerBridge : MonoBehaviour
 
     private void HandleEndSession()
     {
+        if (latencyRunner != null)
+            latencyRunner.SetContinuousMeasurement(false);
+
         RunSessionRecord record = sessionController != null
             ? sessionController.FinishRunExternal()
             : null;
@@ -196,7 +205,10 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (analytics != null)
             SwiftMessageSender.SendSyncRate(Mathf.RoundToInt(analytics.GetLiveSyncRate()));
 
-        SwiftMessageSender.SendLatency(_smoothedFrameMs);
+        // 実測M2P(LatencyBenchmarkRunnerのローリング平均)を優先、
+        // 未計測時は平滑化フレーム時間にフォールバック
+        double measuredM2p = latencyRunner != null ? latencyRunner.AverageTotalMs : -1.0;
+        SwiftMessageSender.SendLatency(measuredM2p > 0 ? measuredM2p : _smoothedFrameMs);
         SendAvatarStateIfChanged(DeriveAvatarState());
 
         // エディタ/スタンドアロン走行ではUnity自身の距離計測でもゴール判定する

@@ -130,6 +130,7 @@ struct RunningView: View {
     @ObservedObject private var bridge = UnityBridge.shared
     @ObservedObject private var session = ARSessionManager.shared
     @ObservedObject private var unity = UnityLauncher.shared
+    @ObservedObject private var heartMonitor = HeartRateMonitor.shared
 
     @State private var bpm = 142
     @State private var showEndAlert = false
@@ -296,8 +297,9 @@ struct RunningView: View {
                 }
             }
             .onReceive(timer) { _ in
-                // 心拍はWatch連携までの仮表示（実測値はUnity側へはARSessionManagerが送信）
-                bpm = Int.random(in: 138...148)
+                // 心拍: HealthKit実測(Watch装着時)を優先、未取得時は仮表示
+                let realBpm = heartMonitor.latestBpm
+                bpm = realBpm > 0 ? realBpm : Int.random(in: 138...148)
             }
             .onChange(of: bridge.avatarState) { _, newState in
                 // Unity側の自動ゴール（目標距離到達）→ ローカル停止 → 統計画面へ

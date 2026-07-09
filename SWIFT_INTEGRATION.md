@@ -138,12 +138,25 @@ Xcode 16形式(FileSystemSynchronizedRootGroup)のため、`ios/AR_Runner_UI/AR_
 
 StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リング(実測%)・GRADE/ランクバッジ・距離・タイム・平均ペース・推定カロリー。結果未着時はモック値(UI単体開発用)。
 
+## 実測センサー(実装済み)
+
+走行中の距離・ペース・心拍は実測値を優先し、取得できない環境(シミュレータ等)では自動で推定値にフォールバックする:
+
+| 計測値 | 実測ソース | フォールバック |
+|---|---|---|
+| 距離・ペース | `LocationTracker.swift`(CoreLocation、精度20m以下のサンプルのみ採用・GPS飛び棄却) | 設定ペースからの推定 |
+| 心拍 | `HeartRateMonitor.swift`(HealthKit・Apple Watch。HKAnchoredObjectQueryでリアルタイム購読) | ランダム仮値 |
+| LatencyReport | Unity `LatencyBenchmarkRunner` のローリング平均M2P(走行中バックグラウンド計測) | 平滑化フレーム時間 |
+
+権限まわり(設定済み): カメラ・位置情報・モーション・Bluetooth・ヘルスケアの使用目的文をビルド設定(INFOPLIST_KEY)に、HealthKit entitlementを `AR_Runner_UI.entitlements` に追加済み。
+**初回のみXcodeで**: Signing & Capabilities → + Capability → **HealthKit** を追加(entitlementsファイルは同梱済みなので追加するだけ)。
+シミュレータでの位置情報テスト: Features → Location → **City Run**。
+
 ## 既知の制約 / TODO
 
 - 初回のみ UnityFramework の Embed & Sign と Data フォルダの Target Membership 変更が手動(上記②)
-- `LatencyReport` は実測Motion-to-Photonではなく平滑化フレーム時間(実機ではLatencyBenchmarkRunnerと統合予定)
 - `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)。DeviceConnectViewのARグラス行タップで送信される
-- 心拍表示はWatch連携までの仮表示(ランダム値)。実測値は`ARSessionManager.start`のTODO参照
+- バックグラウンド走行(画面ロック中の計測継続)は未対応(Background Modes: Location updates の追加が必要)
 
 ## 走行画面の配線(実装済み)
 

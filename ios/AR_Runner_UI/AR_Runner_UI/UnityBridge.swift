@@ -248,15 +248,35 @@ final class ARSessionManager: ObservableObject {
 
     func start(paceKmH: Double, distanceKm: Double) {
         isSessionActive = true
+
+        // 実測センサー起動: CoreLocation(距離/速度) + HealthKit(心拍・Watch経由)
+        LocationTracker.shared.start()
+        HeartRateMonitor.shared.start()
+
         bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm)
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.elapsedSeconds += 1
-            self.currentDistance += paceKmH / 3600
-            // TODO: 実機ではCoreLocation/HealthKitの実測値に置き換える
+
+            // 距離: GPS実測が取れていれば実測、なければ設定ペースから推定(シミュレータ)
+            let gpsDistance = LocationTracker.shared.totalDistanceKm
+            if gpsDistance > 0.001 {
+                self.currentDistance = gpsDistance
+            } else {
+                self.currentDistance += paceKmH / 3600
+            }
+
+            // ペース: GPS実測速度(0.5km/h以上で有効)、なければ設定値
+            let gpsSpeed = LocationTracker.shared.currentSpeedKmH
+            let effectivePace = gpsSpeed > 0.5 ? gpsSpeed : paceKmH
+
+            // 心拍: HealthKit実測(Watch装着時)、なければ仮値
+            let realBpm = HeartRateMonitor.shared.latestBpm
+            let effectiveBpm = realBpm > 0 ? realBpm : Int.random(in: 138...152)
+
             self.bridge.updateRunnerMetrics(
-                paceKmH: paceKmH,
-                heartRate: Int.random(in: 138...152),
+                paceKmH: effectivePace,
+                heartRate: effectiveBpm,
                 distanceKm: self.currentDistance
             )
         }
@@ -273,5 +293,7 @@ final class ARSessionManager: ObservableObject {
         timer?.invalidate()
         timer = nil
         isSessionActive = false
+        LocationTracker.shared.stop()
+        HeartRateMonitor.shared.stop()
     }
 }
