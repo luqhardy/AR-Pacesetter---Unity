@@ -112,6 +112,38 @@ public class RunSessionController : MonoBehaviour
         return _lastRecord;
     }
 
+    /// <summary>
+    /// 再走行対応: 終了済みセッションを破棄し、全コンポーネントを次の走行が
+    /// 開始できる状態に戻す(履歴・保存済みJSONはそのまま残る)。
+    /// </summary>
+    public void ResetForNewSession()
+    {
+        if (_runActive)
+        {
+            Debug.LogWarning("[SESSION] ResetForNewSession ignored — a run is still active.");
+            return;
+        }
+
+        _finished = false;
+        _holdTimer = 0f;
+        _uiHoldActive = false;
+
+        if (_resultPanel != null) Destroy(_resultPanel);
+        if (_guardLayer != null) Destroy(_guardLayer);
+        _resultPanel = null;
+        _guardLayer = null;
+        _holdProgressFill = null;
+        _holdLabel = null;
+
+        if (avatarEngine != null) avatarEngine.ResetSession();
+        if (analytics != null) analytics.ResetSession();
+        if (hudManager != null) hudManager.ResetSession();
+        if (safetyLogger != null) safetyLogger.ResetSession();
+        if (audioEngine != null) audioEngine.ResetSession();
+
+        Debug.Log("[SESSION] Reset complete — ready for a new run.");
+    }
+
     private void FinishRun()
     {
         _finished = true;

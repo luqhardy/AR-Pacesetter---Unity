@@ -47,6 +47,15 @@ public class PeripheralHUDManager : MonoBehaviour
     public float DistanceMeters => _cumulativeDistanceMeters;
     public int CurrentHeartRate => _simulatedHeartRate;
 
+    /// <summary>再走行対応: タイム・距離の累積をリセットする。</summary>
+    public void ResetSession()
+    {
+        _elapsedTimeSeconds = 0.0f;
+        _cumulativeDistanceMeters = 0.0f;
+        if (userCamera != null)
+            _lastUserPosition = userCamera.position;
+    }
+
     void Start()
     {
         if (userCamera != null)

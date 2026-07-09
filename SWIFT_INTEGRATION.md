@@ -85,7 +85,11 @@ UnityContainerView()
 | `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM` | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → `StartPacing()`。UnityのセットアップUIは非表示 |
 | `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定 |
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
+| `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
 | `DeviceManager` | `ConnectXREAL` | — | ReadyチェックのARグラスをConnectedへ |
+
+`StartSession`は前セッションが終了済みの場合、全コンポーネント(エンジン・集計・HUD・
+セーフティログ・音響)を自動リセットしてから開始する — **同一起動内での再走行に対応**。
 
 ### Unity → Swift (NSNotification `UnityToSwiftMessage` → `onUnityMessage`)
 
@@ -96,6 +100,7 @@ UnityContainerView()
 | `GPSLost` / `GPSRecovered` | — | GPS FSM遷移時 |
 | `LatencyReport` | `ms` (double) | 走行中 1Hz(平滑化フレーム時間) |
 | `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds` | EndSession応答 |
+| `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
 
 Unity側の受信オブジェクト(`ARSessionManager`/`DeviceManager` GameObject)は
 [ARVisionSystemsBootstrap.cs](Assets/_Project/Scripts/ARVisionSystemsBootstrap.cs) が起動時に自動生成する。シーン配線は不要。
@@ -139,8 +144,6 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 - `LatencyReport` は実測Motion-to-Photonではなく平滑化フレーム時間(実機ではLatencyBenchmarkRunnerと統合予定)
 - `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)。DeviceConnectViewのARグラス行タップで送信される
 - 心拍表示はWatch連携までの仮表示(ランダム値)。実測値は`ARSessionManager.start`のTODO参照
-- 1アプリ実行中に走行→終了→再走行はUnity側セッションが再初期化されないため未対応(Unity RunSessionControllerのリスタート実装が必要)
-- 履歴画面(HistoryView)はモックデータ(セッション履歴の永続化はUnity側JSON DBに保存済み — 読み出しAPI未接続)
 
 ## 走行画面の配線(実装済み)
 

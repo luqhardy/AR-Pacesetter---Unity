@@ -232,6 +232,13 @@ public class RunAudioEngine : MonoBehaviour
         _systemSource.PlayOneShot(_beepGoClip, systemLevel * _masterVolume);
     }
 
+    /// <summary>再走行対応: スタート/ゴール音の再生フラグを戻す。</summary>
+    public void ResetSession()
+    {
+        _startSignalPlayed = false;
+        _goalPlayed = false;
+    }
+
     /// <summary>Called by the run-stop flow when the session finishes.</summary>
     public void PlayGoalFanfare()
     {

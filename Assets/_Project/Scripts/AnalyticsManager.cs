@@ -111,6 +111,17 @@ public class AnalyticsManager : MonoBehaviour
         }
     }
 
+    /// <summary>再走行対応: 集計値をすべて初期化する。</summary>
+    public void ResetSession()
+    {
+        _totalSyncSum = 0.0f;
+        _totalSyncCount = 0;
+        _currentKmSyncSum = 0.0f;
+        _currentKmSyncCount = 0;
+        _lastEvaluatedKilometerMarker = 0.0f;
+        _cumulativeFatigueIndex = 0.0f;
+    }
+
     public float GetSessionAverageSync()
     {
         if (_totalSyncCount == 0) return 0f;

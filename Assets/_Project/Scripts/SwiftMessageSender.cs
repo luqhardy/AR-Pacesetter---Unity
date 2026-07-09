@@ -46,6 +46,26 @@ public static class SwiftMessageSender
         => SendRaw(string.Format(CultureInfo.InvariantCulture,
             "{{\"event\":\"LatencyReport\",\"ms\":{0:F1}}}", milliseconds));
 
+    /// <summary>走行履歴一覧 (Swift側 "HistoryData" ケース、HistoryViewが表示)。</summary>
+    public static void SendHistory(System.Collections.Generic.List<RunSessionRecord> records)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("{\"event\":\"HistoryData\",\"sessions\":[");
+        for (int i = 0; i < records.Count; i++)
+        {
+            RunSessionRecord r = records[i];
+            if (r == null) continue;
+            if (i > 0) sb.Append(',');
+            sb.AppendFormat(CultureInfo.InvariantCulture,
+                "{{\"dateIso\":\"{0}\",\"distanceKm\":{1:F3},\"elapsedSeconds\":{2:F0}," +
+                "\"averageSync\":{3:F1},\"grade\":\"{4}\"}}",
+                r.dateIso, r.distanceMeters / 1000f, r.elapsedSeconds,
+                r.averageSyncRate, r.grade);
+        }
+        sb.Append("]}");
+        SendRaw(sb.ToString());
+    }
+
     /// <summary>走行終了時の結果サマリー(Swift側は将来 "SessionEnded" ケースを追加して受信)。</summary>
     public static void SendSessionResult(RunSessionRecord record)
     {

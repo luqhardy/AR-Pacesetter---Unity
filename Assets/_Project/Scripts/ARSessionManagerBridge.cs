@@ -86,6 +86,7 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "StartSession": HandleStartSession(cmd); break;
             case "UpdateMetrics": HandleUpdateMetrics(cmd); break;
             case "EndSession": HandleEndSession(); break;
+            case "RequestHistory": HandleRequestHistory(); break;
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown command: {cmd.command}");
                 break;
@@ -101,6 +102,13 @@ public class ARSessionManagerBridge : MonoBehaviour
         }
 
         _sessionDriven = true;
+
+        // 再走行: 前セッションが終了済みなら全コンポーネントをリセットしてから開始
+        if (sessionController != null && sessionController.IsFinished)
+        {
+            sessionController.ResetForNewSession();
+            _lastSentAvatarState = ""; // Idle→Run遷移を再送させる
+        }
 
         // 目標距離: 到達したらUnity側から自動終了する (SessionEnded送信)
         _goalDistanceMeters = cmd.distanceKm > 0 ? cmd.distanceKm * 1000.0 : 0;
@@ -159,6 +167,18 @@ public class ARSessionManagerBridge : MonoBehaviour
         SendAvatarStateIfChanged("Goal");
         SwiftMessageSender.SendSessionResult(record);
         Debug.Log("[SWIFT BRIDGE] EndSession — result sent to Swift.");
+    }
+
+    private void HandleRequestHistory()
+    {
+        var records = SessionDataStore.LoadAllSessions();
+        // 新しい順・最大20件 (ファイル名はタイムスタンプ順)
+        records.Reverse();
+        if (records.Count > 20)
+            records.RemoveRange(20, records.Count - 20);
+
+        SwiftMessageSender.SendHistory(records);
+        Debug.Log($"[SWIFT BRIDGE] RequestHistory — {records.Count}件を送信。");
     }
 
     // ── Unity → Swift 定期レポート (1Hz) ─────────────────────────────────────
@@ -262,5 +282,9 @@ public class ARSessionManagerBridge : MonoBehaviour
     [ContextMenu("Simulate Goal Reached (distance = goal)")]
     private void SimulateGoalReached()
         => OnSwiftCommand($"{{\"command\":\"UpdateMetrics\",\"paceKmH\":12.0,\"heartRate\":151,\"distanceKm\":{Math.Max(_goalDistanceMeters, 1000) / 1000.0}}}");
+
+    [ContextMenu("Simulate RequestHistory")]
+    private void SimulateRequestHistory()
+        => OnSwiftCommand("{\"command\":\"RequestHistory\"}");
 #endif
 }

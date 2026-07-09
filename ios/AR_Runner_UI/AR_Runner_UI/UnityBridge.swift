@@ -28,6 +28,7 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var gpsStatus: GPSStatus = .searching
     @Published var motionToPhotonMs: Double = 0  // latency monitor
     @Published var lastResult: SessionResult?    // EndSession後にUnityから届く
+    @Published var history: [HistoryEntry] = []  // RequestHistory応答(新しい順)
 
     // MARK: Types
     enum AvatarState: String {
@@ -49,6 +50,32 @@ final class UnityBridge: NSObject, ObservableObject {
         let averageSync: Double  // %
         let distanceKm: Double
         let elapsedSeconds: Double
+    }
+
+    struct HistoryEntry: Identifiable {
+        let id = UUID()
+        let dateIso: String      // ISO8601 (Unity側 DateTime "o" 形式)
+        let distanceKm: Double
+        let elapsedSeconds: Double
+        let averageSync: Double  // %
+        let grade: String
+
+        /// "6月15日" 形式の表示用日付
+        var dateLabel: String {
+            let isoDay = String(dateIso.prefix(10)) // yyyy-MM-dd
+            let parser = DateFormatter()
+            parser.dateFormat = "yyyy-MM-dd"
+            guard let date = parser.date(from: isoDay) else { return isoDay }
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "ja_JP")
+            formatter.dateFormat = "M月d日"
+            return formatter.string(from: date)
+        }
+
+        var timeLabel: String {
+            let total = Int(elapsedSeconds)
+            return String(format: "%02d:%02d", total / 60, total % 60)
+        }
     }
 
     // MARK: Init
@@ -104,6 +131,12 @@ final class UnityBridge: NSObject, ObservableObject {
                     payload: ["command": "ConnectXREAL"])
     }
 
+    /// Request past run history from Unity's session store (HistoryData event).
+    func requestHistory() {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "RequestHistory"])
+    }
+
     // MARK: Unity → Swift Callbacks
 
     @objc func onUnityMessage(_ jsonString: String) {
@@ -136,6 +169,18 @@ final class UnityBridge: NSObject, ObservableObject {
                     distanceKm: dict["distanceKm"] as? Double ?? 0,
                     elapsedSeconds: dict["elapsedSeconds"] as? Double ?? 0
                 )
+            case "HistoryData":
+                if let sessions = dict["sessions"] as? [[String: Any]] {
+                    self.history = sessions.map { s in
+                        HistoryEntry(
+                            dateIso: s["dateIso"] as? String ?? "",
+                            distanceKm: s["distanceKm"] as? Double ?? 0,
+                            elapsedSeconds: s["elapsedSeconds"] as? Double ?? 0,
+                            averageSync: s["averageSync"] as? Double ?? 0,
+                            grade: s["grade"] as? String ?? "-"
+                        )
+                    }
+                }
             default:
                 break
             }
@@ -174,6 +219,16 @@ final class UnityBridge: NSObject, ObservableObject {
                 self.avatarState = .goal
             case "ConnectXREAL":
                 self.gpsStatus = .searching
+            case "RequestHistory":
+                // シミュレータ用のダミー履歴(実機ではUnityのJSON DBから届く)
+                self.history = [
+                    HistoryEntry(dateIso: "2026-07-08T07:12:00", distanceKm: 5.0,
+                                 elapsedSeconds: 1610, averageSync: 91.2, grade: "S"),
+                    HistoryEntry(dateIso: "2026-07-05T18:40:00", distanceKm: 3.2,
+                                 elapsedSeconds: 1064, averageSync: 83.5, grade: "A"),
+                    HistoryEntry(dateIso: "2026-07-01T06:55:00", distanceKm: 2.1,
+                                 elapsedSeconds: 705, averageSync: 76.8, grade: "B"),
+                ]
             default: break
             }
         }

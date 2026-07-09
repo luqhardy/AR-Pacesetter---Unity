@@ -44,6 +44,17 @@ public class SafetyEventLogger : MonoBehaviour
 
     public IReadOnlyList<SafetyEvent> Events => _events;
 
+    /// <summary>再走行対応: 前セッションのイベントと検知状態を破棄する。</summary>
+    public void ResetSession()
+    {
+        _events.Clear();
+        _speedHistory.Clear();
+        _overspeedSince = -1f;
+        _suddenStopCooldownUntil = 0f;
+        _overspeedCooldownUntil = 0f;
+        _deviationCooldownUntil = 0f;
+    }
+
     void Start()
     {
         if (userCamera == null && Camera.main != null)

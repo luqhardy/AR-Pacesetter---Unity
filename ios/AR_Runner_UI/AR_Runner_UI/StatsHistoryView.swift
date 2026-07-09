@@ -150,12 +150,25 @@ struct StatsView: View {
 struct HistoryView: View {
     let onBack: () -> Void
 
-    let historyItems: [(date: String, dist: String, time: String, sync: String)] = [
+    // Unityのセッション保存(JSON DB)から取得した履歴。未着時はモック表示
+    @ObservedObject private var bridge = UnityBridge.shared
+
+    private let mockItems: [(date: String, dist: String, time: String, sync: String)] = [
         ("6月15日", "2.1km", "11:24", "87%"),
         ("6月12日", "5.0km", "26:40", "92%"),
         ("6月08日", "3.4km", "18:15", "79%"),
         ("6月03日", "2.1km", "11:55", "84%"),
     ]
+
+    private var historyItems: [(date: String, dist: String, time: String, sync: String)] {
+        guard !bridge.history.isEmpty else { return mockItems }
+        return bridge.history.map { entry in
+            (date: entry.dateLabel,
+             dist: String(format: "%.1fkm", entry.distanceKm),
+             time: entry.timeLabel,
+             sync: "\(Int(entry.averageSync.rounded()))%")
+        }
+    }
 
     var body: some View {
         ARScreen {
@@ -217,6 +230,10 @@ struct HistoryView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 52)
                 }
+            }
+            .onAppear {
+                // Unityのセッション保存(JSON DB)から履歴を取得
+                bridge.requestHistory()
             }
         }
     }

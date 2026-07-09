@@ -540,6 +540,37 @@ public class AvatarEngine : MonoBehaviour
         leadDistanceMeters = Mathf.Clamp(meters, 1.0f, 10.0f);
     }
 
+    /// <summary>
+    /// 再走行対応: 終了済みセッションの状態を破棄し、次の StartPacing を受け付ける。
+    /// アバターはユーザー前方の初期位置へ戻り待機状態になる。
+    /// </summary>
+    public void ResetSession()
+    {
+        _hasStarted = false;
+        IsSessionEnded = false;
+        IsHalted = false;
+        IsOverriddenByRecovery = false;
+
+        _movementHistory.Clear();
+        _headingHistory.Clear();
+        _overtakeState = OvertakeState.None;
+        _overtakenTimer = 0f;
+        _sprintTimer = 0f;
+        _sidestepOffset = Vector3.zero;
+        _effectiveSpeedMultiplier = 1.0f;
+        _lastCleanKalmanVelocity = Vector3.zero;
+
+        if (userCamera != null)
+        {
+            _lastFrameUserPosition = userCamera.position;
+            _targetPacingPosition = userCamera.position + (_currentLinearDirection * leadDistanceMeters);
+            _targetPacingPosition.y = transform.position.y; // GroundSnapのY管理を尊重
+            transform.position = _targetPacingPosition;
+        }
+
+        Debug.Log("[PACER ENGINE] Session reset — waiting for next Start command.");
+    }
+
     public float GetTargetSpeed() => _calculatedTargetSpeedMetersPerSecond * _effectiveSpeedMultiplier;
 
     public float GetBaseTargetSpeed() => _calculatedTargetSpeedMetersPerSecond;
