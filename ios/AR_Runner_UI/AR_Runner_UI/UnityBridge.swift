@@ -208,9 +208,15 @@ final class ARSessionManager: ObservableObject {
     }
 
     func end() {
+        endLocally()
+        bridge.endSession()
+    }
+
+    /// Unity側が先に終了した場合(目標距離到達の自動ゴール)用。
+    /// EndSessionを再送せずローカルのタイマー/状態のみ停止する。
+    func endLocally() {
         timer?.invalidate()
         timer = nil
         isSessionActive = false
-        bridge.endSession()
     }
 }

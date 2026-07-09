@@ -121,14 +121,26 @@ Unity側の受信オブジェクト(`ARSessionManager`/`DeviceManager` GameObjec
 Xcode 16形式(FileSystemSynchronizedRootGroup)のため、`ios/AR_Runner_UI/AR_Runner_UI/` に
 .swiftファイルを置くだけでビルド対象になる。
 
+## ゴール判定(実装済み)
+
+`StartSession`の`distanceKm`を目標距離としてUnity側([ARSessionManagerBridge.cs](Assets/_Project/Scripts/ARSessionManagerBridge.cs))が監視:
+- 距離ソースはSwift報告値(CoreLocation・UpdateMetrics)とUnity内計測の**大きい方**
+- 到達すると自動で`EndSession`相当の終了処理 → `AvatarStateChanged: Goal` + `SessionEnded`をSwiftへ送信
+- Swift側: RunningViewが`avatarState == .goal`を検知 → GOALオーバーレイ表示(2.5秒) → 統計画面へ自動遷移
+- エディタ検証: `ARSessionManager`のコンテキストメニュー「Simulate Goal Reached」
+
+## 統計画面(実装済み)
+
+StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リング(実測%)・GRADE/ランクバッジ・距離・タイム・平均ペース・推定カロリー。結果未着時はモック値(UI単体開発用)。
+
 ## 既知の制約 / TODO
 
 - 初回のみ UnityFramework の Embed & Sign と Data フォルダの Target Membership 変更が手動(上記②)
-- `distanceKm`(目標距離)は現在ゴール判定に未使用(Swift側がendSessionを送る設計)
 - `LatencyReport` は実測Motion-to-Photonではなく平滑化フレーム時間(実機ではLatencyBenchmarkRunnerと統合予定)
-- `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)
+- `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)。DeviceConnectViewのARグラス行タップで送信される
 - 心拍表示はWatch連携までの仮表示(ランダム値)。実測値は`ARSessionManager.start`のTODO参照
-- 統計画面(StatsView)への `UnityBridge.lastResult`(SessionEnded結果)の反映は未実装
+- 1アプリ実行中に走行→終了→再走行はUnity側セッションが再初期化されないため未対応(Unity RunSessionControllerのリスタート実装が必要)
+- 履歴画面(HistoryView)はモックデータ(セッション履歴の永続化はUnity側JSON DBに保存済み — 読み出しAPI未接続)
 
 ## 走行画面の配線(実装済み)
 

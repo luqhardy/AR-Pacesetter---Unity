@@ -5,6 +5,42 @@ struct StatsView: View {
     let onHistory: () -> Void
     let onBack: () -> Void
 
+    // Unityから届いた走行結果 (SessionEnded)。無ければモック値で表示(UI単体開発用)
+    @ObservedObject private var bridge = UnityBridge.shared
+
+    private var result: UnityBridge.SessionResult? { bridge.lastResult }
+
+    private var syncPercent: Int {
+        result.map { Int($0.averageSync.rounded()) } ?? 87
+    }
+
+    private var rankBadgeText: String {
+        result.map { "GRADE \($0.grade)・\($0.rank)" } ?? "TARGET ACHIEVED"
+    }
+
+    private var distanceStr: String {
+        result.map { String(format: "%.2f", $0.distanceKm) } ?? "2.13"
+    }
+
+    private var timeStr: String {
+        guard let r = result else { return "11:24" }
+        let total = Int(r.elapsedSeconds)
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    private var paceStr: String {
+        guard let r = result, r.distanceKm > 0.01 else { return "5'21\"" }
+        let minPerKm = (r.elapsedSeconds / 60.0) / r.distanceKm
+        let minutes = Int(minPerKm)
+        let seconds = Int((minPerKm - Double(minutes)) * 60.0)
+        return String(format: "%d'%02d\"", minutes, seconds)
+    }
+
+    private var kcalStr: String {
+        // 概算: 体重60kg想定 × 距離(km) × 1.05 (ランニングの標準推定式)
+        result.map { String(Int($0.distanceKm * 60.0 * 1.05)) } ?? "164"
+    }
+
     var body: some View {
         ARScreen {
             VStack(spacing: 0) {
@@ -40,7 +76,7 @@ struct StatsView: View {
                                     .frame(width: 172, height: 172)
 
                                 Circle()
-                                    .trim(from: 0.0, to: 0.87)
+                                    .trim(from: 0.0, to: CGFloat(syncPercent) / 100.0)
                                     .stroke(
                                         AngularGradient(
                                             colors: [Color.arYellow.opacity(0.5), Color.arYellow, Color.arYellow.opacity(0.5)],
@@ -55,10 +91,10 @@ struct StatsView: View {
                                     Text("シンクロ率")
                                         .font(.system(size: 11))
                                         .foregroundColor(.arGrayText)
-                                    Text("87%")
+                                    Text("\(syncPercent)%")
                                         .font(.system(size: 40, weight: .bold))
                                         .foregroundColor(.white)
-                                    Text("TARGET ACHIEVED")
+                                    Text(rankBadgeText)
                                         .font(.system(size: 9, weight: .bold))
                                         .foregroundColor(.arYellow)
                                         .tracking(1)
@@ -84,12 +120,12 @@ struct StatsView: View {
                         // Stats grid
                         Grid(horizontalSpacing: 10, verticalSpacing: 10) {
                             GridRow {
-                                StatMiniCard(title: "距離", value: "2.13", unit: "km")
-                                StatMiniCard(title: "タイム", value: "11:24", unit: "")
+                                StatMiniCard(title: "距離", value: distanceStr, unit: "km")
+                                StatMiniCard(title: "タイム", value: timeStr, unit: "")
                             }
                             GridRow {
-                                StatMiniCard(title: "平均ペース", value: "5'21\"", unit: "/km")
-                                StatMiniCard(title: "消費カロリー", value: "164", unit: "kcal")
+                                StatMiniCard(title: "平均ペース", value: paceStr, unit: "/km")
+                                StatMiniCard(title: "消費カロリー", value: kcalStr, unit: "kcal")
                             }
                         }
                         .padding(.horizontal, 24)

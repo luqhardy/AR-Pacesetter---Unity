@@ -52,6 +52,8 @@ struct DeviceConnectView: View {
                         isScanning: $arScanning,
                         onConnect: {
                             arScanning = true
+                            // UnityへConnectXREAL送信(UnityのReadyチェックが更新される)
+                            UnityBridge.shared.connect()
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                                 arScanning = false
                                 arConnected = true

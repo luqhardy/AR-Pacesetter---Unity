@@ -35,6 +35,7 @@ public class ARSessionManagerBridge : MonoBehaviour
     [SerializeField] private HeartRateReceiver heartRateReceiver;
     [SerializeField] private PaceCalibrationController paceCalibration;
     [SerializeField] private GameStateController gameStateController;
+    [SerializeField] private PeripheralHUDManager hudManager;
 
     private const float ReportIntervalSeconds = 1.0f;
     private const float BaselineAvatarHeightCm = 175f; // 企画書 §4.1
@@ -44,6 +45,11 @@ public class ARSessionManagerBridge : MonoBehaviour
     private string _lastSentAvatarState = "";
     private bool _gpsWasLost = false;
     private bool _sessionDriven = false; // true once Swift has issued StartSession
+
+    // 目標距離ゴール判定 (StartSessionのdistanceKm)
+    private double _goalDistanceMeters = 0;
+    private double _swiftReportedDistanceMeters = 0;
+    private bool _goalReached = false;
 
     void Awake()
     {
@@ -56,6 +62,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (heartRateReceiver == null) heartRateReceiver = FindFirstObjectByType<HeartRateReceiver>(FindObjectsInactive.Include);
         if (paceCalibration == null) paceCalibration = FindFirstObjectByType<PaceCalibrationController>(FindObjectsInactive.Include);
         if (gameStateController == null) gameStateController = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
+        if (hudManager == null) hudManager = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
     }
 
     // ── Swift → Unity エントリポイント ───────────────────────────────────────
@@ -95,6 +102,11 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         _sessionDriven = true;
 
+        // 目標距離: 到達したらUnity側から自動終了する (SessionEnded送信)
+        _goalDistanceMeters = cmd.distanceKm > 0 ? cmd.distanceKm * 1000.0 : 0;
+        _swiftReportedDistanceMeters = 0;
+        _goalReached = false;
+
         // km/h → 分/km 変換 (例: 12km/h → 5:00/km)
         if (cmd.targetPaceKmH > 0.1)
         {
@@ -128,9 +140,14 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (heartRateReceiver != null && cmd.heartRate > 0)
             heartRateReceiver.OnHeartRateDataReceived(cmd.heartRate.ToString());
 
-        // 実機ではSwift(CoreLocation)の距離が正 — スプリット判定に供給
-        if (analytics != null && cmd.distanceKm > 0)
-            analytics.CheckDistanceIntervalSplits((float)(cmd.distanceKm * 1000.0));
+        // 実機ではSwift(CoreLocation)の距離が正 — スプリット判定とゴール判定に供給
+        if (cmd.distanceKm > 0)
+        {
+            _swiftReportedDistanceMeters = cmd.distanceKm * 1000.0;
+            if (analytics != null)
+                analytics.CheckDistanceIntervalSplits((float)_swiftReportedDistanceMeters);
+            CheckGoalReached();
+        }
     }
 
     private void HandleEndSession()
@@ -161,6 +178,24 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         SwiftMessageSender.SendLatency(_smoothedFrameMs);
         SendAvatarStateIfChanged(DeriveAvatarState());
+
+        // エディタ/スタンドアロン走行ではUnity自身の距離計測でもゴール判定する
+        CheckGoalReached();
+    }
+
+    private void CheckGoalReached()
+    {
+        if (_goalReached || _goalDistanceMeters <= 0) return;
+        if (avatarEngine == null || !avatarEngine.HasStarted || avatarEngine.IsSessionEnded) return;
+
+        // 実機はSwift(CoreLocation)距離が正、エディタはUnityの累積距離 — 大きい方を採用
+        double unityDistance = hudManager != null ? hudManager.DistanceMeters : 0;
+        double bestDistance = Math.Max(unityDistance, _swiftReportedDistanceMeters);
+        if (bestDistance < _goalDistanceMeters) return;
+
+        _goalReached = true;
+        Debug.Log($"[SWIFT BRIDGE] 目標距離 {_goalDistanceMeters / 1000.0:F2}km 到達 — セッションを自動終了します。");
+        HandleEndSession();
     }
 
     private void ReportGpsTransitions()
@@ -223,5 +258,9 @@ public class ARSessionManagerBridge : MonoBehaviour
     [ContextMenu("Simulate EndSession")]
     private void SimulateEndSession()
         => OnSwiftCommand("{\"command\":\"EndSession\"}");
+
+    [ContextMenu("Simulate Goal Reached (distance = goal)")]
+    private void SimulateGoalReached()
+        => OnSwiftCommand($"{{\"command\":\"UpdateMetrics\",\"paceKmH\":12.0,\"heartRate\":151,\"distanceKm\":{Math.Max(_goalDistanceMeters, 1000) / 1000.0}}}");
 #endif
 }

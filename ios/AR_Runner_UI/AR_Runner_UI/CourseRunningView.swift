@@ -133,6 +133,7 @@ struct RunningView: View {
 
     @State private var bpm = 142
     @State private var showEndAlert = false
+    @State private var showGoalOverlay = false
 
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -247,6 +248,22 @@ struct RunningView: View {
                     Spacer()
                 }
 
+                // ゴール到達オーバーレイ（Unityの目標距離自動終了 → AvatarState "Goal"）
+                if showGoalOverlay {
+                    VStack(spacing: 12) {
+                        Text("GOAL!")
+                            .font(.system(size: 56, weight: .black))
+                            .foregroundColor(.arYellow)
+                            .shadow(color: Color.arYellow.opacity(0.6), radius: 24)
+                        Text("目標距離を達成しました")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black.opacity(0.55))
+                    .transition(.opacity)
+                }
+
                 // GPS喪失バナー（Unityの GPSLost / GPSRecovered イベント連動）
                 if bridge.gpsStatus == .lost {
                     VStack {
@@ -281,6 +298,16 @@ struct RunningView: View {
             .onReceive(timer) { _ in
                 // 心拍はWatch連携までの仮表示（実測値はUnity側へはARSessionManagerが送信）
                 bpm = Int.random(in: 138...148)
+            }
+            .onChange(of: bridge.avatarState) { _, newState in
+                // Unity側の自動ゴール（目標距離到達）→ ローカル停止 → 統計画面へ
+                guard newState == .goal, session.isSessionActive else { return }
+                session.endLocally()
+                withAnimation(.easeIn(duration: 0.3)) { showGoalOverlay = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    UnityLauncher.shared.pause()
+                    onEnd()
+                }
             }
             .alert("ランを終了しますか？", isPresented: $showEndAlert) {
                 Button("終了", role: .destructive) {
