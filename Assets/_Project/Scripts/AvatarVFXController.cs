@@ -86,6 +86,17 @@ public class AvatarVFXController : MonoBehaviour
         _prevEnded = ended;
     }
 
+    /// <summary>
+    /// GPS復帰演出 (要件定義 6.2): 再登場位置に光の粒子が集まる1.5秒の演出。
+    /// GameStateController の Reaccumulation から呼ばれる。
+    /// </summary>
+    public void PlayRecoveryConvergence()
+    {
+        if (_convergePs == null) return;
+        _convergePs.transform.position = transform.position + Vector3.up * 0.9f;
+        _convergePs.Play();
+    }
+
     // ── 起動: 粒子集積 + スケールイン ────────────────────────────────────────
 
     private IEnumerator PlaySpawnSequence()

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- バックグラウンド走行: 画面ロック中もCoreLocationの距離計測を継続する。
+	     GENERATE_INFOPLIST_FILE=YES と併用時、このファイルの内容は生成キーとマージされる -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+</dict>
+</plist>

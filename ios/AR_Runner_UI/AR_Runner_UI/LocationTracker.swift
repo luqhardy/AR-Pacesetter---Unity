@@ -35,11 +35,19 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         isTracking = true
 
         manager.requestWhenInUseAuthorization()
+
+        // バックグラウンド走行: 画面ロック中も計測継続
+        // (Info.plist の UIBackgroundModes: location とセット。青いインジケーターで明示)
+        manager.allowsBackgroundLocationUpdates = true
+        manager.pausesLocationUpdatesAutomatically = false
+        manager.showsBackgroundLocationIndicator = true
+
         manager.startUpdatingLocation()
     }
 
     func stop() {
         isTracking = false
+        manager.allowsBackgroundLocationUpdates = false
         manager.stopUpdatingLocation()
     }
 

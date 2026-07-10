@@ -257,6 +257,7 @@
 				ENABLE_PREVIEWS = YES;
 				CODE_SIGN_ENTITLEMENTS = AR_Runner_UI/AR_Runner_UI.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Apple Watch・ARグラスとの接続にBluetoothを使用します";
 				INFOPLIST_KEY_NSCameraUsageDescription = "AR伴走アバターの表示にカメラを使用します";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "リアルタイム心拍表示のためヘルスケアデータを読み取ります";
@@ -295,6 +296,7 @@
 				ENABLE_PREVIEWS = YES;
 				CODE_SIGN_ENTITLEMENTS = AR_Runner_UI/AR_Runner_UI.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Apple Watch・ARグラスとの接続にBluetoothを使用します";
 				INFOPLIST_KEY_NSCameraUsageDescription = "AR伴走アバターの表示にカメラを使用します";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "リアルタイム心拍表示のためヘルスケアデータを読み取ります";

@@ -212,8 +212,13 @@ public class GameStateController : MonoBehaviour
 
     private IEnumerator ExecuteReaccumulationProcess()
     {
-        // Step 1: 1.5s particle-gathering animation
+        // Step 1: 1.5s particle-gathering animation (要件定義 6.2)
         Debug.Log("[REACCUMULATION] Playing 1.5s light-particle gathering FX…");
+        AvatarVFXController vfx = avatarTarget != null
+            ? avatarTarget.GetComponent<AvatarVFXController>()
+            : null;
+        if (vfx != null)
+            vfx.PlayRecoveryConvergence();
         yield return new WaitForSeconds(1.5f);
 
         // Step 2: AGENTS.md §5 accuracy gate — wait until radius ≤ 5m

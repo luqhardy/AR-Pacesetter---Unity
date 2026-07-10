@@ -77,6 +77,9 @@ public class PeripheralHUDManager : MonoBehaviour
             visualsEngine = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
         }
 
+        // 企画書 §2 アダプティブ表示: 1pxアウトラインで高コントラストを確保
+        ApplyHighContrastOutline();
+
         // Initialize HUD text displays if optional
         if (textNotificationAlert != null)
         {
@@ -278,6 +281,28 @@ public class PeripheralHUDManager : MonoBehaviour
         if (textPace != null) textPace.color = color;
     }
 
+    // 企画書 §2: 各HUDテキストに黒の細アウトラインを付与(明るい路面でも視認可能に)
+    private void ApplyHighContrastOutline()
+    {
+        ApplyOutline(textHeartRate);
+        ApplyOutline(textTime);
+        ApplyOutline(textDistance);
+        ApplyOutline(textPace);
+        ApplyOutline(textPitch);
+        ApplyOutline(textSyncRate);
+        ApplyOutline(textFatigueIndex);
+        ApplyOutline(textGrade);
+        ApplyOutline(textNotificationAlert);
+    }
+
+    private static void ApplyOutline(TextMeshProUGUI text)
+    {
+        if (text == null) return;
+        // fontMaterialへのアクセスでインスタンス化されるため共有マテリアルは汚さない
+        text.outlineColor = new Color32(0, 0, 0, 255);
+        text.outlineWidth = 0.15f; // TMPのSDF基準で約1px相当
+    }
+
     // --- THE BLE INPUT GATEWAYS ---
     public void UpdateLiveHeartRate(int realBpm)
     {
@@ -366,16 +391,34 @@ public class PeripheralHUDManager : MonoBehaviour
 
         textNotificationAlert.text = string.Format("[SPLIT] {0}KM: Average Sync {1:F1}%!", kmMarker, avgSync);
         Color baseColor = textNotificationAlert.color;
+        Transform alertTransform = textNotificationAlert.transform;
+        Vector3 baseScale = Vector3.one;
 
-        // 1. Fade In over 0.4 seconds
+        // 1. Fade In + 拡大演出 (企画書 §2 ダイナミック・フィードバック — 目標達成時の拡大)
+        //    0.7倍 → 1.15倍にオーバーシュートしてから 1.0倍へ収束
         float elapsed = 0.0f;
         while (elapsed < 0.4f)
         {
             elapsed += Time.deltaTime;
-            textNotificationAlert.color = new Color(baseColor.r, baseColor.g, baseColor.b, elapsed / 0.4f);
+            float t = Mathf.Clamp01(elapsed / 0.4f);
+            textNotificationAlert.color = new Color(baseColor.r, baseColor.g, baseColor.b, t);
+
+            float overshoot = Mathf.Sin(t * Mathf.PI * 0.75f) * 0.45f; // 0→0.45→0.32付近
+            alertTransform.localScale = baseScale * (0.7f + overshoot);
             yield return null;
         }
         textNotificationAlert.color = new Color(baseColor.r, baseColor.g, baseColor.b, 1.0f);
+
+        // 収束: 1.15倍前後 → 1.0倍
+        elapsed = 0.0f;
+        Vector3 fromScale = alertTransform.localScale;
+        while (elapsed < 0.2f)
+        {
+            elapsed += Time.deltaTime;
+            alertTransform.localScale = Vector3.Lerp(fromScale, baseScale, elapsed / 0.2f);
+            yield return null;
+        }
+        alertTransform.localScale = baseScale;
 
         // 2. High-intensity overlay wait block (2.2 seconds)
         yield return new WaitForSeconds(2.2f);

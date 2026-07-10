@@ -161,11 +161,17 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 **初回のみXcodeで**: Signing & Capabilities → + Capability → **HealthKit** を追加(entitlementsファイルは同梱済みなので追加するだけ)。
 シミュレータでの位置情報テスト: Features → Location → **City Run**。
 
+## バックグラウンド走行(実装済み)
+
+画面ロック中もCoreLocationの距離計測が継続する:
+- `ios/AR_Runner_UI/Info.plist`(部分plist)に `UIBackgroundModes: location`。`GENERATE_INFOPLIST_FILE=YES`と併用時は生成キーとマージされる
+- `LocationTracker`が走行中のみ `allowsBackgroundLocationUpdates` を有効化(青いインジケーター表示で明示、停止時に解除)
+
 ## 既知の制約 / TODO
 
 - 初回のみ UnityFramework の Embed & Sign と Data フォルダの Target Membership 変更が手動(上記②)
 - `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)。DeviceConnectViewのARグラス行タップで送信される
-- バックグラウンド走行(画面ロック中の計測継続)は未対応(Background Modes: Location updates の追加が必要)
+- バックグラウンド中はUnity(AR描画)は停止する — 計測のみ継続し、復帰時にHUD/アバターが追いつく
 
 ## 走行画面の配線(実装済み)
 
