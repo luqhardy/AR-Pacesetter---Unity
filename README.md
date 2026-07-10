@@ -518,6 +518,11 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-07-10 (2) — コーナー追従E2E・引き継ぎドキュメント
+
+- **コーナー追従テスト**（企画書§6 成功基準①）: 400mトラック曲線部（半径36.5m）を1/4周するシナリオをE2Eに追加。結果: 先行距離1.0〜2.4mで安定・ワープなし（最大0.13m/フレーム）・**接線方位誤差6°** — 20項目全PASS
+- [`HANDOVER.md`](HANDOVER.md) 新規: 企画書要件→実装→検証状態の対応表、成功基準の達成状況、未完了事項（要件定義9.3のDoD「GitHubでのドキュメント整備」に対応）
+
 ### 2026-07-10 — E2E自動検証の導入・実測距離の鮮度フォールバック
 
 - **E2Eシナリオランナー**（`E2EScenarioRunner` / `E2EScenarioBehaviour`）: 開始→走行→ゴール自動終了→記録保存→ゴースト再走→GPS喪失/復帰→履歴取得を Play Mode で自動実行・判定。バッチモード対応（終了コードでCI組込可）。**初回実行で17項目中15PASS、検出した2件を修正して全PASS**
@@ -598,6 +603,7 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 - [`AGENTS.md`](AGENTS.md) — エージェント向け技術仕様（数式・FSM・レイテンシ予算）
 - [`Assets/AvatarStateTransitions.md`](Assets/AvatarStateTransitions.md) — Animator状態遷移ガイド
 - [`SWIFT_INTEGRATION.md`](SWIFT_INTEGRATION.md) — Swift UI（AR-runner）連携ガイド
+- [`HANDOVER.md`](HANDOVER.md) — 技術資産引き継ぎドキュメント（企画書要件→実装→検証の対応表・DoD）
 
 ## ライセンス
 

@@ -125,6 +125,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
         Check(engine.GetTargetSpeed() > 0.5f, "ghost: avatar moving at ghost pace");
 
+        // ── Step 3b: コーナー追従 (企画書§6 技術的成功基準①) ────────────────
+        // 400mトラックの曲線部(半径36.5m)を1/4周。アバターが先行を維持し、
+        // ワープせず、進行方向(接線)に追従して旋回することを検証する。
+        yield return StartCoroutine(RunCornerFollowingTest(engine));
+
         // ── Step 4: GPS喪失→復帰 FSM ──────────────────────────────────────
         if (stateController != null)
         {
@@ -149,6 +154,71 @@ public class E2EScenarioBehaviour : MonoBehaviour
     }
 
     private bool _metricsSent = false;
+
+    /// <summary>
+    /// 陸上トラック曲線部(半径36.5m)を1/4周してコーナー追従を検証する。
+    /// 判定: ①先行距離が1〜9mに収まり続ける ②フレーム間移動がワープしない
+    /// ③終了時にアバターの向きが進行方向(接線)へ追従している
+    /// </summary>
+    private IEnumerator RunCornerFollowingTest(AvatarEngine engine)
+    {
+        const float trackRadius = 36.5f;          // 400mトラック曲線部の標準半径
+        const float quarterTurnRadians = Mathf.PI / 2f;
+        const float maxFrameJump = 1.5f;          // これ以上のフレーム間移動はワープ
+
+        // 現在位置と進行方向から円の中心を求める(右カーブ: Cross(up,forward)=右)
+        Vector3 startPos = _cameraMover.position;
+        Vector3 forward = Vector3.forward;
+        Vector3 toCenter = Vector3.Cross(Vector3.up, forward); // 右手側
+        Vector3 center = startPos + toCenter * trackRadius;
+
+        float angularSpeed = RunSpeedMetersPerSecond / trackRadius; // rad/s
+        float theta = 0f;
+        Vector3 startOffset = startPos - center;
+
+        bool leadOk = true;
+        bool noWarp = true;
+        float minLead = float.MaxValue, maxLead = 0f, maxJump = 0f;
+        Vector3 lastAvatarPos = engine.transform.position;
+        Vector3 tangent = forward;
+
+        while (theta < quarterTurnRadians)
+        {
+            float dTheta = angularSpeed * Time.deltaTime;
+            theta += dTheta;
+
+            // 円弧に沿ってカメラを移動(上から見て時計回り=右旋回)。
+            // +θ回転: 位置 center+R(θ)*startOffset の速度方向が R(θ)*forward と一致する
+            Quaternion rotation = Quaternion.AngleAxis(theta * Mathf.Rad2Deg, Vector3.up);
+            _cameraMover.position = center + rotation * startOffset;
+            tangent = rotation * forward;
+
+            // ① 先行距離チェック
+            Vector3 toAvatar = engine.transform.position - _cameraMover.position;
+            toAvatar.y = 0;
+            float lead = toAvatar.magnitude;
+            minLead = Mathf.Min(minLead, lead);
+            maxLead = Mathf.Max(maxLead, lead);
+            if (theta > 0.3f && (lead < 1.0f || lead > 9.0f)) // 旋回開始直後の過渡は除外
+                leadOk = false;
+
+            // ② ワープチェック(フレーム間のアバター移動量)
+            float jump = Vector3.Distance(engine.transform.position, lastAvatarPos);
+            maxJump = Mathf.Max(maxJump, jump);
+            if (jump > maxFrameJump)
+                noWarp = false;
+            lastAvatarPos = engine.transform.position;
+
+            yield return null;
+        }
+
+        Check(leadOk, $"corner: lead distance stayed 1-9m (min {minLead:F1}m / max {maxLead:F1}m)");
+        Check(noWarp, $"corner: no warp — max frame jump {maxJump:F2}m");
+
+        // ③ 接線追従: アバターの向きと進行方向の角度差
+        float headingError = Vector3.Angle(engine.transform.forward, tangent);
+        Check(headingError < 60f, $"corner: avatar heading tracks tangent (error {headingError:F0}°)");
+    }
 
     private static IEnumerator WaitScaled(float seconds)
     {
