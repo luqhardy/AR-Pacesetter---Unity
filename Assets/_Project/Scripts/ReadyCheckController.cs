@@ -33,7 +33,11 @@ public class ReadyCheckController : MonoBehaviour
     void Start()
     {
         _bootTime = Time.time;
+#if !(UNITY_IOS && !UNITY_EDITOR)
+        // 実機(UaaL)ではReadyチェックはSwift側のDeviceConnectViewが担当 —
+        // グラス視界にUnityのインジケーターを重ねない
         BuildIndicatorUI();
+#endif
         RefreshIndicator();
     }
 

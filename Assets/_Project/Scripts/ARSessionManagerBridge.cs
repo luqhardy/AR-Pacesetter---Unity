@@ -108,6 +108,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         }
 
         _sessionDriven = true;
+        ExternalMetricsActive = true;
 
         // 再走行: 前セッションが終了済みなら全コンポーネントをリセットしてから開始
         if (sessionController != null && sessionController.IsFinished)
@@ -175,12 +176,14 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (heartRateReceiver != null && cmd.heartRate > 0)
             heartRateReceiver.OnHeartRateDataReceived(cmd.heartRate.ToString());
 
-        // 実機ではSwift(CoreLocation)の距離が正 — スプリット判定とゴール判定に供給
+        // 実機ではSwift(CoreLocation)の距離が正 — スプリット/ゴール判定・記録に供給
         if (cmd.distanceKm > 0)
         {
             _swiftReportedDistanceMeters = cmd.distanceKm * 1000.0;
             if (analytics != null)
                 analytics.CheckDistanceIntervalSplits((float)_swiftReportedDistanceMeters);
+            if (sessionController != null)
+                sessionController.ExternalDistanceMeters = _swiftReportedDistanceMeters;
             CheckGoalReached();
         }
     }
@@ -301,6 +304,12 @@ public class ARSessionManagerBridge : MonoBehaviour
 
     /// <summary>Swift主導セッションかどうか(Unity内UIの抑制判定に使用可)。</summary>
     public bool IsExternallyDriven => _sessionDriven;
+
+    /// <summary>
+    /// Swift(CoreLocation)がメトリクスを供給中かどうか。
+    /// trueの間、Unity内部計測からのスプリット判定供給は停止する(二重供給防止)。
+    /// </summary>
+    public static bool ExternalMetricsActive { get; private set; }
 
 #if UNITY_EDITOR
     // エディタ検証: Inspectorの右クリックメニューからSwiftコマンドをシミュレート

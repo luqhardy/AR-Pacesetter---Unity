@@ -144,7 +144,7 @@ public class RunAudioEngine : MonoBehaviour
         float speed = delta.magnitude / Mathf.Max(Time.deltaTime, 0.001f);
         _lastAvatarPos = avatarTransform.position;
 
-        if (avatarEngine != null && !avatarEngine.HasStarted) return;
+        if (avatarEngine != null && (!avatarEngine.HasStarted || avatarEngine.IsSessionEnded)) return;
         if (speed < 0.3f) return; // standing still — no steps
 
         // Cadence rises with speed: walk ~1.8 steps/s, run ~3.0 steps/s
@@ -193,7 +193,9 @@ public class RunAudioEngine : MonoBehaviour
     {
         if (_breathSource == null) return;
 
-        bool running = avatarEngine == null || avatarEngine.HasStarted;
+        // 終了後はアバターが消滅するため呼吸音も止める
+        bool running = avatarEngine == null
+            || (avatarEngine.HasStarted && !avatarEngine.IsSessionEnded);
         if (!running)
         {
             _breathSource.volume = 0f;

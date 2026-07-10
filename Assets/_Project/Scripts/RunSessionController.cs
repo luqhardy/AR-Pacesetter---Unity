@@ -45,6 +45,17 @@ public class RunSessionController : MonoBehaviour
         = new System.Collections.Generic.List<PaceSample>();
     private float _nextPaceSampleTime = 0f;
 
+    /// <summary>
+    /// Swift(CoreLocation)報告の累積距離(m)。ブリッジがUpdateMetrics毎に更新する。
+    /// 正の値の間はUnity内部計測より優先(実機ではGPSが正)。
+    /// </summary>
+    public double ExternalDistanceMeters { get; set; } = -1;
+
+    // 記録・サンプリングに使う現在距離: GPS優先、なければUnity計測
+    private float CurrentDistanceMeters =>
+        ExternalDistanceMeters > 0 ? (float)ExternalDistanceMeters
+        : (hudManager != null ? hudManager.DistanceMeters : 0f);
+
     public RunSessionRecord LastRecord => _lastRecord;
     public bool IsFinished => _finished;
 
@@ -70,14 +81,14 @@ public class RunSessionController : MonoBehaviour
 
         if (!_runActive || _finished) return;
 
-        // ゴースト機能: 走行中のペース推移を5秒毎に記録
+        // ゴースト機能: 走行中のペース推移を5秒毎に記録 (距離はGPS優先)
         if (hudManager != null && hudManager.ElapsedTimeSeconds >= _nextPaceSampleTime)
         {
             _nextPaceSampleTime = hudManager.ElapsedTimeSeconds + PaceSampleIntervalSeconds;
             _paceSamples.Add(new PaceSample
             {
                 t = hudManager.ElapsedTimeSeconds,
-                meters = hudManager.DistanceMeters
+                meters = CurrentDistanceMeters
             });
         }
 
@@ -146,6 +157,7 @@ public class RunSessionController : MonoBehaviour
         _uiHoldActive = false;
         _paceSamples.Clear();
         _nextPaceSampleTime = 0f;
+        ExternalDistanceMeters = -1;
 
         if (_resultPanel != null) Destroy(_resultPanel);
         if (_guardLayer != null) Destroy(_guardLayer);
@@ -197,7 +209,7 @@ public class RunSessionController : MonoBehaviour
         var record = new RunSessionRecord
         {
             dateIso = System.DateTime.Now.ToString("o"),
-            distanceMeters = hudManager != null ? hudManager.DistanceMeters : 0f,
+            distanceMeters = CurrentDistanceMeters, // 実機はGPS(Swift報告)優先
             elapsedSeconds = hudManager != null ? hudManager.ElapsedTimeSeconds : 0f,
             averageSyncRate = avgSync,
             grade = grade,

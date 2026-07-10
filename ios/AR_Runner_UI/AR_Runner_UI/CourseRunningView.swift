@@ -265,6 +265,25 @@ struct RunningView: View {
                     .transition(.opacity)
                 }
 
+                // 低バッテリー退避バナー（Unityの LowBattery イベント連動）
+                if bridge.lowBatteryMode {
+                    VStack {
+                        HStack(spacing: 8) {
+                            Image(systemName: "battery.25percent")
+                                .font(.system(size: 13))
+                            Text("バッテリー低下 — HUDモードへ退避しました")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color(red: 0.85, green: 0.25, blue: 0.2), in: Capsule())
+                        .padding(.top, 160)
+                        Spacer()
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 // GPS喪失バナー（Unityの GPSLost / GPSRecovered イベント連動）
                 if bridge.gpsStatus == .lost {
                     VStack {

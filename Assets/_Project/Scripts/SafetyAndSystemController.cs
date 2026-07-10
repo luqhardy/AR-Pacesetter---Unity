@@ -75,6 +75,10 @@ public class SafetyAndSystemController : MonoBehaviour
         if (stateController != null)
             stateController.TransitionToState(GameStateController.ARVisionState.Standby);
         if (minimalistHudPanel != null) minimalistHudPanel.SetActive(true);
+
+        // Swift UIへ通知: アバター非表示(Lost) + 低バッテリー退避イベント
+        SwiftMessageSender.SendAvatarState("Lost");
+        SwiftMessageSender.SendRaw("{\"event\":\"LowBattery\"}");
     }
 
     private void EvaluateTimeToCollision()

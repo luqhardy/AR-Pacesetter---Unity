@@ -54,6 +54,11 @@ public class PaceCalibrationController : MonoBehaviour
 
     void Start()
     {
+#if UNITY_IOS && !UNITY_EDITOR
+        // 実機(UaaL)ではSwift UIが設定画面を持つ — Unity側のセットアップUIは
+        // グラス視界に一瞬映るのを防ぐため最初から構築しない
+        buildSetupPanelAtRuntime = false;
+#endif
         if (buildSetupPanelAtRuntime && setupPanel == null)
             BuildSetupPanel();
 

@@ -29,6 +29,7 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var motionToPhotonMs: Double = 0  // latency monitor
     @Published var lastResult: SessionResult?    // EndSession後にUnityから届く
     @Published var history: [HistoryEntry] = []  // RequestHistory応答(新しい順)
+    @Published var lowBatteryMode = false        // Unity側が低バッテリー退避したら true
 
     // MARK: Types
     enum AvatarState: String {
@@ -174,6 +175,8 @@ final class UnityBridge: NSObject, ObservableObject {
                     distanceKm: dict["distanceKm"] as? Double ?? 0,
                     elapsedSeconds: dict["elapsedSeconds"] as? Double ?? 0
                 )
+            case "LowBattery":
+                self.lowBatteryMode = true
             case "HistoryData":
                 if let sessions = dict["sessions"] as? [[String: Any]] {
                     self.history = sessions.map { s in

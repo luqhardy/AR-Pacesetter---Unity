@@ -101,6 +101,7 @@ UnityContainerView()
 | `LatencyReport` | `ms` (double) | 走行中 1Hz(平滑化フレーム時間) |
 | `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds` | EndSession応答 |
 | `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
+| `LowBattery` | — | バッテリー10%以下でUnityがHUDモード退避した時(`lowBatteryMode`がtrueに) |
 
 Unity側の受信オブジェクト(`ARSessionManager`/`DeviceManager` GameObject)は
 [ARVisionSystemsBootstrap.cs](Assets/_Project/Scripts/ARVisionSystemsBootstrap.cs) が起動時に自動生成する。シーン配線は不要。

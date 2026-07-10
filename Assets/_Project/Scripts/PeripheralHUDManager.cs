@@ -137,8 +137,10 @@ public class PeripheralHUDManager : MonoBehaviour
         {
             _cumulativeDistanceMeters += frameMovementDistance;
 
-            // Pass the distance directly to the analytics manager for split testing
-            if (analytics != null)
+            // Pass the distance directly to the analytics manager for split testing.
+            // Swift(GPS)がメトリクス供給中はそちらが正 — 二重供給によるスプリット
+            // 判定の揺れを防ぐためUnity内部計測からは流さない
+            if (analytics != null && !ARSessionManagerBridge.ExternalMetricsActive)
             {
                 analytics.CheckDistanceIntervalSplits(_cumulativeDistanceMeters);
             }
