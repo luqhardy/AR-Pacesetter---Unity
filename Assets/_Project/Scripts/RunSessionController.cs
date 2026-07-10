@@ -47,14 +47,35 @@ public class RunSessionController : MonoBehaviour
 
     /// <summary>
     /// Swift(CoreLocation)報告の累積距離(m)。ブリッジがUpdateMetrics毎に更新する。
-    /// 正の値の間はUnity内部計測より優先(実機ではGPSが正)。
+    /// 鮮度が保たれている間のみUnity内部計測より優先(実機ではGPSが正)。
+    /// 供給が途絶えた古い値で記録が固まるのを防ぐため、5秒でUnity計測へフォールバック。
     /// </summary>
-    public double ExternalDistanceMeters { get; set; } = -1;
+    public double ExternalDistanceMeters
+    {
+        get => _externalDistanceMeters;
+        set
+        {
+            _externalDistanceMeters = value;
+            _externalDistanceTimestamp = Time.time;
+        }
+    }
 
-    // 記録・サンプリングに使う現在距離: GPS優先、なければUnity計測
-    private float CurrentDistanceMeters =>
-        ExternalDistanceMeters > 0 ? (float)ExternalDistanceMeters
-        : (hudManager != null ? hudManager.DistanceMeters : 0f);
+    private const float ExternalDistanceFreshSeconds = 5f;
+    private double _externalDistanceMeters = -1;
+    private float _externalDistanceTimestamp = -999f;
+
+    // 記録・サンプリングに使う現在距離: 新鮮なGPS報告を優先、なければUnity計測
+    private float CurrentDistanceMeters
+    {
+        get
+        {
+            bool externalFresh = _externalDistanceMeters > 0
+                && Time.time - _externalDistanceTimestamp <= ExternalDistanceFreshSeconds;
+            return externalFresh
+                ? (float)_externalDistanceMeters
+                : (hudManager != null ? hudManager.DistanceMeters : 0f);
+        }
+    }
 
     public RunSessionRecord LastRecord => _lastRecord;
     public bool IsFinished => _finished;

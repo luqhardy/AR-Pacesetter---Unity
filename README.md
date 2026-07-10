@@ -97,8 +97,19 @@ flowchart TD
 | **F1 / F2 / F3** | ARグラス / Watch / イヤホン 接続切替（Readyチェック） |
 
 Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選択 → Inspectorコンテキストメニュー
-（StartSession / UpdateMetrics / EndSession / Goal Reached / RequestHistory）。
+（StartSession / UpdateMetrics / EndSession / Goal Reached / RequestHistory / Ghost Run）。
 離隔待機は再生中にSceneビューでカメラ（XR Origin）をアバターから10m以上引き離すと発動。
+
+### E2E自動検証
+
+「開始→走行→ゴール自動終了→記録保存→ゴースト再走→GPS喪失/復帰→履歴」を自動実行して判定:
+
+- エディタ: メニュー **Build → Run E2E Scenario**（Play Modeが起動し、Consoleに `[E2E] PASS/FAIL` が流れる）
+- CLI（ヘッドレス）:
+  ```
+  Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log
+  ```
+  終了コード 0=全PASS / 1=FAILあり。ログの `[E2E] SUMMARY` を参照。
 
 ### 主要スクリプト一覧
 
@@ -506,6 +517,12 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 ---
 
 ## 6. 更新履歴
+
+### 2026-07-10 — E2E自動検証の導入・実測距離の鮮度フォールバック
+
+- **E2Eシナリオランナー**（`E2EScenarioRunner` / `E2EScenarioBehaviour`）: 開始→走行→ゴール自動終了→記録保存→ゴースト再走→GPS喪失/復帰→履歴取得を Play Mode で自動実行・判定。バッチモード対応（終了コードでCI組込可）。**初回実行で17項目中15PASS、検出した2件を修正して全PASS**
+- 修正1（実バグ）: Swift報告距離が途絶えた場合、古い値が記録・ゴーストタイムラインに固まる問題 → 5秒の鮮度チェックでUnity計測へ自動フォールバック
+- 修正2（検証側）: Reaccumulation遷移が精度ゲートをリセットする仕様への追従
 
 ### 2026-07-09 (6) — GPS復帰演出・HUD高コントラスト・バックグラウンド走行
 
