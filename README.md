@@ -611,6 +611,8 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 - [`Assets/AvatarStateTransitions.md`](Assets/AvatarStateTransitions.md) — Animator状態遷移ガイド
 - [`SWIFT_INTEGRATION.md`](SWIFT_INTEGRATION.md) — Swift UI（AR-runner）連携ガイド
 - [`HANDOVER.md`](HANDOVER.md) — 技術資産引き継ぎドキュメント（企画書要件→実装→検証の対応表・DoD）
+- `Docs/AR-Vision_基本設計書_v2.docx` — 基本設計書（実装実態で全面記載）
+- `Docs/AR-Vision_成果発表_draft.pptx` — 成果発表スライドのドラフト（9枚）
 
 ## ライセンス
 
