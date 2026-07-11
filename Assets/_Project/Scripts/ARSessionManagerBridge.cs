@@ -108,7 +108,6 @@ public class ARSessionManagerBridge : MonoBehaviour
         }
 
         _sessionDriven = true;
-        ExternalMetricsActive = true;
 
         // 再走行: 前セッションが終了済みなら全コンポーネントをリセットしてから開始
         if (sessionController != null && sessionController.IsFinished)
@@ -116,6 +115,9 @@ public class ARSessionManagerBridge : MonoBehaviour
             sessionController.ResetForNewSession();
             _lastSentAvatarState = ""; // Idle→Run遷移を再送させる
         }
+
+        // リセットで false に戻るため、必ずリセット後に立てる
+        ExternalMetricsActive = true;
 
         // 目標距離: 到達したらUnity側から自動終了する (SessionEnded送信)
         _goalDistanceMeters = cmd.distanceKm > 0 ? cmd.distanceKm * 1000.0 : 0;
@@ -227,7 +229,8 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (Time.time < _nextReportTime) return;
         _nextReportTime = Time.time + ReportIntervalSeconds;
 
-        if (avatarEngine == null || !avatarEngine.HasStarted) return;
+        // 走行中のみレポート(終了後に古いSyncRate/Latencyを送り続けない)
+        if (avatarEngine == null || !avatarEngine.HasStarted || avatarEngine.IsSessionEnded) return;
 
         if (analytics != null)
             SwiftMessageSender.SendSyncRate(Mathf.RoundToInt(analytics.GetLiveSyncRate()));
@@ -247,9 +250,11 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (_goalReached || _goalDistanceMeters <= 0) return;
         if (avatarEngine == null || !avatarEngine.HasStarted || avatarEngine.IsSessionEnded) return;
 
-        // 実機はSwift(CoreLocation)距離が正、エディタはUnityの累積距離 — 大きい方を採用
-        double unityDistance = hudManager != null ? hudManager.DistanceMeters : 0;
-        double bestDistance = Math.Max(unityDistance, _swiftReportedDistanceMeters);
+        // 記録と同じ距離ポリシー(新鮮なGPS優先→Unity計測)を使い、
+        // ゴール判定と記録距離の不一致(記録が目標未満になる等)を防ぐ
+        double bestDistance = sessionController != null
+            ? sessionController.AuthoritativeDistanceMeters
+            : Math.Max(hudManager != null ? hudManager.DistanceMeters : 0, _swiftReportedDistanceMeters);
         if (bestDistance < _goalDistanceMeters) return;
 
         _goalReached = true;
@@ -308,8 +313,9 @@ public class ARSessionManagerBridge : MonoBehaviour
     /// <summary>
     /// Swift(CoreLocation)がメトリクスを供給中かどうか。
     /// trueの間、Unity内部計測からのスプリット判定供給は停止する(二重供給防止)。
+    /// リセット/Unity単体開始時に false へ戻る(setはRunSessionController等から)。
     /// </summary>
-    public static bool ExternalMetricsActive { get; private set; }
+    public static bool ExternalMetricsActive { get; set; }
 
 #if UNITY_EDITOR
     // エディタ検証: Inspectorの右クリックメニューからSwiftコマンドをシミュレート

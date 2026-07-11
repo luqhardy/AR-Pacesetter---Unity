@@ -20,6 +20,7 @@ public class RunSessionRecord
     public string rankLabel;       // Perfect / Great / Good / Try Again
     public float fatigueIndex;
     public float targetPaceMinutesPerKm;
+    public float calories; // 推定消費カロリー(体重×距離km×1.05、オンボーディング体重使用)
     public string avatarComment;
     public List<SafetyEventLogger.SafetyEvent> safetyEvents = new List<SafetyEventLogger.SafetyEvent>();
 

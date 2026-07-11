@@ -77,6 +77,9 @@ public class RunSessionController : MonoBehaviour
         }
     }
 
+    /// <summary>ゴール判定・記録が共有する正規の現在距離(m)。ソース不一致を防ぐ。</summary>
+    public float AuthoritativeDistanceMeters => CurrentDistanceMeters;
+
     public RunSessionRecord LastRecord => _lastRecord;
     public bool IsFinished => _finished;
 
@@ -179,6 +182,9 @@ public class RunSessionController : MonoBehaviour
         _paceSamples.Clear();
         _nextPaceSampleTime = 0f;
         ExternalDistanceMeters = -1;
+        // Swift主導フラグも解除(次がUnity単体走行ならスプリット供給を復帰させる。
+        // Swift主導の再走行時はブリッジがリセット直後に再度trueにする)
+        ARSessionManagerBridge.ExternalMetricsActive = false;
 
         if (_resultPanel != null) Destroy(_resultPanel);
         if (_guardLayer != null) Destroy(_guardLayer);
@@ -238,6 +244,9 @@ public class RunSessionController : MonoBehaviour
             fatigueIndex = analytics != null ? analytics.GetCumulativeFatigue() : 0f,
             targetPaceMinutesPerKm = avatarEngine != null ? avatarEngine.TargetPaceMinutesPerKm : 0f,
         };
+
+        // 消費カロリー: オンボーディングの実体重を使用(ランニング標準推定式)
+        record.calories = UserProfile.WeightKg * (record.distanceMeters / 1000f) * 1.05f;
 
         if (safetyLogger != null)
             record.safetyEvents.AddRange(safetyLogger.Events);

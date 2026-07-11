@@ -118,6 +118,12 @@ public class RunAudioEngine : MonoBehaviour
         _micClip = Microphone.Start(null, true, 1, 16000);
     }
 
+    // 自己出力(足音・呼吸音)がマイクに回り込んで騒音判定→音量アップ→さらに
+    // 騒音判定…と張り付くのを防ぐため、進入/退出の二段閾値+連続サンプル数で判定
+    private int _loudStreak = 0;
+    private int _quietStreak = 0;
+    private const int AmbientSwitchStreak = 10; // 約10フレーム連続で切替
+
     private void SampleMicrophoneLevel()
     {
         if (_micClip == null) return;
@@ -131,8 +137,23 @@ public class RunAudioEngine : MonoBehaviour
             sum += _micBuffer[i] * _micBuffer[i];
         float rms = Mathf.Sqrt(sum / _micBuffer.Length);
 
-        // RMS threshold approximates the 45dB ambient trigger on-device
-        _ambientLoud = rms > micRmsThreshold;
+        // RMS threshold approximates the 45dB ambient trigger on-device.
+        // ヒステリシス: 進入は閾値超、退出は閾値の6割未満
+        if (!_ambientLoud && rms > micRmsThreshold)
+        {
+            _quietStreak = 0;
+            if (++_loudStreak >= AmbientSwitchStreak) _ambientLoud = true;
+        }
+        else if (_ambientLoud && rms < micRmsThreshold * 0.6f)
+        {
+            _loudStreak = 0;
+            if (++_quietStreak >= AmbientSwitchStreak) _ambientLoud = false;
+        }
+        else
+        {
+            _loudStreak = 0;
+            _quietStreak = 0;
+        }
     }
 
     // ── 足音（路面連動・速度連動・3D距離減衰）─────────────────────────────────
@@ -201,6 +222,11 @@ public class RunAudioEngine : MonoBehaviour
             _breathSource.volume = 0f;
             return;
         }
+
+        // GPS Standby等でアバターコンテナが一時無効化されるとループ再生が
+        // 止まったままになる — 復帰後に自動で再開させる
+        if (!_breathSource.isPlaying && _breathSource.isActiveAndEnabled)
+            _breathSource.Play();
 
         int heartRate = hudManager != null ? hudManager.CurrentHeartRate : 135;
 

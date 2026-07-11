@@ -173,6 +173,9 @@ public class PaceCalibrationController : MonoBehaviour
 
         SaveUserProfile();
 
+        // Unity単体走行: Swift主導フラグを確実に解除(スプリット供給を有効化)
+        ARSessionManagerBridge.ExternalMetricsActive = false;
+
         ApplyPace(pace);
         avatarEngine.StartPacing();
         _hasStarted = true;

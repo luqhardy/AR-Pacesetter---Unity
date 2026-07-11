@@ -51,6 +51,7 @@ final class UnityBridge: NSObject, ObservableObject {
         let averageSync: Double  // %
         let distanceKm: Double
         let elapsedSeconds: Double
+        let calories: Double     // Unity側でオンボーディング体重から算出
     }
 
     struct HistoryEntry: Identifiable {
@@ -173,7 +174,8 @@ final class UnityBridge: NSObject, ObservableObject {
                     rank: dict["rank"] as? String ?? "TRY AGAIN",
                     averageSync: dict["averageSync"] as? Double ?? 0,
                     distanceKm: dict["distanceKm"] as? Double ?? 0,
-                    elapsedSeconds: dict["elapsedSeconds"] as? Double ?? 0
+                    elapsedSeconds: dict["elapsedSeconds"] as? Double ?? 0,
+                    calories: dict["calories"] as? Double ?? 0
                 )
             case "LowBattery":
                 self.lowBatteryMode = true

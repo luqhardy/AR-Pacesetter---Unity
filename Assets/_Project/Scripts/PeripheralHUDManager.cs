@@ -61,9 +61,13 @@ public class PeripheralHUDManager : MonoBehaviour
     {
         _elapsedTimeSeconds = 0.0f;
         _cumulativeDistanceMeters = 0.0f;
+        _runStartUtc = System.DateTime.MinValue;
         if (userCamera != null)
             _lastUserPosition = userCamera.position;
     }
+
+    // 走行開始の実時刻(壁時計)。バックグラウンド中も経過時間が正しく進む
+    private System.DateTime _runStartUtc = System.DateTime.MinValue;
 
     void Start()
     {
@@ -115,8 +119,14 @@ public class PeripheralHUDManager : MonoBehaviour
         bool runInProgress = avatarEngine == null || avatarEngine.HasStarted;
 
         // 1. Calculate Runtime Clock (Format: MM:SS)
+        // 壁時計ベース: 画面ロック等でUnityが一時停止しても実経過時間が欠落しない
+        // (Time.deltaTime累積だとバックグラウンド走行中の時間がタイムから消える)
         if (runInProgress)
-            _elapsedTimeSeconds += Time.deltaTime;
+        {
+            if (_runStartUtc == System.DateTime.MinValue)
+                _runStartUtc = System.DateTime.UtcNow;
+            _elapsedTimeSeconds = (float)(System.DateTime.UtcNow - _runStartUtc).TotalSeconds;
+        }
         int minutes = Mathf.FloorToInt(_elapsedTimeSeconds / 60f);
         int seconds = Mathf.FloorToInt(_elapsedTimeSeconds % 60f);
         if (textTime != null)

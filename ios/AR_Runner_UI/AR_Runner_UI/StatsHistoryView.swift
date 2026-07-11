@@ -37,8 +37,12 @@ struct StatsView: View {
     }
 
     private var kcalStr: String {
-        // 概算: 体重60kg想定 × 距離(km) × 1.05 (ランニングの標準推定式)
-        result.map { String(Int($0.distanceKm * 60.0 * 1.05)) } ?? "164"
+        guard let r = result else { return "164" }
+        // Unity側がオンボーディングの実体重で算出した値を優先。
+        // 旧データ等で未提供(0)の場合のみ体重60kg想定で概算
+        return r.calories > 0
+            ? String(Int(r.calories.rounded()))
+            : String(Int(r.distanceKm * 60.0 * 1.05))
     }
 
     var body: some View {

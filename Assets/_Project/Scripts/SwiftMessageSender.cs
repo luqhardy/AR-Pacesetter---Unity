@@ -72,9 +72,9 @@ public static class SwiftMessageSender
         if (record == null) return;
         string json = string.Format(CultureInfo.InvariantCulture,
             "{{\"event\":\"SessionEnded\",\"grade\":\"{0}\",\"rank\":\"{1}\"," +
-            "\"averageSync\":{2:F1},\"distanceKm\":{3:F3},\"elapsedSeconds\":{4:F0}}}",
+            "\"averageSync\":{2:F1},\"distanceKm\":{3:F3},\"elapsedSeconds\":{4:F0},\"calories\":{5:F0}}}",
             record.grade, record.rankLabel, record.averageSyncRate,
-            record.distanceMeters / 1000f, record.elapsedSeconds);
+            record.distanceMeters / 1000f, record.elapsedSeconds, record.calories);
         SendRaw(json);
     }
 }

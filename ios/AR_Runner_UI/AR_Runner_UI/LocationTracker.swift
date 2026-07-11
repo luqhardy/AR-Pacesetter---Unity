@@ -37,10 +37,16 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         manager.requestWhenInUseAuthorization()
 
         // バックグラウンド走行: 画面ロック中も計測継続
-        // (Info.plist の UIBackgroundModes: location とセット。青いインジケーターで明示)
-        manager.allowsBackgroundLocationUpdates = true
-        manager.pausesLocationUpdatesAutomatically = false
-        manager.showsBackgroundLocationIndicator = true
+        // (Info.plist の UIBackgroundModes: location が前提。無い構成で
+        //  allowsBackgroundLocationUpdates を立てると例外で落ちるためガード)
+        let backgroundModes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+        if backgroundModes.contains("location") {
+            manager.allowsBackgroundLocationUpdates = true
+            manager.pausesLocationUpdatesAutomatically = false
+            manager.showsBackgroundLocationIndicator = true
+        } else {
+            print("[LocationTracker] UIBackgroundModes(location)が無いため前面時のみ計測します")
+        }
 
         manager.startUpdatingLocation()
     }

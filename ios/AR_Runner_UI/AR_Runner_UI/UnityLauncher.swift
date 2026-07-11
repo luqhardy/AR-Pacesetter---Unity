@@ -25,6 +25,9 @@ final class UnityLauncher: ObservableObject {
     /// Unityランタイムを埋め込みモードで起動する（初回のみ実体化、以降は表示再開）
     func launch() {
         if let ufw, isRunning {
+            // 再走行: 前回終了時に pause(true) しているため必ず再開させる
+            // (これが無いと2本目のARビューが停止画のまま固まる)
+            ufw.pause(false)
             ufw.showUnityWindow()
             return
         }
