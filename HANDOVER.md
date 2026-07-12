@@ -102,8 +102,10 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 ## 5. 未完了事項(引き継ぎ時の注意)
 
-- **XREAL SDK統合**: `DeviceManagerBridge.cs` はReadyチェック更新のみ。SDK入手後にNRSDKの初期化・表示出力を実装
-- **HealthKit書き込み**: `SessionDataStore.QueueHealthKitSync` はTODOスタブ(`Plugins/iOS`にネイティブ実装が必要)
-- **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)
-- **実地フィールドテスト**: GPS不安定域(ビル影)・実機レイテンシ・XREAL表示の定量評価
-- **C++カルマンフィルタ**: iOS向け`DllImport("__Internal")`の実体(ネイティブライブラリ)は未同梱 — エディタは近似実装で動作
+- **XREAL SDK統合**: グラス表示は外部ディスプレイ経由で実装済み(`ExternalDisplayManager.swift`・SDK不要)。SDK固有機能(6DoF・空間メッシュ等)が必要になった場合のみNRSDK導入を検討
+- **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
+- **実地フィールドテスト**: `Docs/FIELD_TEST_PLAN.md` の T1〜T9 を実施(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)
+
+解決済み(参考):
+- ~~HealthKit書き込み~~ → `HealthKitWorkoutSaver.swift` がSessionEnded受信時にHKWorkoutを保存
+- ~~C++カルマンフィルタの実体~~ → `Assets/Plugins/iOS/KalmanFilterNative.mm`(3軸スカラーKF+線形トレンド)。これが無いとiOSビルドはリンクエラーになるため必須部品

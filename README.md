@@ -525,6 +525,11 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-07-10 (5) — iOSビルドブロッカー解消: カルマン実体・HealthKit書き込み
+
+- **C++カルマンフィルタのネイティブ実体**を追加(`Assets/Plugins/iOS/KalmanFilterNative.mm`) — `AvatarEngine`の`DllImport("__Internal")`が要求するシンボルで、**これが無いとiOSビルドはリンクエラーで失敗**する必須部品。3軸スカラーKF(Q=0.05/R=0.8)+線形トレンド外挿(lteWeight)
+- **HealthKit書き込みを実装**(`HealthKitWorkoutSaver.swift`) — SessionEnded受信時にHKWorkout(ランニング・距離・カロリー)を保存。権限拒否/シミュレータでは静かにスキップ(JSON一次記録はUnity側で完了済み)。`SessionDataStore`のTODOスタブを解消
+
 ### 2026-07-10 (4) — ARグラス出力(SDK不要)・E2E 32項目・CI・実地テスト計画
 
 - **ARグラスへの外部ディスプレイ出力**: XREAL OneはUSB-C外部ディスプレイとして振る舞うため、`ExternalDisplayManager.swift`(UIWindowScene)でNRSDKなしに「グラスにARビュー・iPhoneに操作パネル」を実現。接続検知はデバイス接続画面とUnityのReadyチェックに自動反映

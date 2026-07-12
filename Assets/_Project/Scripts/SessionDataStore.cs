@@ -109,12 +109,13 @@ public static class SessionDataStore
     private static void QueueHealthKitSync(RunSessionRecord record)
     {
 #if UNITY_IOS && !UNITY_EDITOR
-        // TODO(Plugins/iOS): add HealthKitPlugin.mm exposing
-        //   void SubmitWorkoutToHealthKit(double meters, double seconds)
-        // and route the workout sample (HKWorkoutActivityTypeRunning) here.
-        Debug.Log($"[HEALTHKIT] Workout queued for sync: {record.distanceMeters:F0}m / {record.elapsedSeconds:F0}s");
+        // HealthKitへの実書き込みはSwift側が担当する:
+        // SessionEnded イベント受信時に HealthKitWorkoutSaver.swift が
+        // HKWorkout(ランニング・距離・カロリー)として保存する。
+        // Unity側はアプリ内JSON DBへの保存(一次記録)のみ持つ。
+        Debug.Log($"[HEALTHKIT] Workout sync delegated to Swift (SessionEnded): {record.distanceMeters:F0}m / {record.elapsedSeconds:F0}s");
 #else
-        Debug.Log("[HEALTHKIT] Editor build — HealthKit sync skipped (queued on iOS).");
+        Debug.Log("[HEALTHKIT] Editor build — HealthKit sync skipped (handled by Swift on device).");
 #endif
     }
 }

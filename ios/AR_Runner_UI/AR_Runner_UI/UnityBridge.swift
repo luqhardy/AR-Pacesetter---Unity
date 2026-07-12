@@ -169,13 +169,21 @@ final class UnityBridge: NSObject, ObservableObject {
             case "LatencyReport":
                 self.motionToPhotonMs = dict["ms"] as? Double ?? 0
             case "SessionEnded":
-                self.lastResult = SessionResult(
+                let result = SessionResult(
                     grade: dict["grade"] as? String ?? "D",
                     rank: dict["rank"] as? String ?? "TRY AGAIN",
                     averageSync: dict["averageSync"] as? Double ?? 0,
                     distanceKm: dict["distanceKm"] as? Double ?? 0,
                     elapsedSeconds: dict["elapsedSeconds"] as? Double ?? 0,
                     calories: dict["calories"] as? Double ?? 0
+                )
+                self.lastResult = result
+
+                // デュアル・データ保存(企画書§4): HealthKitへワークアウト書き込み
+                HealthKitWorkoutSaver.shared.saveWorkout(
+                    distanceKm: result.distanceKm,
+                    elapsedSeconds: result.elapsedSeconds,
+                    calories: result.calories
                 )
             case "LowBattery":
                 self.lowBatteryMode = true
