@@ -96,35 +96,60 @@ final class UnityLauncher: ObservableObject {
 // MARK: - SwiftUI Container
 
 /// UnityのARビューをSwiftUI階層に埋め込むコンテナ。
+/// ARグラス(外部ディスプレイ)接続中はビューをグラス側へ譲り、
+/// 切断されたらこのコンテナへ自動で回収する。
 /// UnityFramework未リンク時はダーク背景のプレースホルダーを表示する。
 struct UnityContainerView: UIViewRepresentable {
 
-    func makeUIView(context: Context) -> UIView {
-        if let unityView = UnityLauncher.shared.unityRootView {
-            return unityView
-        }
+    // 変化時に updateUIView を発火させるための購読
+    @ObservedObject private var unity = UnityLauncher.shared
+    @ObservedObject private var external = ExternalDisplayManager.shared
 
-        // Fallback placeholder (simulator / UI-only development)
-        let placeholder = UIView()
-        placeholder.backgroundColor = UIColor(red: 0.04, green: 0.06, blue: 0.10, alpha: 1)
+    private static let placeholderTag = 990
+
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.backgroundColor = UIColor(red: 0.04, green: 0.06, blue: 0.10, alpha: 1)
 
         let label = UILabel()
-        label.text = "Unity AR View\n(UnityFramework 未リンク)"
+        label.tag = Self.placeholderTag
         label.numberOfLines = 0
         label.textAlignment = .center
         label.textColor = UIColor(white: 0.6, alpha: 1)
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.translatesAutoresizingMaskIntoConstraints = false
 
-        placeholder.addSubview(label)
+        container.addSubview(label)
         NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: placeholder.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: placeholder.centerYAnchor)
+            label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            label.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 24),
         ])
-        return placeholder
+        return container
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
-        // Unity側がビュー階層を自己管理するため更新処理は不要
+    func updateUIView(_ container: UIView, context: Context) {
+        let placeholder = container.viewWithTag(Self.placeholderTag) as? UILabel
+
+        guard let unityView = unity.unityRootView else {
+            placeholder?.text = "Unity AR View\n(UnityFramework 未リンク)"
+            placeholder?.isHidden = false
+            return
+        }
+
+        if external.isGlassesConnected {
+            // ARグラスへ出力(グラス側ウィンドウにまだ載っていなければ移設)
+            ExternalDisplayManager.shared.attachUnityViewIfPossible()
+            placeholder?.text = "ARビューはグラスに出力中\n(iPhoneは操作パネル)"
+            placeholder?.isHidden = false
+        } else {
+            // iPhone側で表示(グラス切断時の回収を含む)
+            if unityView.superview !== container {
+                unityView.frame = container.bounds
+                unityView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                container.addSubview(unityView)
+            }
+            placeholder?.isHidden = true
+        }
     }
 }

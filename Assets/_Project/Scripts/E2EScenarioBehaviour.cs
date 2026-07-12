@@ -139,6 +139,42 @@ public class E2EScenarioBehaviour : MonoBehaviour
         bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":13.0,\"heartRate\":150,\"distanceKm\":0.02}");
         yield return WaitScaled(0.3f);
 
+        // ── Step 3b-2: 追い抜きリアクション (Features #8/#9) ──────────────────
+        // ユーザーがアバターより速く走り続けると、アバターは「譲る(BeingOvertaken)」
+        // または「抜き返しスプリント(Overtaking)」で反応する
+        bool sawOvertakeReaction = false;
+        float otElapsed = 0f;
+        while (otElapsed < 6f)
+        {
+            otElapsed += Time.deltaTime;
+            _cameraMover.position += runDirection * 9f * Time.deltaTime; // 全力疾走
+            if (engine.CurrentOvertakeState != AvatarEngine.OvertakeState.None)
+            {
+                sawOvertakeReaction = true;
+                break;
+            }
+            yield return null;
+        }
+        Check(sawOvertakeReaction, "overtake: reaction state triggered by fast user");
+
+        // 通過後は通常ペーシングへ復帰する
+        otElapsed = 0f;
+        while (engine.CurrentOvertakeState != AvatarEngine.OvertakeState.None && otElapsed < 8f)
+        {
+            otElapsed += Time.deltaTime;
+            _cameraMover.position += runDirection * 9f * Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.CurrentOvertakeState == AvatarEngine.OvertakeState.None,
+            "overtake: returned to normal pacing");
+
+        // 通常速度へ戻して体勢回復
+        for (float t = 0; t < 1.5f; t += Time.deltaTime)
+        {
+            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            yield return null;
+        }
+
         // ── Step 3c: 障害物停止 (断崖・壁 → 足踏み待機 → 解除で再開) ──────────
         var groundSnap = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
         if (groundSnap != null)
@@ -205,8 +241,8 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(!engine.IsWaitingForUser, "wait: pacing resumes when user catches up (7m)");
         }
 
-        // コーナー前に直進で体勢を整える
-        for (float t = 0; t < 2.5f; t += Time.deltaTime)
+        // コーナー前に直進で体勢を整える(待機解除直後の過渡を収束させる)
+        for (float t = 0; t < 4.0f; t += Time.deltaTime)
         {
             _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
             yield return null;
@@ -236,6 +272,23 @@ public class E2EScenarioBehaviour : MonoBehaviour
         bridge.OnSwiftCommand("{\"command\":\"RequestHistory\"}");
         yield return WaitScaled(0.3f);
         Check(SessionDataStore.LoadAllSessions().Count > 0, "history: at least one session persisted");
+
+        // ── Step 6: HUD自動抑制 (首振り検知で四隅表示をフェード) ──────────────
+        var hud = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
+        if (hud != null)
+        {
+            bool sawSuppressed = false;
+            for (float t = 0; t < 0.7f; t += Time.deltaTime)
+            {
+                _cameraMover.Rotate(0f, 300f * Time.deltaTime, 0f); // 素早い首振り(>120°/s)
+                if (hud.CurrentHudVisibility < 0.85f) sawSuppressed = true;
+                yield return null;
+            }
+            Check(sawSuppressed, "hud: suppressed during fast head turn");
+
+            yield return WaitScaled(2.0f); // 首振り終了 → 0.8秒保持 → 復帰
+            Check(hud.CurrentHudVisibility > 0.9f, "hud: restored after gaze settles");
+        }
 
         Finish();
     }
@@ -281,12 +334,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
             tangent = rotation * forward;
 
             // ① 先行距離チェック
+            // 注: 移動中の定常先行距離はアンカーラグ(速度/補間率≒1.4m)の分だけ
+            // 3mより短くなる。下限はユーザーと重ならないこと(>0.7m)を判定する
             Vector3 toAvatar = engine.transform.position - _cameraMover.position;
             toAvatar.y = 0;
             float lead = toAvatar.magnitude;
             minLead = Mathf.Min(minLead, lead);
             maxLead = Mathf.Max(maxLead, lead);
-            if (theta > 0.3f && (lead < 1.0f || lead > 9.0f)) // 旋回開始直後の過渡は除外
+            if (theta > 0.3f && (lead < 0.7f || lead > 9.0f)) // 旋回開始直後の過渡は除外
                 leadOk = false;
 
             // ② ワープチェック(フレーム間のアバター移動量)

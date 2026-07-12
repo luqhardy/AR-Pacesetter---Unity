@@ -56,6 +56,9 @@ public class PeripheralHUDManager : MonoBehaviour
     public float DistanceMeters => _cumulativeDistanceMeters;
     public int CurrentHeartRate => _simulatedHeartRate;
 
+    /// <summary>HUDの現在可視度(1=通常、首振り抑制中は0.15へフェード)。E2E検証用。</summary>
+    public float CurrentHudVisibility => _hudVisibility;
+
     /// <summary>再走行対応: タイム・距離の累積をリセットする。</summary>
     public void ResetSession()
     {

@@ -13,6 +13,9 @@ struct DeviceConnectView: View {
     @State private var airPodsScanning = false
     @State private var pulse = false
 
+    // 実グラス接続(USB-C外部ディスプレイ)を検知したら表示に反映
+    @ObservedObject private var external = ExternalDisplayManager.shared
+
     var allConnected: Bool { arConnected && watchConnected && airPodsConnected }
 
     var body: some View {
@@ -114,6 +117,14 @@ struct DeviceConnectView: View {
                     }
                 }
                 .padding(.bottom, 52)
+            }
+            .onAppear {
+                if external.isGlassesConnected { arConnected = true }
+            }
+            .onChange(of: external.isGlassesConnected) { _, connected in
+                // 実グラスの抜き差しを即時反映(タップ不要)
+                arScanning = false
+                arConnected = connected
             }
         }
     }

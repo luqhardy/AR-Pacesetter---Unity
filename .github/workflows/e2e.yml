@@ -1,0 +1,65 @@
+# Unity ヘッドレスE2E検証 (手動トリガー)
+#
+# 事前準備(リポジトリ管理者・1回のみ):
+#   1. Unityライセンスファイル(.ulf)を取得
+#      https://game.ci/docs/github/activation を参照
+#   2. リポジトリ Settings → Secrets → Actions に UNITY_LICENSE として
+#      .ulf の中身を貼り付け
+#   3. Actionsタブ → E2E (Unity headless) → Run workflow
+#
+# 安定運用が確認できたら on: に push を追加してプッシュ毎の回帰検証に昇格する。
+name: E2E (Unity headless)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: Run E2E scenario
+    runs-on: ubuntu-latest
+    # プロジェクトのUnityバージョン(ProjectSettings/ProjectVersion.txt)に合わせる。
+    # イメージ一覧: https://hub.docker.com/r/unityci/editor/tags
+    container: unityci/editor:ubuntu-6000.3.17f1-base-3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: unity-library-${{ hashFiles('Packages/manifest.json', 'ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: unity-library-
+
+      - name: Activate license and run E2E
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        shell: bash
+        run: |
+          if [ -z "$UNITY_LICENSE" ]; then
+            echo "::error::UNITY_LICENSE secret が未設定です (ワークフロー冒頭のコメント参照)"
+            exit 1
+          fi
+          echo "$UNITY_LICENSE" > /tmp/license.ulf
+          unity-editor -batchmode -nographics -quit -manualLicenseFile /tmp/license.ulf -logFile /tmp/activate.log || true
+
+          set +e
+          unity-editor -batchmode -nographics -projectPath . \
+            -executeMethod E2EScenarioRunner.Run -logFile /tmp/e2e.log
+          code=$?
+          set -e
+
+          echo "── E2E results ──"
+          grep "\[E2E\]" /tmp/e2e.log || echo "(no E2E markers — see full log below)"
+          if [ $code -ne 0 ]; then
+            echo "── tail of log ──"
+            tail -50 /tmp/e2e.log
+          fi
+          exit $code
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-log
+          path: /tmp/e2e.log

@@ -47,6 +47,19 @@ Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
 Unityを再エクスポートしても手順2-3の設定は`Unity-iPhone.xcodeproj`側に保持される
 (まっさらに消して再生成した場合のみ再設定)。
 
+### ③' ARグラスへの出力(外部ディスプレイ・SDK不要)
+
+XREAL One は iPhone(USB-C)に対して**外部ディスプレイ**として振る舞うため、NRSDKなしで
+「グラスにARビュー・iPhoneに操作パネル」の構成が動作する(`ExternalDisplayManager.swift`):
+
+- グラス接続 → iOSが外部ディスプレイシーンを生成 → UnityのARビューを自動でグラス側ウィンドウへ移設
+- 切断 → 走行画面の`UnityContainerView`が自動でiPhone側へ回収
+- 接続検知は DeviceConnectView のARグラス行に自動反映され、Unityの`ConnectXREAL`も送信される
+- グラス出力中、iPhoneの走行画面は「ARビューはグラスに出力中」表示+HUD操作に切替
+
+実機確認: iPhone 15以降(USB-C) + XREAL One を接続し、走行画面でグラス側に
+Unityの映像が出ること。3DoF頭部追従はグラス側X1チップのネイティブ機能で行われる。
+
 ### ③ SwiftUIからUnityを表示
 
 ```swift
