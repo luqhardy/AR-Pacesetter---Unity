@@ -22,6 +22,14 @@ public static class ARVisionSystemsBootstrap
             Debug.Log("[BOOTSTRAP] AvatarVFXController auto-attached to avatar.");
         }
 
+        // サイレントルート復帰はアバターのtransformを操作するため同居必須。
+        // シーンに未配置だと逸脱復帰機能が丸ごと不在になる(E2Eで検出)
+        if (Object.FindFirstObjectByType<SilentRouteRecoverer>(FindObjectsInactive.Include) == null)
+        {
+            engine.gameObject.AddComponent<SilentRouteRecoverer>();
+            Debug.Log("[BOOTSTRAP] SilentRouteRecoverer auto-attached to avatar.");
+        }
+
         Ensure<SafetyEventLogger>();
         Ensure<RunAudioEngine>();
         Ensure<RunSessionController>();

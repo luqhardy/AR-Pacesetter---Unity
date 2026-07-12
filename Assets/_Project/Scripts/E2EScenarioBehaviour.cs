@@ -125,7 +125,94 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
         Check(engine.GetTargetSpeed() > 0.5f, "ghost: avatar moving at ghost pace");
 
-        // ── Step 3b: コーナー追従 (企画書§6 技術的成功基準①) ────────────────
+        // ── Step 3b: バイタル警告 (HR185以上 → 深青 + CalmDownサイン) ─────────
+        var visuals = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
+        bool sawVitalWarning = false;
+        // エディタHRシミュレータが値を上書きするため、毎フレーム注入しつつ監視
+        for (float t = 0; t < 1.5f && !sawVitalWarning; t += Time.deltaTime)
+        {
+            bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":13.0,\"heartRate\":195,\"distanceKm\":0.02}");
+            if (visuals != null && visuals.IsVitalWarningActive) sawVitalWarning = true;
+            yield return null;
+        }
+        Check(sawVitalWarning, "vital: deep-blue warning at HR>=185");
+        bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":13.0,\"heartRate\":150,\"distanceKm\":0.02}");
+        yield return WaitScaled(0.3f);
+
+        // ── Step 3c: 障害物停止 (断崖・壁 → 足踏み待機 → 解除で再開) ──────────
+        var groundSnap = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
+        if (groundSnap != null)
+        {
+            groundSnap.SimulateObstacle = true;
+            yield return WaitScaled(0.4f);
+            Check(engine.IsHalted, "obstacle: avatar halts at simulated wall");
+
+            groundSnap.SimulateObstacle = false;
+            yield return WaitScaled(0.4f);
+            Check(!engine.IsHalted, "obstacle: avatar resumes when path clears");
+        }
+
+        // ── Step 3d: ルート逸脱 → サイレント復帰 ─────────────────────────────
+        var recoverer = FindFirstObjectByType<SilentRouteRecoverer>(FindObjectsInactive.Include);
+        var safetyLogger = FindFirstObjectByType<SafetyEventLogger>(FindObjectsInactive.Include);
+        if (recoverer != null)
+        {
+            int eventsBefore = safetyLogger != null ? safetyLogger.Events.Count : 0;
+
+            recoverer.SimulateDeviation = true;
+            yield return WaitScaled(0.4f);
+            Check(recoverer.IsRecovering && engine.IsOverriddenByRecovery,
+                "deviation: silent recovery engaged");
+            Check(safetyLogger == null || safetyLogger.Events.Count > eventsBefore,
+                "deviation: safety event logged with position");
+
+            recoverer.SimulateDeviation = false;
+            yield return WaitScaled(0.4f);
+            Check(!engine.IsOverriddenByRecovery, "deviation: normal pacing restored");
+        }
+
+        // ── Step 3e: 離隔待機 (10mで座標固定+手招き → 7mで再開) ─────────────
+        // 通常追従ではアバターは常にユーザー+3mへアンカーされるため、
+        // 10m離隔は「アバターが停止中(障害物等)にユーザーが離れる」ケースで発生する。
+        // その実運用シナリオを再現する: 壁で停止→ユーザーが先へ進む→待機+手招き
+        if (groundSnap != null)
+        {
+            groundSnap.SimulateObstacle = true; // アバターを座標固定
+            yield return WaitScaled(0.2f);
+
+            float waitElapsed = 0f;
+            while (!engine.IsWaitingForUser && waitElapsed < 15f)
+            {
+                waitElapsed += Time.deltaTime;
+                _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+                yield return null;
+            }
+            Check(engine.IsWaitingForUser, "wait: avatar holds & beckons at 10m separation");
+
+            groundSnap.SimulateObstacle = false; // 障害解除(待機状態は距離条件で継続)
+
+            // アバター方向へ戻って追いつく(7mで再開)
+            waitElapsed = 0f;
+            while (engine.IsWaitingForUser && waitElapsed < 15f)
+            {
+                waitElapsed += Time.deltaTime;
+                Vector3 toAvatar = engine.transform.position - _cameraMover.position;
+                toAvatar.y = 0;
+                if (toAvatar.sqrMagnitude > 0.01f)
+                    _cameraMover.position += toAvatar.normalized * 6f * Time.deltaTime;
+                yield return null;
+            }
+            Check(!engine.IsWaitingForUser, "wait: pacing resumes when user catches up (7m)");
+        }
+
+        // コーナー前に直進で体勢を整える
+        for (float t = 0; t < 2.5f; t += Time.deltaTime)
+        {
+            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            yield return null;
+        }
+
+        // ── Step 3f: コーナー追従 (企画書§6 技術的成功基準①) ────────────────
         // 400mトラックの曲線部(半径36.5m)を1/4周。アバターが先行を維持し、
         // ワープせず、進行方向(接線)に追従して旋回することを検証する。
         yield return StartCoroutine(RunCornerFollowingTest(engine));

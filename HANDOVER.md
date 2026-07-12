@@ -33,9 +33,9 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 |---|---|---|
 | 3.0m先行追従・Vector Forward純化(1.5s移動平均) | `AvatarEngine.cs` | E2E(直線・コーナー) |
 | 速度連動 Walk/Jog/Run ブレンド | `OvertakeBehaviourController.cs` + Animator | エディタ目視 |
-| 自動接地(±15cm/0.3sイージング・断崖判定) | `GroundSnap.cs` | エディタ(Cキー) |
-| 離隔待機(10mで座標固定+手招き、7mで再開) | `AvatarEngine.cs` | エディタ(カメラ引き離し) |
-| バイタル警告(HR185+で深青+CalmDownSign) | `AvatarVisualsAndActions.cs` | エディタ(Vキー) |
+| 自動接地(±15cm/0.3sイージング・断崖判定) | `GroundSnap.cs` | **E2E自動**(障害物停止/再開) |
+| 離隔待機(10mで座標固定+手招き、7mで再開) | `AvatarEngine.cs` | **E2E自動** |
+| バイタル警告(HR185+で深青+CalmDownSign) | `AvatarVisualsAndActions.cs` | **E2E自動** |
 | VFX(起動粒子集積・終了挨拶消滅・接地パルス) | `AvatarVFXController.cs` | エディタ目視 |
 | 追い抜き/追い抜かれ動作 | `AvatarEngine.cs` + `OvertakeBehaviourController.cs` | エディタ(O/Pキー) |
 
@@ -56,7 +56,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | TTC優先の危険警告(赤点滅+音+振動) | `SafetyAndSystemController.cs` | エディタ(Tキー) |
 | 足音(路面連動)・心拍連動呼吸音 | `RunAudioEngine.cs`(全クリップ手続き生成) | エディタ試聴 |
 | 環境適応音響(45dB→自動音量、75dB上限) | 同上(実機マイク/エディタMキー) | エディタ |
-| サイレントルート復帰 | `SilentRouteRecoverer.cs` | エディタ(Dキー) |
+| サイレントルート復帰 | `SilentRouteRecoverer.cs` | **E2E自動**(逸脱→復帰+ログ) |
 | GPS喪失FSM(慣性5s→フェード→復帰粒子+頷き) | `GameStateController.cs` | **E2E自動** |
 
 ### 走行分析&データ (企画書 4.4)
@@ -66,7 +66,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | シンクロ率(S=100×(1−d/10))・1km/5kmスプリット | `AnalyticsManager.cs` | **E2E自動** |
 | リザルト4段階ランク+アバターコメント生成 | `RunSessionController.cs` | **E2E自動** |
 | 疲労推定(28℃×1.5/31℃×2.0) | `AnalyticsManager.cs` | 単体ロジック |
-| セーフティ・ロギング(急停止/速度超過/逸脱) | `SafetyEventLogger.cs` | エディタ |
+| セーフティ・ロギング(急停止/速度超過/逸脱) | `SafetyEventLogger.cs` | **E2E自動**(逸脱ログ) |
 | デュアル保存(JSON DB+HealthKit同期キュー) | `SessionDataStore.cs` | **E2E自動**(JSON) |
 | **ゴースト機能(過去の自分と競走)** | `GhostPaceDriver.cs` + paceTimeline | **E2E自動** |
 

@@ -18,6 +18,21 @@ public class SilentRouteRecoverer : MonoBehaviour
     private bool _isRecoveringSilently = false;
     private int _nearestSegmentIndex = 0;
 
+    /// <summary>E2E/エディタ検証用: ルート逸脱の強制シミュレート(Dキーと同じ)。</summary>
+    public bool SimulateDeviation { get; set; }
+
+    /// <summary>現在サイレント復帰(逸脱誘導)中かどうか。</summary>
+    public bool IsRecovering => _isRecoveringSilently;
+
+    void Start()
+    {
+        // Bootstrap経由でアバターへ自動装着された場合の参照解決
+        if (avatarEngine == null)
+            avatarEngine = GetComponent<AvatarEngine>();
+        if (userCamera == null && Camera.main != null)
+            userCamera = Camera.main.transform;
+    }
+
     void Update()
     {
         if (userCamera == null || avatarEngine == null) return;
@@ -39,8 +54,8 @@ public class SilentRouteRecoverer : MonoBehaviour
         if (routeWaypoints != null && routeWaypoints.Length >= 2)
             return ComputeCrossTrackError(userPos);
 
-        // Fallback: D-key simulation for editor testing
-        if (Input.GetKey(KeyCode.D))
+        // Fallback: D-key / E2E simulation for editor testing
+        if (SimulateDeviation || Input.GetKey(KeyCode.D))
             return 6.0f;
 
         return 0.0f;

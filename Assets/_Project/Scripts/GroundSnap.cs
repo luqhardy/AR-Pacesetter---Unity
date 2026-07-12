@@ -22,6 +22,13 @@ public class GroundSnap : MonoBehaviour
     private float _targetY;
     private float _currentYVelocity;
     private bool _simulateObstacleActive = false;
+
+    /// <summary>E2E/エディタ検証用: 障害物検知の強制ON/OFF(Cキーと同じ)。</summary>
+    public bool SimulateObstacle
+    {
+        get => _simulateObstacleActive;
+        set => _simulateObstacleActive = value;
+    }
     private bool _wasHaltedLastFrame = false;
     private bool _isEasing = false;
     private float _lerpTimer = 0f;
