@@ -83,8 +83,8 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 ## 3. 検証手段(再現手順)
 
 1. **コンパイル検証(Unity起動不要)**: README「更新履歴」参照のdotnetビルド手法
-2. **E2E自動検証(32項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
-   — 開始→走行→バイタル警告→追い抜き→障害物停止→ルート逸脱復帰→離隔待機→**コーナー追従(半径36.5m)**→ゴール→記録→ゴースト再走→GPS喪失/復帰→履歴→HUD抑制を自動判定(終了コード0=全PASS)
+2. **E2E自動検証(37項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
+   — 開始→走行→バイタル警告→追い抜き→障害物停止→ルート逸脱復帰→離隔待機→**コーナー追従(半径36.5m)**→ゴール(お辞儀)→記録→ゴースト再走→GPS喪失/復帰→履歴→HUD抑制→ジェスチャー3種→フェイクシャドウ→60fps設定を自動判定(終了コード0=全PASS)
 3. **エディタ手動検証**: README「エディタ検証用ショートカットキー一覧」
 4. **統合ビルド(Mac)**: SWIFT_INTEGRATION.md の手順②(UaaL)
 
@@ -105,6 +105,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 - **XREAL SDK統合**: グラス表示は外部ディスプレイ経由で実装済み(`ExternalDisplayManager.swift`・SDK不要)。SDK固有機能(6DoF・空間メッシュ等)が必要になった場合のみNRSDK導入を検討
 - **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
 - **実地フィールドテスト**: `Docs/FIELD_TEST_PLAN.md` の T1〜T9 を実施(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)
+- **ルート同期**: MapRouteView(Swift)で表示するコースがUnityの逸脱判定(`SilentRouteRecoverer.routeWaypoints`)へ未接続。実ルート運用時はStartSessionへポリライン(緯度経度→開始点基準のローカル座標変換)を追加する必要がある。現状の逸脱検知はシミュレーション(D キー/E2E)のみ
 
 解決済み(参考):
 - ~~HealthKit書き込み~~ → `HealthKitWorkoutSaver.swift` がSessionEnded受信時にHKWorkoutを保存

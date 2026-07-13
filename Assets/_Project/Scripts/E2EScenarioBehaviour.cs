@@ -77,6 +77,9 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(fakeShadow != null && fakeShadow.IsVisible,
             "render: fake shadow visible under avatar");
 
+        // 要件定義 6.1: 60fps維持(iOS既定30fpsを明示的に引き上げていること)
+        Check(Application.targetFrameRate == 60, "render: target frame rate set to 60fps");
+
         // ── Step 2: 走行シミュレーション(カメラを前進させる) ────────────────
         float elapsed = 0f;
         bool syncObserved = false;

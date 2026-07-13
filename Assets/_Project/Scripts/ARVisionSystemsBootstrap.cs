@@ -15,6 +15,12 @@ public static class ARVisionSystemsBootstrap
         if (engine == null)
             return;
 
+        // 要件定義 6.1: 描画頻度60fps(16.6ms/frame)を維持。
+        // iOSのUnityは既定30fpsのため明示設定が必須(未設定だとM2Pが実質倍増する)。
+        // モバイルでtargetFrameRateを効かせるためvSyncは無効化する
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = 60;
+
         // VFX演出はアバター本体と同じGameObjectに載せる (企画書 4.1)
         if (engine.GetComponent<AvatarVFXController>() == null)
         {

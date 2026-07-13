@@ -111,6 +111,13 @@ public class AvatarVisualsAndActions : MonoBehaviour
         if (_glowMaterial != null)
         {
             _glowMaterial.EnableKeyword("_EMISSION");
+
+            // 企画書 4.1: 起動時から透過率50%の半透明を適用
+            // (マテリアルが透過モードでない場合は視覚上no-op)
+            Color baseColor = _glowMaterial.color;
+            _glowMaterial.color = new Color(
+                baseColor.r, baseColor.g, baseColor.b,
+                GameStateController.AvatarBaseAlpha);
         }
     }
 

@@ -272,10 +272,17 @@ public class GameStateController : MonoBehaviour
         mat.color = c;
     }
 
+    /// <summary>
+    /// 企画書 4.1: アバターの基準透過率(50%半透明)。
+    /// フェード復帰・通常表示はこの値へ戻す。視覚反映にはアバターの
+    /// マテリアルが透過モード(lilToon: 半透明)であることが前提。
+    /// </summary>
+    public const float AvatarBaseAlpha = 0.5f;
+
     private void RestoreAvatarAlpha()
     {
         Material m = GetActiveMaterial();
         if (m == null) return;
-        ApplyAlpha(m.color, 1.0f);
+        ApplyAlpha(m.color, AvatarBaseAlpha);
     }
 }
