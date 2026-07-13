@@ -22,6 +22,13 @@ public static class ARVisionSystemsBootstrap
             Debug.Log("[BOOTSTRAP] AvatarVFXController auto-attached to avatar.");
         }
 
+        // フェイクシャドウ(企画書4.1 コア・レンダリング — AR空間の接地感)
+        if (engine.GetComponent<FakeShadowRenderer>() == null)
+        {
+            engine.gameObject.AddComponent<FakeShadowRenderer>();
+            Debug.Log("[BOOTSTRAP] FakeShadowRenderer auto-attached to avatar.");
+        }
+
         // プロシージャルジェスチャー(手招き/挨拶/落ち着けサインの可視化)
         if (engine.GetComponent<ProceduralGestureDriver>() == null)
         {

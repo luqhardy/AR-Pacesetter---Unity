@@ -13,6 +13,27 @@ struct RunningSettingsView: View {
     @State private var editingDistance = false
     @State private var editingPace = false
 
+    // ドラムロール(ホイール)入力: 4.0〜16.0 km/h を0.5刻み
+    private var paceWheelValues: [Double] {
+        stride(from: 4.0, through: 16.0, by: 0.5).map { $0 }
+    }
+
+    // ±/直接入力とホイールを双方向同期(0.5刻みへ丸めて選択位置を決める)
+    private var paceWheelBinding: Binding<Double> {
+        Binding(
+            get: { min(16.0, max(4.0, (paceKmh * 2).rounded() / 2)) },
+            set: { paceKmh = $0 }
+        )
+    }
+
+    private func paceLabel(kmh: Double) -> String {
+        guard kmh > 0 else { return "--'--\"" }
+        let minPerKm = 60.0 / kmh
+        let minutes = Int(minPerKm)
+        let seconds = Int((minPerKm - Double(minutes)) * 60.0)
+        return String(format: "%d'%02d\"", minutes, seconds)
+    }
+
     @State private var timeInput = ""
     @State private var distanceInput = ""
     @State private var paceInput = ""
@@ -127,6 +148,29 @@ struct RunningSettingsView: View {
                             focusedField = nil
                         }
                     )
+
+                    // ドラムロール入力 (企画書§5 ハイブリッド入力: ドラムロール・±・直接入力)
+                    // スワイプで直感的にペースを選ぶホイールピッカー
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("ドラムロールで選ぶ")
+                            .font(.system(size: 12))
+                            .foregroundColor(.arGrayText)
+                            .padding(.leading, 4)
+                        Picker("ペース", selection: paceWheelBinding) {
+                            ForEach(paceWheelValues, id: \.self) { value in
+                                Text(String(format: "%.1f km/h（%@/km）", value, paceLabel(kmh: value)))
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .tag(value)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(height: 96)
+                        .clipped()
+                        .background(Color.arCard)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.arBorder, lineWidth: 1))
+                    }
                 }
                 .padding(.horizontal, 24)
 

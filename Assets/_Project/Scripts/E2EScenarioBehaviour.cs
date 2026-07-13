@@ -73,6 +73,10 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return WaitScaled(0.5f);
         Check(engine.HasStarted, "start: engine.HasStarted after StartSession");
 
+        var fakeShadow = FindFirstObjectByType<FakeShadowRenderer>(FindObjectsInactive.Include);
+        Check(fakeShadow != null && fakeShadow.IsVisible,
+            "render: fake shadow visible under avatar");
+
         // ── Step 2: 走行シミュレーション(カメラを前進させる) ────────────────
         float elapsed = 0f;
         bool syncObserved = false;
