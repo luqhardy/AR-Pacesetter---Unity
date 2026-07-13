@@ -525,6 +525,12 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-07-10 (6) — ジェスチャーAnimatorステート実装(手招き・挨拶・落ち着けサイン)
+
+- `Beckon`（離隔待機の手招き）/`Goodbye`（終了挨拶）/`CalmDownSign`（バイタル警告ハンドサイン）のトリガーがコントローラ側に存在せず**視覚的に無反応**だった問題を解消 — ジェネレータを10パラメータ・8ステートへ拡張し、コントローラを再生成（GUID維持でシーン参照無傷）
+- 各ステートのモーションはIdleのプレースホルダー。Mixamoの Waving / Bow / Hand Raising 系への差し替えポイントを`AvatarStateTransitions.md`に明記
+- E2E 32項目全PASSで回帰確認
+
 ### 2026-07-10 (5) — iOSビルドブロッカー解消: カルマン実体・HealthKit書き込み
 
 - **C++カルマンフィルタのネイティブ実体**を追加(`Assets/Plugins/iOS/KalmanFilterNative.mm`) — `AvatarEngine`の`DllImport("__Internal")`が要求するシンボルで、**これが無いとiOSビルドはリンクエラーで失敗**する必須部品。3軸スカラーKF(Q=0.05/R=0.8)+線形トレンド外挿(lteWeight)

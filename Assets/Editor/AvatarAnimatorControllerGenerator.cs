@@ -88,8 +88,11 @@ public class AvatarAnimatorControllerGenerator
         controller.AddParameter("Sprint", AnimatorControllerParameterType.Trigger);
         controller.AddParameter("RunResume", AnimatorControllerParameterType.Trigger);
         controller.AddParameter("Nod", AnimatorControllerParameterType.Trigger);
+        controller.AddParameter("Beckon", AnimatorControllerParameterType.Trigger);        // 離隔待機の手招き (AvatarEngine)
+        controller.AddParameter("Goodbye", AnimatorControllerParameterType.Trigger);       // 終了時の挨拶 (AvatarVFXController)
+        controller.AddParameter("CalmDownSign", AnimatorControllerParameterType.Trigger);  // バイタル警告 (AvatarVisualsAndActions)
 
-        Debug.Log("✓ Added 7 animator parameters");
+        Debug.Log("✓ Added 10 animator parameters");
     }
 
     private static void CreateAnimationLayers(AnimatorController controller)
@@ -137,10 +140,26 @@ public class AvatarAnimatorControllerGenerator
         var nodState = rootStateMachine.AddState("Nod", new Vector3(300, 340, 0));
         nodState.motion = idleClip; // Fallback; ideally use dedicated nod gesture
 
+        // 6. Beckon: 離隔待機の手招き (企画書4.1)。RunResumeで解除
+        //    ※プレースホルダー。Mixamoの "Waving" / "Beckoning" 系に差し替え推奨
+        var beckonState = rootStateMachine.AddState("Beckon", new Vector3(300, 420, 0));
+        beckonState.motion = idleClip;
+
+        // 7. Goodbye: 終了時の挨拶 → 消滅 (企画書4.1 VFX)
+        //    ※プレースホルダー。Mixamoの "Bow" / "Waving" 系に差し替え推奨
+        var goodbyeState = rootStateMachine.AddState("Goodbye", new Vector3(300, 500, 0));
+        goodbyeState.motion = idleClip;
+
+        // 8. CalmDownSign: バイタル警告のハンドサイン (企画書4.1)
+        //    ※プレースホルダー。Mixamoの "Hand Raising" 系に差し替え推奨
+        var calmDownState = rootStateMachine.AddState("CalmDownSign", new Vector3(300, 580, 0));
+        calmDownState.motion = idleClip;
+
         // Create transitions
         CreateTransitions(rootStateMachine, locomotionBlendTree, inPlaceHaltState, beingOvertakenState, sprintSurgeState, nodState);
+        CreateGestureTransitions(rootStateMachine, locomotionBlendTree, beckonState, goodbyeState, calmDownState);
 
-        Debug.Log("✓ Created state machine with 5 states and blend tree");
+        Debug.Log("✓ Created state machine with 8 states and blend tree");
     }
 
     private static AnimatorState CreateLocomotionBlendTree(AnimatorStateMachine stateMachine, AnimationClip idle, AnimationClip jogging, AnimationClip running, AnimationClip running2)
@@ -245,6 +264,52 @@ public class AvatarAnimatorControllerGenerator
         nodToLocomotion.duration = 0.25f;
 
         Debug.Log("✓ Created all state transitions");
+    }
+
+    private static void CreateGestureTransitions(
+        AnimatorStateMachine stateMachine,
+        AnimatorState locomotionState,
+        AnimatorState beckonState,
+        AnimatorState goodbyeState,
+        AnimatorState calmDownState)
+    {
+        // Any State → Beckon (離隔待機開始)。ユーザーが追いつくと RunResume で解除
+        var anyToBeckon = stateMachine.AddAnyStateTransition(beckonState);
+        anyToBeckon.AddCondition(AnimatorConditionMode.If, 0, "Beckon");
+        anyToBeckon.hasExitTime = false;
+        anyToBeckon.duration = 0.2f;
+        anyToBeckon.canTransitionToSelf = false;
+
+        var beckonToLocomotion = beckonState.AddTransition(locomotionState);
+        beckonToLocomotion.AddCondition(AnimatorConditionMode.If, 0, "RunResume");
+        beckonToLocomotion.hasExitTime = false;
+        beckonToLocomotion.duration = 0.25f;
+
+        // Any State → Goodbye (終了挨拶)。以降は消滅VFXに任せるが安全のため出口も用意
+        var anyToGoodbye = stateMachine.AddAnyStateTransition(goodbyeState);
+        anyToGoodbye.AddCondition(AnimatorConditionMode.If, 0, "Goodbye");
+        anyToGoodbye.hasExitTime = false;
+        anyToGoodbye.duration = 0.2f;
+        anyToGoodbye.canTransitionToSelf = false;
+
+        var goodbyeToLocomotion = goodbyeState.AddTransition(locomotionState);
+        goodbyeToLocomotion.hasExitTime = true;
+        goodbyeToLocomotion.exitTime = 0.95f;
+        goodbyeToLocomotion.duration = 0.25f;
+
+        // Any State → CalmDownSign (心拍過負荷) → 再生し終えたらLocomotionへ
+        var anyToCalm = stateMachine.AddAnyStateTransition(calmDownState);
+        anyToCalm.AddCondition(AnimatorConditionMode.If, 0, "CalmDownSign");
+        anyToCalm.hasExitTime = false;
+        anyToCalm.duration = 0.2f;
+        anyToCalm.canTransitionToSelf = false;
+
+        var calmToLocomotion = calmDownState.AddTransition(locomotionState);
+        calmToLocomotion.hasExitTime = true;
+        calmToLocomotion.exitTime = 0.9f;
+        calmToLocomotion.duration = 0.25f;
+
+        Debug.Log("✓ Created gesture transitions (Beckon/Goodbye/CalmDownSign)");
     }
 
     private static void PrepareRigs()

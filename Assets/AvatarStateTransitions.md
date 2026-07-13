@@ -39,6 +39,7 @@ Create a new Animator Controller (e.g. `AvatarAnimatorController`), assign it to
 | `Nod` | **Trigger** | Played once GPS signal re-establishes and accuracy settles |
 | `Beckon` | **Trigger** | Fired when the user falls $\ge 10$m behind — avatar holds position and beckons (resumes at 7m) |
 | `Goodbye` | **Trigger** | Fired on session end — avatar bows/waves before the dissolve VFX |
+| `CalmDownSign` | **Trigger** | Fired at HR>=185 (vital warning) — avatar performs a calm-down hand sign |
 
 ---
 
@@ -96,3 +97,5 @@ Plays a single nod gesture when GPS accuracy finishes re-accumulating.
   * **Exit Time:** `0.9` (Transitions at 90% completion)
   * **Transition Duration:** `0.25`s
   * **Conditions:** *None*
+
+> 2026-07-10: `Beckon` / `Goodbye` / `CalmDownSign` はジェネレータで生成されるようになった(プレースホルダーはIdleクリップ)。Mixamoの Waving / Bow / Hand Raising 系モーションをダウンロードして各ステートのMotionに差し替えると完成。
