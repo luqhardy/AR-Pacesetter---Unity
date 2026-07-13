@@ -83,8 +83,8 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 ## 3. 検証手段(再現手順)
 
 1. **コンパイル検証(Unity起動不要)**: README「更新履歴」参照のdotnetビルド手法
-2. **E2E自動検証**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
-   — 開始→走行→ゴール→記録→ゴースト再走→**コーナー追従(半径36.5m)**→GPS喪失/復帰→履歴を自動判定(終了コード0=全PASS)
+2. **E2E自動検証(32項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
+   — 開始→走行→バイタル警告→追い抜き→障害物停止→ルート逸脱復帰→離隔待機→**コーナー追従(半径36.5m)**→ゴール→記録→ゴースト再走→GPS喪失/復帰→履歴→HUD抑制を自動判定(終了コード0=全PASS)
 3. **エディタ手動検証**: README「エディタ検証用ショートカットキー一覧」
 4. **統合ビルド(Mac)**: SWIFT_INTEGRATION.md の手順②(UaaL)
 
