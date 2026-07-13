@@ -97,6 +97,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(engine.IsSessionEnded, "goal: session auto-finished by goal distance");
         Check(syncObserved, "run: live sync rate exceeded 30% during run");
 
+        // 終了直後の挨拶(お辞儀)ジェスチャーが再生されること
+        yield return null; // LateUpdate反映待ち
+        var goalGestures = FindFirstObjectByType<ProceduralGestureDriver>(FindObjectsInactive.Include);
+        Check(goalGestures != null && goalGestures.ActiveGesture == "Goodbye",
+            "goal: procedural goodbye gesture playing");
+
         var record = session.LastRecord;
         Check(record != null, "record: LastRecord created");
         if (record != null)
@@ -127,15 +133,19 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         // ── Step 3b: バイタル警告 (HR185以上 → 深青 + CalmDownサイン) ─────────
         var visuals = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
+        var gestures = FindFirstObjectByType<ProceduralGestureDriver>(FindObjectsInactive.Include);
         bool sawVitalWarning = false;
+        bool sawCalmGesture = false;
         // エディタHRシミュレータが値を上書きするため、毎フレーム注入しつつ監視
-        for (float t = 0; t < 1.5f && !sawVitalWarning; t += Time.deltaTime)
+        for (float t = 0; t < 1.5f && !(sawVitalWarning && sawCalmGesture); t += Time.deltaTime)
         {
             bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":13.0,\"heartRate\":195,\"distanceKm\":0.02}");
             if (visuals != null && visuals.IsVitalWarningActive) sawVitalWarning = true;
+            if (gestures != null && gestures.ActiveGesture == "CalmDown") sawCalmGesture = true;
             yield return null;
         }
         Check(sawVitalWarning, "vital: deep-blue warning at HR>=185");
+        Check(sawCalmGesture, "vital: procedural calm-down gesture playing");
         bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":13.0,\"heartRate\":150,\"distanceKm\":0.02}");
         yield return WaitScaled(0.3f);
 
@@ -224,6 +234,9 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 yield return null;
             }
             Check(engine.IsWaitingForUser, "wait: avatar holds & beckons at 10m separation");
+            yield return null; // ジェスチャー判定はLateUpdateで更新される
+            Check(gestures != null && gestures.ActiveGesture == "Beckon",
+                "wait: procedural beckon gesture playing");
 
             groundSnap.SimulateObstacle = false; // 障害解除(待機状態は距離条件で継続)
 

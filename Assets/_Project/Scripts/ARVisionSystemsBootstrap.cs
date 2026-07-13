@@ -22,6 +22,13 @@ public static class ARVisionSystemsBootstrap
             Debug.Log("[BOOTSTRAP] AvatarVFXController auto-attached to avatar.");
         }
 
+        // プロシージャルジェスチャー(手招き/挨拶/落ち着けサインの可視化)
+        if (engine.GetComponent<ProceduralGestureDriver>() == null)
+        {
+            engine.gameObject.AddComponent<ProceduralGestureDriver>();
+            Debug.Log("[BOOTSTRAP] ProceduralGestureDriver auto-attached to avatar.");
+        }
+
         // サイレントルート復帰はアバターのtransformを操作するため同居必須。
         // シーンに未配置だと逸脱復帰機能が丸ごと不在になる(E2Eで検出)
         if (Object.FindFirstObjectByType<SilentRouteRecoverer>(FindObjectsInactive.Include) == null)
