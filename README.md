@@ -525,6 +525,12 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-07-14 — 音声警告＆優先度制御（企画書4.3）
+
+- `VoiceAlertSpeaker.swift` 新規: 「赤信号」「交差点」のみを音声警告対象とし、AVSpeechSynthesizer（ja-JP）で発話。**重複時はTTCが短い警告が発話中でも割込**（企画書4.3の優先度制御）。信号は長め振動を併用
+- Unity→Swiftの`VoiceAlert`イベント追加（`SwiftMessageSender.SendVoiceAlert`）。エディタ検証: `ARSessionManager`コンテキストメニュー「Simulate Voice Alert」（赤信号TTC2.5s→交差点TTC1.2s割込の優先度テスト）
+- 検知ソース（地図データ連携）は未接続 — HANDOVER未完了事項に記載。E2E 37項目全PASSで回帰確認
+
 ### 2026-07-10 (9) — 60fps設定・透過率50%・ルート同期ギャップの記録
 
 - **60fps明示設定**（要件定義6.1）: iOSのUnityは既定30fpsのため、`Application.targetFrameRate=60`+vSync無効をBootstrapで設定（未設定だと実機M2Pが実質倍増）。E2Eで自動判定

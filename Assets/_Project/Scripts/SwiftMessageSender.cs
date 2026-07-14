@@ -46,6 +46,14 @@ public static class SwiftMessageSender
         => SendRaw(string.Format(CultureInfo.InvariantCulture,
             "{{\"event\":\"LatencyReport\",\"ms\":{0:F1}}}", milliseconds));
 
+    /// <summary>
+    /// 音声警告 (企画書4.3 — 対象は赤信号/交差点のみ、Swift側でTTC優先制御)。
+    /// kind: "Signal" | "Intersection"
+    /// </summary>
+    public static void SendVoiceAlert(string kind, double ttcSeconds)
+        => SendRaw(string.Format(CultureInfo.InvariantCulture,
+            "{{\"event\":\"VoiceAlert\",\"kind\":\"{0}\",\"ttc\":{1:F1}}}", kind, ttcSeconds));
+
     /// <summary>走行履歴一覧 (Swift側 "HistoryData" ケース、HistoryViewが表示)。</summary>
     public static void SendHistory(System.Collections.Generic.List<RunSessionRecord> records)
     {

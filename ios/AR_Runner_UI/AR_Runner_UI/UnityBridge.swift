@@ -187,6 +187,12 @@ final class UnityBridge: NSObject, ObservableObject {
                 )
             case "LowBattery":
                 self.lowBatteryMode = true
+            case "VoiceAlert":
+                // 企画書4.3: 赤信号・交差点の音声警告(TTC短い方を優先)
+                VoiceAlertSpeaker.shared.speak(
+                    kind: dict["kind"] as? String ?? "",
+                    ttcSeconds: dict["ttc"] as? Double ?? .infinity
+                )
             case "HistoryData":
                 if let sessions = dict["sessions"] as? [[String: Any]] {
                     self.history = sessions.map { s in

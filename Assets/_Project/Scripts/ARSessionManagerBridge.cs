@@ -339,6 +339,14 @@ public class ARSessionManagerBridge : MonoBehaviour
     private void SimulateRequestHistory()
         => OnSwiftCommand("{\"command\":\"RequestHistory\"}");
 
+    [ContextMenu("Simulate Voice Alert (赤信号 TTC2.5s → 交差点 TTC1.2s 割込)")]
+    private void SimulateVoiceAlert()
+    {
+        // 重複時の優先度制御テスト: 後発でもTTCが短い方が割り込むこと
+        SwiftMessageSender.SendVoiceAlert("Signal", 2.5);
+        SwiftMessageSender.SendVoiceAlert("Intersection", 1.2);
+    }
+
     [ContextMenu("Simulate Ghost Run (latest saved session)")]
     private void SimulateGhostRun()
     {
