@@ -68,3 +68,28 @@ stateDiagram-v2
     
     Standby --> ReAccumulation : GPS Signal Restored
     ReAccumulation --> Normal : Accuracy Radius <= 5m AND Position Settled (1.5s Animation)
+---
+
+## 6. Implementation Status & Working Agreements (updated 2026-07-14)
+
+上記§3〜5の数式・FSM・レイテンシ予算は引き続き正であり、全て実装済み。
+機能→実装→検証の対応表は [HANDOVER.md](HANDOVER.md)、Swift⇄Unity契約は
+[SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) が一次情報。
+
+### 変更時の検証ワークフロー(必須)
+1. **C#コンパイル**: Unityを開かず `dotnet build`(README更新履歴のcsproj生成手法)
+2. **E2E回帰(37項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` → 終了コード0を確認。シナリオ追加は `E2EScenarioBehaviour.cs`
+3. **Swift構文**: `swiftc -parse`(Windowsツールチェーン導入済み。型検査はMacでのみ可能)
+4. コミット前にREADME更新履歴へ1エントリ追記
+
+### 実装上の不変条件(破ると壊れる)
+- **`AvatarEngine.IsHalted` は `GroundSnap` が毎フレーム上書きする**。恒久的な停止には `IsSessionEnded` を使う
+- **距離の単一ソース原則**: Swift主導中(`ARSessionManagerBridge.ExternalMetricsActive`)はUnity内部計測をスプリット判定へ流さない。記録・ゴール判定は `RunSessionController.AuthoritativeDistanceMeters`(新鮮なGPS優先・5秒でUnity計測へフォールバック)を共用
+- **アバターは常時「ユーザー+3m」アンカー追従**(自走ではない)。10m離隔待機は「アバター停止中にユーザーが離れる」場合にのみ発生する
+- **Animator取得は必ず `AvatarRigLocator.FindBestAnimator`** — コンテナに無効化された旧Animatorが残っており、素の `GetComponentInChildren<Animator>` はそれを拾う
+- **AnimatorControllerはジェネレータ管理**(`AvatarAnimatorControllerGenerator`)。手編集せず再生成する(同一パスならGUID維持でシーン参照は無傷)
+- **UnitySendMessage対象のGameObject名は固定**: "ARSessionManager" / "DeviceManager"(Bootstrapが自動生成)
+- 新規マネージャーは `ARVisionSystemsBootstrap` に登録すればシーン配線不要
+
+### ペース単位の規約
+Swift⇄ブリッジ境界は km/h、Unity内部は 分/km(変換: 分/km = 60 ÷ km/h)。
