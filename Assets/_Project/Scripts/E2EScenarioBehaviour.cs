@@ -66,6 +66,19 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         _cameraMover = cam.transform.root != null ? cam.transform.root : cam.transform;
 
+        // ── Step 0b: 疲労補正係数 (企画書4.4 — 気温閾値。純関数なので走行前に検証) ──
+        if (analytics != null)
+        {
+            float originalTemp = analytics.AmbientTemperature;
+            analytics.AmbientTemperature = 25f;
+            Check(Mathf.Approximately(analytics.GetFatigueMultiplier(), 1.0f), "fatigue: Cf=1.0 below 28C");
+            analytics.AmbientTemperature = 29f;
+            Check(Mathf.Approximately(analytics.GetFatigueMultiplier(), 1.5f), "fatigue: Cf=1.5 at 28-31C");
+            analytics.AmbientTemperature = 32f;
+            Check(Mathf.Approximately(analytics.GetFatigueMultiplier(), 2.0f), "fatigue: Cf=2.0 at/above 31C");
+            analytics.AmbientTemperature = originalTemp; // 走行の疲労計算を汚さない
+        }
+
         // ── Step 1: StartSession (目標60m — ゴール自動終了を早く踏むため) ──
         bridge.OnSwiftCommand(
             "{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":0.06," +

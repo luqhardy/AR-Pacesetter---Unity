@@ -66,7 +66,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 |---|---|---|
 | シンクロ率(S=100×(1−d/10))・1km/5kmスプリット | `AnalyticsManager.cs` | **E2E自動** |
 | リザルト4段階ランク+アバターコメント生成 | `RunSessionController.cs` | **E2E自動** |
-| 疲労推定(28℃×1.5/31℃×2.0) | `AnalyticsManager.cs` | 単体ロジック |
+| 疲労推定(28℃×1.5/31℃×2.0) | `AnalyticsManager.cs` | **E2E自動**(3閾値の係数) |
 | セーフティ・ロギング(急停止/速度超過/逸脱) | `SafetyEventLogger.cs` | **E2E自動**(逸脱ログ) |
 | デュアル保存(JSON DB+HealthKit同期キュー) | `SessionDataStore.cs` | **E2E自動**(JSON) |
 | **ゴースト機能(過去の自分と競走)** | `GhostPaceDriver.cs` + paceTimeline | **E2E自動** |
@@ -84,7 +84,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 ## 3. 検証手段(再現手順)
 
 1. **コンパイル検証(Unity起動不要)**: README「更新履歴」参照のdotnetビルド手法
-2. **E2E自動検証(37項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
+2. **E2E自動検証(40項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
    — 開始→走行→バイタル警告→追い抜き→障害物停止→ルート逸脱復帰→離隔待機→**コーナー追従(半径36.5m)**→ゴール(お辞儀)→記録→ゴースト再走→GPS喪失/復帰→履歴→HUD抑制→ジェスチャー3種→フェイクシャドウ→60fps設定を自動判定(終了コード0=全PASS)
 3. **エディタ手動検証**: README「エディタ検証用ショートカットキー一覧」
 4. **統合ビルド(Mac)**: SWIFT_INTEGRATION.md の手順②(UaaL)
