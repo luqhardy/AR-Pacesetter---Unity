@@ -78,9 +78,10 @@ stateDiagram-v2
 
 ### 変更時の検証ワークフロー(必須)
 1. **C#コンパイル**: Unityを開かず `dotnet build`(README更新履歴のcsproj生成手法)
-2. **E2E回帰(40項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` → 終了コード0を確認。シナリオ追加は `E2EScenarioBehaviour.cs`
-3. **Swift構文**: `swiftc -parse`(Windowsツールチェーン導入済み。型検査はMacでのみ可能)
-4. コミット前にREADME更新履歴へ1エントリ追記
+2. **ユニットテスト(純ロジック)**: `cd Tests/UnitTests && dotnet test`(Unity非依存・秒速)。純ロジックは `PaceMath` のような依存ゼロの静的クラスへ抽出し、MonoBehaviourは委譲する — そうすればここでテストできる
+3. **E2E回帰(40項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` → 終了コード0を確認。シナリオ追加は `E2EScenarioBehaviour.cs`
+4. **Swift構文**: `swiftc -parse`(Windowsツールチェーン導入済み。型検査はMacでのみ可能)
+5. コミット前にREADME更新履歴へ1エントリ追記
 
 ### 実装上の不変条件(破ると壊れる)
 - **`AvatarEngine.IsHalted` は `GroundSnap` が毎フレーム上書きする**。恒久的な停止には `IsSessionEnded` を使う

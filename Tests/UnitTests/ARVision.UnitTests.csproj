@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    純ロジック(PaceMath / PaceSample)のユニットテスト。
+    テスト対象がUnity非依存のため、Unityを起動せず `dotnet test` で秒速に回る。
+    ポータブル: Unityインストールへの参照なし。CI(ubuntu等)でもそのまま実行可能。
+    実行: cd Tests/UnitTests && dotnet test
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <!-- NUnit 3系: クラシックアサーション(Assert.AreEqual等)。Unity同梱nunitも3系 -->
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- テスト対象のゲームプレイ純ロジックをソース直コンパイル(Unity非依存の2ファイルのみ) -->
+    <Compile Include="..\..\Assets\_Project\Scripts\PaceMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\PaceSample.cs" />
+  </ItemGroup>
+</Project>

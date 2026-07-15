@@ -34,3 +34,7 @@ Thumbs.db
 /ios/UnityExport/
 ios/**/xcuserdata/
 ios/**/*.xcuserstate
+
+# Unit test build artifacts (dotnet test)
+/Tests/**/bin/
+/Tests/**/obj/

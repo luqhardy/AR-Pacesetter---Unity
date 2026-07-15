@@ -26,14 +26,8 @@ public class RunSessionRecord
 
     // ゴースト機能 (企画書§3): 5秒毎の累積距離サンプル。過去の自分の速度
     // プロファイルを再生するために使う。旧データは空リスト(平均ペースで代替)
+    // (PaceSample は PaceSample.cs に定義 — Unity非依存でユニットテスト可能)
     public List<PaceSample> paceTimeline = new List<PaceSample>();
-}
-
-[Serializable]
-public class PaceSample
-{
-    public float t;      // 走行開始からの秒数
-    public float meters; // その時点の累積距離
 }
 
 public static class SessionDataStore

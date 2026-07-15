@@ -348,38 +348,10 @@ public class PaceCalibrationController : MonoBehaviour
             : new Color(0.45f, 1f, 0.75f, 1f);
     }
 
+    // 純ロジックは PaceMath へ抽出済み(Unity非依存・ユニットテスト対象)。
+    // 既存の呼び出し互換のため薄いラッパーとして残す。
     public static bool TryParsePace(string input, out float minutesPerKm)
-    {
-        minutesPerKm = 5f;
-        if (string.IsNullOrWhiteSpace(input))
-            return false;
-
-        input = input.Trim().ToLowerInvariant();
-        input = input.Replace("/km", string.Empty).Trim();
-
-        if (input.Contains(":"))
-        {
-            string[] parts = input.Split(':');
-            if (parts.Length != 2)
-                return false;
-
-            if (!int.TryParse(parts[0], out int minutes))
-                return false;
-            if (!int.TryParse(parts[1], out int seconds))
-                return false;
-
-            if (seconds < 0 || seconds >= 60)
-                return false;
-
-            minutesPerKm = minutes + seconds / 60f;
-            return minutesPerKm >= MinPaceMinutesPerKm && minutesPerKm <= MaxPaceMinutesPerKm;
-        }
-
-        if (!float.TryParse(input, out minutesPerKm))
-            return false;
-
-        return minutesPerKm >= MinPaceMinutesPerKm && minutesPerKm <= MaxPaceMinutesPerKm;
-    }
+        => PaceMath.TryParsePace(input, out minutesPerKm, MinPaceMinutesPerKm, MaxPaceMinutesPerKm);
 
     private static string FormatPace(float minutesPerKm)
     {

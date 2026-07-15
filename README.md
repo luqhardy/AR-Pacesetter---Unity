@@ -531,6 +531,12 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 - Unity→Swiftの`VoiceAlert`イベント追加（`SwiftMessageSender.SendVoiceAlert`）。エディタ検証: `ARSessionManager`コンテキストメニュー「Simulate Voice Alert」（赤信号TTC2.5s→交差点TTC1.2s割込の優先度テスト）
 - 検知ソース（地図データ連携）は未接続 — HANDOVER未完了事項に記載。E2E 37項目全PASSで回帰確認
 
+### 2026-07-14 (2) — 純ロジック抽出＆ユニットテスト導入
+
+- **`PaceMath.cs` 新規**（Unity非依存の静的クラス）: ペース解析（`TryParsePace`）とゴースト区間ペース算出（`SampleGhostPace`）をMonoBehaviourから抽出。`PaceCalibrationController`/`GhostPaceDriver`は薄いラッパーとして委譲、`PaceSample`も独立ファイル化
+- **`Tests/UnitTests/` 新規**: NUnitで純ロジックを`dotnet test`検証（**23ケース・26ms・Unity DLL参照ゼロ**）。E2E（数分・Unityバッチ）を補完し境界値を秒速で網羅、CI(Linux)でもそのまま動く
+- 検証: ユニット23件+フルコンパイル0エラー+E2E 40項目、すべてPASS。AGENTS.md検証ワークフローに追記
+
 ### 2026-07-10 (9) — 60fps設定・透過率50%・ルート同期ギャップの記録
 
 - **60fps明示設定**（要件定義6.1）: iOSのUnityは既定30fpsのため、`Application.targetFrameRate=60`+vSync無効をBootstrapで設定（未設定だと実機M2Pが実質倍増）。E2Eで自動判定

@@ -83,29 +83,11 @@ public class GhostPaceDriver : MonoBehaviour
         avatarEngine.UpdateTargetPace(paceMinPerKm);
     }
 
-    /// <summary>経過時間 t 時点のゴーストのペース(分/km)を区間速度から求める。</summary>
+    /// <summary>
+    /// 経過時間 t 時点のゴーストのペース(分/km)。純ロジックは PaceMath.SampleGhostPace
+    /// (Unity非依存・ユニットテスト対象)へ委譲する。
+    /// </summary>
     private float SamplePaceAt(float elapsedSeconds)
-    {
-        if (_timeline == null)
-            return _ghostAveragePaceMinPerKm;
-
-        // t を挟むサンプル区間を探す(サンプルは時刻昇順)
-        for (int i = 1; i < _timeline.Count; i++)
-        {
-            if (_timeline[i].t >= elapsedSeconds)
-            {
-                float dt = _timeline[i].t - _timeline[i - 1].t;
-                float dm = _timeline[i].meters - _timeline[i - 1].meters;
-                if (dt < 0.1f || dm < 0.1f)
-                    return _ghostAveragePaceMinPerKm; // 静止区間は平均で代替
-
-                float segmentSpeed = dm / dt; // m/s
-                return Mathf.Clamp(1000f / segmentSpeed / 60f,
-                    MinPaceMinutesPerKm, MaxPaceMinutesPerKm);
-            }
-        }
-
-        // タイムライン終端を越えたら平均ペースで巡航
-        return _ghostAveragePaceMinPerKm;
-    }
+        => PaceMath.SampleGhostPace(_timeline, elapsedSeconds, _ghostAveragePaceMinPerKm,
+            MinPaceMinutesPerKm, MaxPaceMinutesPerKm);
 }
