@@ -122,19 +122,13 @@ public class SilentRouteRecoverer : MonoBehaviour
         _isRecoveringSilently = false;
         Debug.Log("[SILENT RECOVERY] Runner returned to route. Restoring standard pacer logic.");
         
-        // Sync AvatarEngine's internal state before resuming movement to prevent jumps
+        // Sync AvatarEngine's internal state before resuming movement to prevent jumps.
+        // 型安全な公開APIで再同期する(旧実装はprivateフィールドをリフレクションで
+        // 書き換えており、フィールド名変更時に無言で壊れる負債だった)
         if (avatarEngine != null)
         {
             avatarEngine.IsOverriddenByRecovery = false;
-            
-            // Ensure internal target tracking aligns with current transform
-            var field = typeof(AvatarEngine).GetField("_targetPacingPosition", 
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            field?.SetValue(avatarEngine, transform.position);
-            
-            var fieldUser = typeof(AvatarEngine).GetField("_lastFrameUserPosition", 
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            fieldUser?.SetValue(avatarEngine, userCamera.position);
+            avatarEngine.ResyncPacingAnchor(transform.position, userCamera.position);
         }
     }
 

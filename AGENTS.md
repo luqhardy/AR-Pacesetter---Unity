@@ -78,7 +78,7 @@ stateDiagram-v2
 
 ### 変更時の検証ワークフロー(必須)
 1. **C#コンパイル**: Unityを開かず `dotnet build`(README更新履歴のcsproj生成手法)
-2. **E2E回帰(37項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` → 終了コード0を確認。シナリオ追加は `E2EScenarioBehaviour.cs`
+2. **E2E回帰(40項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` → 終了コード0を確認。シナリオ追加は `E2EScenarioBehaviour.cs`
 3. **Swift構文**: `swiftc -parse`(Windowsツールチェーン導入済み。型検査はMacでのみ可能)
 4. コミット前にREADME更新履歴へ1エントリ追記
 
@@ -89,6 +89,7 @@ stateDiagram-v2
 - **Animator取得は必ず `AvatarRigLocator.FindBestAnimator`** — コンテナに無効化された旧Animatorが残っており、素の `GetComponentInChildren<Animator>` はそれを拾う
 - **AnimatorControllerはジェネレータ管理**(`AvatarAnimatorControllerGenerator`)。手編集せず再生成する(同一パスならGUID維持でシーン参照は無傷)
 - **UnitySendMessage対象のGameObject名は固定**: "ARSessionManager" / "DeviceManager"(Bootstrapが自動生成)
+- **他コンポーネントのprivate状態はリフレクションで触らない**。必要なら型安全な公開APIを足す(例: `AvatarEngine.ResyncPacingAnchor` — 復帰時のアンカー再同期)。`field?.SetValue` は名前変更時に無言で失敗するため禁止
 - 新規マネージャーは `ARVisionSystemsBootstrap` に登録すればシーン配線不要
 
 ### ペース単位の規約

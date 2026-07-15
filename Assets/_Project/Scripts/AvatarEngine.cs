@@ -596,6 +596,18 @@ public class AvatarEngine : MonoBehaviour
     }
 
     /// <summary>
+    /// 追従アンカーの内部状態を外部座標へ再同期する(SilentRouteRecoverer用)。
+    /// サイレント復帰の解除時など、アバターの位置を外部が動かした後に呼ぶことで、
+    /// 次フレームのペーシング再開時のワープを防ぐ。
+    /// (旧実装はリフレクションで private フィールドを書き換えていた — 型安全化)
+    /// </summary>
+    public void ResyncPacingAnchor(Vector3 avatarWorldPosition, Vector3 userWorldPosition)
+    {
+        _targetPacingPosition  = avatarWorldPosition;
+        _lastFrameUserPosition = userWorldPosition;
+    }
+
+    /// <summary>
     /// 再走行対応: 終了済みセッションの状態を破棄し、次の StartPacing を受け付ける。
     /// アバターはユーザー前方の初期位置へ戻り待機状態になる。
     /// </summary>
