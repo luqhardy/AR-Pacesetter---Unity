@@ -98,9 +98,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(telemetry != null && telemetry.IsLogging, "telemetry: 100Hz CSV logging active during run");
         string telemetryPath = telemetry != null ? telemetry.CurrentFilePath : null;
 
+        var visualsForColor = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
+
         // ── Step 2: 走行シミュレーション(カメラを前進させる) ────────────────
         float elapsed = 0f;
         bool syncObserved = false;
+        bool justColorObserved = false;
         Vector3 runDirection = Vector3.forward;
         while (!engine.IsSessionEnded && elapsed < StepTimeoutSeconds)
         {
@@ -109,6 +112,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
             if (!syncObserved && analytics != null && analytics.GetLiveSyncRate() > 30f)
                 syncObserved = true;
+
+            // §7.1: 目標ペース(3m先行)を保っている間はジャスト=緑
+            if (!justColorObserved && elapsed > 2f && visualsForColor != null
+                && visualsForColor.PaceColorState == "Just")
+                justColorObserved = true;
 
             // 途中でSwiftメトリクスも1回注入(実機経路の確認)
             if (!_metricsSent && elapsed > 3f)
@@ -121,6 +129,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         Check(engine.IsSessionEnded, "goal: session auto-finished by goal distance");
         Check(syncObserved, "run: live sync rate exceeded 30% during run");
+        Check(justColorObserved, "color: pace-sync GREEN (just) while on target pace (§7.1)");
 
         // 終了直後の挨拶(お辞儀)ジェスチャーが再生されること
         yield return null; // LateUpdate反映待ち

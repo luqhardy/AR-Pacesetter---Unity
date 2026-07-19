@@ -20,8 +20,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- テスト対象のゲームプレイ純ロジックをソース直コンパイル(Unity非依存の2ファイルのみ) -->
+    <!-- テスト対象のゲームプレイ純ロジックをソース直コンパイル(Unity非依存のみ) -->
     <Compile Include="..\..\Assets\_Project\Scripts\PaceMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\PaceSample.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\AvatarPaceColor.cs" />
   </ItemGroup>
 </Project>

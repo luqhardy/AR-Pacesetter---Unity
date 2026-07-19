@@ -531,6 +531,16 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 - Unity→Swiftの`VoiceAlert`イベント追加（`SwiftMessageSender.SendVoiceAlert`）。エディタ検証: `ARSessionManager`コンテキストメニュー「Simulate Voice Alert」（赤信号TTC2.5s→交差点TTC1.2s割込の優先度テスト）
 - 検知ソース（地図データ連携）は未接続 — HANDOVER未完了事項に記載。E2E 37項目全PASSで回帰確認
 
+### 2026-07-19 — アバター ペースシンクロ・カラー（基本設計書§7.1）
+
+- 設計書§7.1のペースシンクロ色へ移行（旧シアン/琥珀/深青 → 緑/橙→赤/青）:
+  - **ジャスト**（目標リード±1.5m以内）= 緑（安定）
+  - **遅延**（アバターが前方へ離隔）= 橙→赤 グラデ（離れるほど赤）
+  - **超過**（ユーザーが追い抜き）= 青（過速）
+- 判定は進行方向への**符号付きリード距離**（`AvatarEngine.CurrentHeading`との内積）。バイタル警告（深青・第1期スコープ外）は優先オーバーライドとして温存
+- 判定ロジックは `AvatarPaceColor.cs`（Unity非依存の純クラス）へ抽出しユニットテスト9件で境界を精密検証。MonoBehaviourは色合成のみ担当
+- 検証: ユニット32件 + フルコンパイル0エラー + E2E 45項目（走行中の緑判定を追加）、全PASS
+
 ### 2026-07-17 — F-11 100Hz テレメトリCSVログ（基本設計書§5.2・PoCの核）
 
 - **`RunTelemetryLogger.cs` 新規**: 走行中のセンサー生データと描画遅延を**100HzでローカルCSVへ出力**。`<persistentDataPath>/RunLogs/Log_YYYYMMDD_HHMMSS.csv`、列は§5.2準拠の9列（timestamp/gps_latitude/gps_longitude/imu_accel_x,y,z/avatar_pos_x,z/latency_m2p）。設計書が「実証実験の技術限界データ蓄積＝ソラド社への技術資産譲渡の基盤」と位置づける最優先機能

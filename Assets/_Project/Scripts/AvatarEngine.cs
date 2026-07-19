@@ -126,6 +126,11 @@ public class AvatarEngine : MonoBehaviour
     public bool IsOverriddenByRecovery { get; set; } = false;
     public bool IsWaitingForUser => _isWaitingForUser;
 
+    /// <summary>純化済みの進行方向(水平・単位ベクトル)。ペースシンクロ色の
+    /// 符号付きリード距離算出などに使う。待機/停止中も直近の向きを保持する。</summary>
+    public Vector3 CurrentHeading => _currentLinearDirection;
+    public float LeadDistanceMeters => leadDistanceMeters;
+
     public void StartPacing()
     {
         if (!_hasStarted)

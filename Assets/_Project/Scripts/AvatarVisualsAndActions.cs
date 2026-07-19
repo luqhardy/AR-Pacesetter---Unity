@@ -5,14 +5,23 @@ public class AvatarVisualsAndActions : MonoBehaviour
     [Header("References")]
     [SerializeField] private Transform userCamera;       // XR Origin Main Camera
     [SerializeField] private MeshRenderer avatarRenderer; // Capsule Mesh Renderer
+    [SerializeField] private AvatarEngine avatarEngine;   // 進行方向・目標リード取得用
 
     private SkinnedMeshRenderer _avatarSkinnedRenderer;   // Added for VRChat model compatibility
 
-    [Header("Vital Sync (Bio-Luminescence)")]
+    [Header("Bio-Luminescence Pulse")]
     [SerializeField] private float baseIntensity = 1.0f;
     [SerializeField] private float pulseAmplitude = 1.5f;
 
-    [Header("Vital Warning (企画書 4.1 — 心拍過負荷)")]
+    [Header("Pace-Sync Colors (基本設計書 §7.1)")]
+    [Tooltip("ジャスト判定の許容(目標リード±m)")]
+    [SerializeField] private float justToleranceMeters = 1.5f;
+    [Tooltip("超過グラデ幅(m)。ユーザーがこの分だけ詰めると完全に青")]
+    [SerializeField] private float overPaceSpanMeters = 1.5f;
+    [Tooltip("遅延グラデ幅(m)。ジャスト帯からこの分だけ離れると完全に赤")]
+    [SerializeField] private float behindSpanMeters = 3.0f;
+
+    [Header("Vital Warning (企画書 4.1 — 心拍過負荷 / 第1期スコープ外)")]
     [Tooltip("BPM at or above which the avatar turns deep blue and performs the calm-down hand sign.")]
     [SerializeField] private int vitalWarningBpmThreshold = 185;
     [Tooltip("Optional avatar Animator. Trigger 'CalmDownSign' fires once per overload episode.")]
@@ -21,16 +30,23 @@ public class AvatarVisualsAndActions : MonoBehaviour
     private Material _glowMaterial;
     private int _currentHeartRate = 60; // Baseline default
     private bool _vitalWarningActive = false;
+    private string _paceColorState = "Just";
 
-    // Color states from technical specification Section 4.1
-    private Color _normalCyan = new Color(0.0f, 0.94f, 1.0f);   // Normal Bio-Luminescence
-    private Color _amberWarning = new Color(1.0f, 0.62f, 0.0f); // 10m separation alert
-    private Color _deepBlueVital = new Color(0.05f, 0.15f, 0.9f); // HR overload "calm down" state
+    // ペースシンクロ色 (基本設計書 §7.1)
+    private static readonly Color PaceGreen = new Color(0.15f, 1.0f, 0.35f);  // ジャスト(安定)
+    private static readonly Color PaceOrange = new Color(1.0f, 0.55f, 0.0f);  // 遅延開始(警告)
+    private static readonly Color PaceRed = new Color(1.0f, 0.12f, 0.10f);    // 遅延大(危険)
+    private static readonly Color PaceBlue = new Color(0.10f, 0.45f, 1.0f);   // 超過(過速)
+    private static readonly Color DeepBlueVital = new Color(0.05f, 0.15f, 0.9f); // HR過負荷
 
     public bool IsVitalWarningActive => _vitalWarningActive;
+    /// <summary>現在のペースシンクロ状態("Just"/"Behind"/"OverPace"/"Vital")。E2E検証用。</summary>
+    public string PaceColorState => _paceColorState;
 
     void Start()
     {
+        if (avatarEngine == null)
+            avatarEngine = GetComponent<AvatarEngine>() ?? FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
         RefreshMaterialReference();
     }
 
@@ -38,25 +54,15 @@ public class AvatarVisualsAndActions : MonoBehaviour
     {
         if (userCamera == null || _glowMaterial == null) return;
 
-        // 1. Calculate Spatial Distance to User (Horizontal X-Z plane only to remove vertical height bias)
-        Vector3 userPosHorizontal = new Vector3(userCamera.position.x, 0f, userCamera.position.z);
-        Vector3 avatarPosHorizontal = new Vector3(transform.position.x, 0f, transform.position.z);
-        float distanceToUser = Vector3.Distance(userPosHorizontal, avatarPosHorizontal);
+        // 1. ペースシンクロ・カラー (§7.1): 進行方向へのアバター符号付きリード距離を算出
+        Color targetBaseColor = ComputePaceSyncColor();
 
-        // 2. Handle Autonomous Action Logic based on 10m separation
-        Color targetBaseColor = _normalCyan;
-
-        if (distanceToUser >= 10.0f)
-        {
-            // Requirement 4.1: 10m separation switches color to Amber
-            targetBaseColor = _amberWarning;
-        }
-
-        // 2b. Vital warning takes priority: HR overload turns avatar deep blue
-        //     and plays the "calm down" hand sign once per episode (企画書 4.1)
+        // 2. バイタル警告(企画書4.1・第1期スコープ外)は優先オーバーライド:
+        //    心拍過負荷で深青 + 落ち着けサイン
         if (_currentHeartRate >= vitalWarningBpmThreshold)
         {
-            targetBaseColor = _deepBlueVital;
+            targetBaseColor = DeepBlueVital;
+            _paceColorState = "Vital";
 
             if (!_vitalWarningActive)
             {
@@ -82,6 +88,37 @@ public class AvatarVisualsAndActions : MonoBehaviour
         // 4. Apply Final HDR Color and Light Intensity Matrix to the shader
         Color finalGlowColor = targetBaseColor * currentIntensity;
         _glowMaterial.SetColor("_EmissionColor", finalGlowColor);
+    }
+
+    private Color ComputePaceSyncColor()
+    {
+        // 進行方向(純化ヘディング)。無い場合はアバターの向きで代替
+        Vector3 heading = avatarEngine != null ? avatarEngine.CurrentHeading : transform.forward;
+        heading.y = 0f;
+        if (heading.sqrMagnitude < 0.0001f) heading = transform.forward;
+        heading.Normalize();
+
+        Vector3 toAvatar = transform.position - userCamera.position;
+        toAvatar.y = 0f;
+        float signedLead = Vector3.Dot(toAvatar, heading);
+
+        float targetLead = avatarEngine != null ? avatarEngine.LeadDistanceMeters : 3.0f;
+
+        var state = AvatarPaceColor.Evaluate(signedLead, targetLead, justToleranceMeters,
+            overPaceSpanMeters, behindSpanMeters, out float t);
+
+        switch (state)
+        {
+            case AvatarPaceColor.PaceState.Behind:
+                _paceColorState = "Behind";
+                return Color.Lerp(PaceOrange, PaceRed, t);
+            case AvatarPaceColor.PaceState.OverPace:
+                _paceColorState = "OverPace";
+                return Color.Lerp(PaceGreen, PaceBlue, t);
+            default:
+                _paceColorState = "Just";
+                return PaceGreen;
+        }
     }
 
     // --- THE MISSING LINK FOR MODEL SWITCHING ---
