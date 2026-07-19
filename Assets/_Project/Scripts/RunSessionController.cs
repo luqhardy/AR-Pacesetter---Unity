@@ -20,6 +20,7 @@ public class RunSessionController : MonoBehaviour
     [SerializeField] private PeripheralHUDManager hudManager;
     [SerializeField] private SafetyEventLogger safetyLogger;
     [SerializeField] private RunAudioEngine audioEngine;
+    [SerializeField] private RunTelemetryLogger telemetryLogger;
 
     [Header("Finish Gesture")]
     [SerializeField] private float holdToFinishSeconds = 1.5f;
@@ -95,6 +96,8 @@ public class RunSessionController : MonoBehaviour
             safetyLogger = FindFirstObjectByType<SafetyEventLogger>(FindObjectsInactive.Include);
         if (audioEngine == null)
             audioEngine = FindFirstObjectByType<RunAudioEngine>(FindObjectsInactive.Include);
+        if (telemetryLogger == null)
+            telemetryLogger = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
     }
 
     void Update()
@@ -198,6 +201,7 @@ public class RunSessionController : MonoBehaviour
         if (hudManager != null) hudManager.ResetSession();
         if (safetyLogger != null) safetyLogger.ResetSession();
         if (audioEngine != null) audioEngine.ResetSession();
+        if (telemetryLogger != null) telemetryLogger.ResetSession();
 
         Debug.Log("[SESSION] Reset complete — ready for a new run.");
     }

@@ -93,6 +93,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 要件定義 6.1: 60fps維持(iOS既定30fpsを明示的に引き上げていること)
         Check(Application.targetFrameRate == 60, "render: target frame rate set to 60fps");
 
+        // F-11 テレメトリCSV: 走行中にログが開始していること
+        var telemetry = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
+        Check(telemetry != null && telemetry.IsLogging, "telemetry: 100Hz CSV logging active during run");
+        string telemetryPath = telemetry != null ? telemetry.CurrentFilePath : null;
+
         // ── Step 2: 走行シミュレーション(カメラを前進させる) ────────────────
         float elapsed = 0f;
         bool syncObserved = false;
@@ -122,6 +127,39 @@ public class E2EScenarioBehaviour : MonoBehaviour
         var goalGestures = FindFirstObjectByType<ProceduralGestureDriver>(FindObjectsInactive.Include);
         Check(goalGestures != null && goalGestures.ActiveGesture == "Goodbye",
             "goal: procedural goodbye gesture playing");
+
+        // F-11 テレメトリCSV: 終了後にファイルが生成され、正しいヘッダーと
+        // 100Hz相当の行数を持つこと(§5.2)
+        yield return null; // ロガーのStopLogging/Flush完了待ち
+        if (!string.IsNullOrEmpty(telemetryPath) && System.IO.File.Exists(telemetryPath))
+        {
+            string[] lines = System.IO.File.ReadAllLines(telemetryPath);
+            bool headerOk = lines.Length > 0 && lines[0].StartsWith("timestamp,gps_latitude,gps_longitude");
+            int dataRows = lines.Length - 1;
+            // 走行elapsed秒 × 100Hz の概ね妥当な行数(下限を緩めに)
+            Check(headerOk, "telemetry: CSV header matches §5.2 spec");
+            Check(dataRows > 100, $"telemetry: ~100Hz rows written ({dataRows} rows)");
+
+            // タイムスタンプが単調増加かつ10ms刻み(100Hz)であること。
+            // 書込時刻を使うと1フレーム内の複数行が同一msになり解析不能になる
+            bool monotonic10ms = true;
+            long prev = -1;
+            int checkedRows = 0;
+            for (int i = 1; i < lines.Length && checkedRows < 300; i++)
+            {
+                string[] cols = lines[i].Split(',');
+                if (cols.Length < 9) { monotonic10ms = false; break; }
+                if (!long.TryParse(cols[0], out long ts)) { monotonic10ms = false; break; }
+                if (prev >= 0 && ts - prev != 10) { monotonic10ms = false; break; }
+                prev = ts;
+                checkedRows++;
+            }
+            Check(monotonic10ms, "telemetry: timestamps monotonic at 10ms (100Hz) spacing");
+        }
+        else
+        {
+            Check(false, "telemetry: CSV file created on disk");
+        }
 
         var record = session.LastRecord;
         Check(record != null, "record: LastRecord created");

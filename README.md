@@ -531,6 +531,13 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 - Unity→Swiftの`VoiceAlert`イベント追加（`SwiftMessageSender.SendVoiceAlert`）。エディタ検証: `ARSessionManager`コンテキストメニュー「Simulate Voice Alert」（赤信号TTC2.5s→交差点TTC1.2s割込の優先度テスト）
 - 検知ソース（地図データ連携）は未接続 — HANDOVER未完了事項に記載。E2E 37項目全PASSで回帰確認
 
+### 2026-07-17 — F-11 100Hz テレメトリCSVログ（基本設計書§5.2・PoCの核）
+
+- **`RunTelemetryLogger.cs` 新規**: 走行中のセンサー生データと描画遅延を**100HzでローカルCSVへ出力**。`<persistentDataPath>/RunLogs/Log_YYYYMMDD_HHMMSS.csv`、列は§5.2準拠の9列（timestamp/gps_latitude/gps_longitude/imu_accel_x,y,z/avatar_pos_x,z/latency_m2p）。設計書が「実証実験の技術限界データ蓄積＝ソラド社への技術資産譲渡の基盤」と位置づける最優先機能
+- 実機ではSwift(CoreLocation/CoreMotion)から`SetGpsCoordinates`/`SetImuAcceleration`で供給（ブリッジ配線は次回）。エディタではIMUをカメラ速度差分で近似
+- **実CSVを検査して不具合を検出・修正**: 1フレームで複数行を書く際に書込時刻を使っており**タイムスタンプが重複**（100Hzサンプルとして§11.2のCSV遅延解析が不成立）→ サンプル時刻採番（開始epoch＋連番×10ms）へ修正。10ms刻み単調増加をE2Eで回帰防止
+- E2E 44項目全PASS（ログ開始・ヘッダー準拠・行数・タイムスタンプ間隔の4項目を追加）
+
 ### 2026-07-14 (2) — 純ロジック抽出＆ユニットテスト導入
 
 - **`PaceMath.cs` 新規**（Unity非依存の静的クラス）: ペース解析（`TryParsePace`）とゴースト区間ペース算出（`SampleGhostPace`）をMonoBehaviourから抽出。`PaceCalibrationController`/`GhostPaceDriver`は薄いラッパーとして委譲、`PaceSample`も独立ファイル化

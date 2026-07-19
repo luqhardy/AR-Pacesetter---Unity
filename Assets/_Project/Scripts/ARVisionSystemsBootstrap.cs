@@ -56,6 +56,14 @@ public static class ARVisionSystemsBootstrap
         Ensure<ReadyCheckController>();
         Ensure<GhostPaceDriver>();
 
+        // F-11: 100Hz テレメトリCSVロガー(基本設計書§5.2 — PoCの核)。
+        // アバターtransformを読むためエンジンと同居させる
+        if (engine.GetComponent<RunTelemetryLogger>() == null)
+        {
+            engine.gameObject.AddComponent<RunTelemetryLogger>();
+            Debug.Log("[BOOTSTRAP] RunTelemetryLogger auto-attached to avatar.");
+        }
+
         // Swiftブリッジ受信オブジェクト — UnitySendMessage のターゲットになるため
         // GameObject名は UnityBridge.swift の sendMessageToGO と完全一致させる
         Ensure<ARSessionManagerBridge>(ARSessionManagerBridge.RequiredGameObjectName);
