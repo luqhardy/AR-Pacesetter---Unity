@@ -28,6 +28,11 @@ public class ARSessionManagerBridge : MonoBehaviour
         public double forwardOffsetM;
         public string mode;         // "pace"(既定) | "ghost"
         public string ghostDateIso; // mode=ghost時: 競走相手のセッションdateIso
+        // UpdateMetrics の測位サンプル(§8.1 ロスト判定 / §5.2 CSVログ用)。
+        // gpsAccuracy > 0 が有効サンプルの目印(CoreLocation同様、負値/未送信は無効)
+        public double gpsLatitude;
+        public double gpsLongitude;
+        public float gpsAccuracy;
     }
 
     [Header("Engine Links (auto-found if empty)")]
@@ -40,6 +45,7 @@ public class ARSessionManagerBridge : MonoBehaviour
     [SerializeField] private PeripheralHUDManager hudManager;
     [SerializeField] private LatencyBenchmarkRunner latencyRunner;
     [SerializeField] private GhostPaceDriver ghostDriver;
+    [SerializeField] private GpsSignalMonitor gpsMonitor;
 
     private const float ReportIntervalSeconds = 1.0f;
     private const float BaselineAvatarHeightCm = 175f; // 企画書 §4.1
@@ -69,6 +75,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (hudManager == null) hudManager = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
         if (latencyRunner == null) latencyRunner = FindFirstObjectByType<LatencyBenchmarkRunner>(FindObjectsInactive.Include);
         if (ghostDriver == null) ghostDriver = FindFirstObjectByType<GhostPaceDriver>(FindObjectsInactive.Include);
+        if (gpsMonitor == null) gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
     }
 
     // ── Swift → Unity エントリポイント ───────────────────────────────────────
@@ -174,6 +181,11 @@ public class ARSessionManagerBridge : MonoBehaviour
 
     private void HandleUpdateMetrics(SwiftCommand cmd)
     {
+        // 測位サンプル(§8.1 ロスト自動判定 / §5.2 CSVログのGPS列)。
+        // gpsAccuracy > 0 のときのみ有効サンプルとして扱う
+        if (gpsMonitor != null && cmd.gpsAccuracy > 0f)
+            gpsMonitor.ReportGpsUpdate(cmd.gpsLatitude, cmd.gpsLongitude, cmd.gpsAccuracy);
+
         // 心拍はBLE受信と同じ入口に流す(アバター発光/HUD/バイタル警告が連動)
         if (heartRateReceiver != null && cmd.heartRate > 0)
             heartRateReceiver.OnHeartRateDataReceived(cmd.heartRate.ToString());

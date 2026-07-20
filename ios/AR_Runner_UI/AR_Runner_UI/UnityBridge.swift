@@ -116,13 +116,22 @@ final class UnityBridge: NSObject, ObservableObject {
     }
 
     /// Update real-time runner metrics so Unity can adjust avatar behavior.
-    func updateRunnerMetrics(paceKmH: Double, heartRate: Int, distanceKm: Double) {
-        let payload: [String: Any] = [
+    /// gpsAccuracy > 0 のときUnity側が有効な測位サンプルとして扱い、
+    /// GPSロスト自動判定(§8.1)と走行ログCSVのGPS列(§5.2)に使用する。
+    func updateRunnerMetrics(paceKmH: Double, heartRate: Int, distanceKm: Double,
+                             gpsLatitude: Double = 0, gpsLongitude: Double = 0,
+                             gpsAccuracy: Double = -1) {
+        var payload: [String: Any] = [
             "command": "UpdateMetrics",
             "paceKmH": paceKmH,
             "heartRate": heartRate,
             "distanceKm": distanceKm
         ]
+        if gpsAccuracy >= 0 {
+            payload["gpsLatitude"] = gpsLatitude
+            payload["gpsLongitude"] = gpsLongitude
+            payload["gpsAccuracy"] = gpsAccuracy
+        }
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand", payload: payload)
     }
 
@@ -298,10 +307,15 @@ final class ARSessionManager: ObservableObject {
             let realBpm = HeartRateMonitor.shared.latestBpm
             let effectiveBpm = realBpm > 0 ? realBpm : Int.random(in: 138...152)
 
+            // 測位サンプル: GPSロスト自動判定(§8.1)とCSVログのGPS列(§5.2)へ
+            let tracker = LocationTracker.shared
             self.bridge.updateRunnerMetrics(
                 paceKmH: effectivePace,
                 heartRate: effectiveBpm,
-                distanceKm: self.currentDistance
+                distanceKm: self.currentDistance,
+                gpsLatitude: tracker.latestLatitude,
+                gpsLongitude: tracker.latestLongitude,
+                gpsAccuracy: tracker.latestAccuracyMeters
             )
         }
     }

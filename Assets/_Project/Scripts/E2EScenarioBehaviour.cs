@@ -348,6 +348,38 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 "gps: recovered to Normal after reaccumulation");
         }
 
+        // ── Step 4b: GPSロスト自動判定 (F-09 / 基本設計書§8.1) ────────────────
+        // 良好な測位を供給 → 精度10m超で即ロスト → 良好復帰でNormalへ
+        var gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        if (gpsMonitor != null && stateController != null && !engine.IsSessionEnded)
+        {
+            stateController.TransitionToState(GameStateController.ARVisionState.Normal);
+            yield return null;
+
+            // 良好サンプル(精度3m)ではロストしない
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
+            yield return null;
+            Check(!gpsMonitor.IsSignalLost, "gps-auto: good fix (3m) is not treated as lost");
+
+            // 精度10m以上へ悪化した瞬間にロスト判定 → 慣性移動へ自動遷移
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 12.0f);
+            yield return null;
+            yield return null;
+            Check(gpsMonitor.IsSignalLost, "gps-auto: accuracy >=10m detected as signal loss (§8.1)");
+            Check(stateController.currentState == GameStateController.ARVisionState.InertialMovement,
+                "gps-auto: FSM auto-transitioned to InertialMovement");
+
+            // 精度が回復すると通常追従へ自動復帰
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
+            yield return null;
+            yield return null;
+            Check(stateController.currentState == GameStateController.ARVisionState.Normal,
+                "gps-auto: FSM auto-recovered to Normal on good fix");
+
+            // 後続ステップへ影響しないよう監視を解除(未受信状態=非介入へ戻す)
+            gpsMonitor.ResetSession();
+        }
+
         // ── Step 5: 履歴取得 ────────────────────────────────────────────────
         bridge.OnSwiftCommand("{\"command\":\"RequestHistory\"}");
         yield return WaitScaled(0.3f);

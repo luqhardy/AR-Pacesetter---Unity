@@ -202,6 +202,8 @@ public class RunSessionController : MonoBehaviour
         if (safetyLogger != null) safetyLogger.ResetSession();
         if (audioEngine != null) audioEngine.ResetSession();
         if (telemetryLogger != null) telemetryLogger.ResetSession();
+        var gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        if (gpsMonitor != null) gpsMonitor.ResetSession();
 
         Debug.Log("[SESSION] Reset complete — ready for a new run.");
     }

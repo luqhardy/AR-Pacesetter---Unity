@@ -11,6 +11,12 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
 
     @Published private(set) var totalDistanceKm: Double = 0
     @Published private(set) var currentSpeedKmH: Double = 0
+
+    // 生の測位サンプル(精度不良でも記録)。UnityのGPSロスト判定(§8.1)と
+    // 走行ログCSVのGPS列(§5.2)へ供給する。accuracyは負値=無効(CoreLocation準拠)
+    @Published private(set) var latestLatitude: Double = 0
+    @Published private(set) var latestLongitude: Double = 0
+    @Published private(set) var latestAccuracyMeters: Double = -1
     @Published private(set) var isAuthorized = false
 
     private let manager = CLLocationManager()
@@ -68,7 +74,13 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         guard isTracking else { return }
 
         for location in locations {
-            // 精度不良・無効サンプルは棄却 (要件定義 6.2: 精度半径ゲート)
+            // 生サンプルは精度が悪くても記録する。UnityのGPSロスト判定(§8.1)は
+            // 「精度10m以上への悪化」を検知する必要があるため、ここで捨てない
+            latestLatitude = location.coordinate.latitude
+            latestLongitude = location.coordinate.longitude
+            latestAccuracyMeters = location.horizontalAccuracy
+
+            // 距離積算には精度不良・無効サンプルを使わない (要件定義 6.2: 精度半径ゲート)
             guard location.horizontalAccuracy >= 0,
                   location.horizontalAccuracy <= maxAcceptableAccuracyMeters else { continue }
 

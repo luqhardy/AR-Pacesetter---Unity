@@ -55,6 +55,7 @@ public static class ARVisionSystemsBootstrap
         Ensure<RunSessionController>();
         Ensure<ReadyCheckController>();
         Ensure<GhostPaceDriver>();
+        Ensure<GpsSignalMonitor>(); // F-09 GPSロスト自動判定(§8.1)
 
         // F-11: 100Hz テレメトリCSVロガー(基本設計書§5.2 — PoCの核)。
         // アバターtransformを読むためエンジンと同居させる

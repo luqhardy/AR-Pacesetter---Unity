@@ -531,6 +531,13 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 - Unity→Swiftの`VoiceAlert`イベント追加（`SwiftMessageSender.SendVoiceAlert`）。エディタ検証: `ARSessionManager`コンテキストメニュー「Simulate Voice Alert」（赤信号TTC2.5s→交差点TTC1.2s割込の優先度テスト）
 - 検知ソース（地図データ連携）は未接続 — HANDOVER未完了事項に記載。E2E 37項目全PASSで回帰確認
 
+### 2026-07-20 — F-09 GPSロスト自動判定（§8.1）＋ CSVログのGPS配線
+
+- **`GpsSignalMonitor.cs` 新規**: 設計書§8.1の異常検知条件を実装 — 位置情報の更新が**1.5秒以上途絶**、または**水平精度誤差10m以上**でGPSロストと判定しFSMを自動で慣性移動へ遷移。精度5m以内の新鮮なサンプルで通常追従へ自動復帰
+- **実測サンプル未受信時は完全に非介入**（エディタ単体走行・E2Eの既存G/R/Aキー検証は従来どおり）
+- Swift配線: `LocationTracker`が生サンプル（精度不良も含む）を保持し、`UpdateMetrics`に`gpsLatitude`/`gpsLongitude`/`gpsAccuracy`を追加。これによりF-11 CSVログのGPS列（§5.2）も実データで埋まるようになった
+- 検証: Swift構文PASS + フルコンパイル0エラー + E2E 49項目（良好3m→非ロスト／12m→ロスト遷移／3m→復帰の4項目を追加）、全PASS
+
 ### 2026-07-19 — アバター ペースシンクロ・カラー（基本設計書§7.1）
 
 - 設計書§7.1のペースシンクロ色へ移行（旧シアン/琥珀/深青 → 緑/橙→赤/青）:
