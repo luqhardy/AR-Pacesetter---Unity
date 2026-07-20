@@ -53,7 +53,7 @@ Unityプロジェクト(本リポジトリ)+ SwiftUIホスト(`ios/`)のUaaLモ�
 2. ~~**F-11 CSVログ(100Hz)**~~ → **実装済み**(`RunTelemetryLogger.cs`)。`<persistentDataPath>/RunLogs/Log_YYYYMMDD_HHMMSS.csv`へ§5.2の9列を100Hz出力。GPS緯度経度は`GpsSignalMonitor`経由でSwiftから供給済み(ブリッジ配線完了)。IMU加速度は実機で`SetImuAcceleration`へ供給する想定(CoreMotion配線は未)。エディタではIMUをカメラ速度差分で近似・GPSは0
 3. ~~**モーション閾値**~~ → **調整済み**(`AvatarAnimatorControllerGenerator.cs`)。§7.3のkm/h基準へ換算: Idle=0 / Walk=0.0278(0.1km/h) / Run=1.3889(5.0km/h) / Sprint=4.1667(15km/h)m/s。歩行は`PlaybackSpeed`(既定1.0)で再生速度を同期。**同時に既存バグを発見・修正**: BlendTreeが`AddObjectToAsset`未登録で保存時に破棄され、Locomotionの`m_Motion`が空=ロコモーションが一切再生されない状態だった。加えて`useAutomaticThresholds`が閾値を[0,1]へ均等再配置していたため無効化
 4. ~~**GPSロスト判定条件**~~ → **実装済み**(`GpsSignalMonitor.cs`)。§8.1の「更新1.5秒途絶 or 水平精度10m以上」でFSMを自動遷移、精度5m以内で復帰。Swift `LocationTracker`の生サンプル(精度不良も含む)を`UpdateMetrics`のgpsLatitude/gpsLongitude/gpsAccuracyで供給。**実測サンプル未受信時は非介入**なのでエディタのG/R/Aキー検証は従来どおり
-5. **オーラエフェクト(§7.2)**: 未実装
+5. ~~**オーラエフェクト(§7.2)**~~ → **実装済み**(`AvatarAuraEffect.cs` + `AuraFeedback.cs`)。目標より5.0m以上遅れるとアバター足元からランナー側へ光のラインを地面に放射。遅れが大きいほど密度(3→7本)と流速(3→9m/s)が上がり、12mで最大。実行時生成のLineRenderer(ワールド空間)でアセット不要。**発動時の見た目はエディタ/実機での目視確認が必要**(E2Eは非発動側=誤発火しないことを検証)
 6. **グラス切断→準備画面リセット(§8.3)**: 未実装(現状は外部ディスプレイ切断でiPhone表示へ回収のみ)
 7. Watch/HealthKit/ゴースト等は実装済みだが第1期スコープ外 — 触る際は影響を最小に
 

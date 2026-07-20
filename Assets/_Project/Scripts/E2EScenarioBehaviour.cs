@@ -138,6 +138,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(syncObserved, "run: live sync rate exceeded 30% during run");
         Check(justColorObserved, "color: pace-sync GREEN (just) while on target pace (§7.1)");
 
+        // §7.2: 目標ペース維持中はオーラ(5m以上の遅れ表示)を出さないこと
+        var aura = FindFirstObjectByType<AvatarAuraEffect>(FindObjectsInactive.Include);
+        Check(aura != null && !aura.IsAuraActive,
+            "aura: not emitted while on target pace (§7.2 threshold 5m)");
+
         // 終了直後の挨拶(お辞儀)ジェスチャーが再生されること
         yield return null; // LateUpdate反映待ち
         var goalGestures = FindFirstObjectByType<ProceduralGestureDriver>(FindObjectsInactive.Include);

@@ -35,6 +35,13 @@ public static class ARVisionSystemsBootstrap
             Debug.Log("[BOOTSTRAP] FakeShadowRenderer auto-attached to avatar.");
         }
 
+        // ペーシング・オーラエフェクト(§7.2 — 5m以上の遅れで光のライン放射)
+        if (engine.GetComponent<AvatarAuraEffect>() == null)
+        {
+            engine.gameObject.AddComponent<AvatarAuraEffect>();
+            Debug.Log("[BOOTSTRAP] AvatarAuraEffect auto-attached to avatar.");
+        }
+
         // プロシージャルジェスチャー(手招き/挨拶/落ち着けサインの可視化)
         if (engine.GetComponent<ProceduralGestureDriver>() == null)
         {

@@ -24,5 +24,6 @@
     <Compile Include="..\..\Assets\_Project\Scripts\PaceMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\PaceSample.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\AvatarPaceColor.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\AuraFeedback.cs" />
   </ItemGroup>
 </Project>
