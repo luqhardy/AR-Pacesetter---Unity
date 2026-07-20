@@ -168,6 +168,8 @@ public class GameStateController : MonoBehaviour
             case ARVisionState.Normal:
                 _gpsLostTimer = 0.0f;
                 if (_fadeCoroutine != null) StopCoroutine(_fadeCoroutine);
+                // Standby(グラス切断/フェード完了)で非表示にしたアバターを復帰させる
+                if (avatarTarget != null) avatarTarget.SetActive(true);
                 RestoreAvatarAlpha();
                 break;
         }

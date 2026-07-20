@@ -126,11 +126,14 @@ struct CourseSetupView: View {
 // MARK: - 4. Running Screen
 struct RunningView: View {
     let onEnd: () -> Void
+    /// §8.3 ARグラス切断時: 準備画面へ戻す(走行記録・CSVログは継続)
+    var onGlassDisconnected: (() -> Void)? = nil
 
     @ObservedObject private var bridge = UnityBridge.shared
     @ObservedObject private var session = ARSessionManager.shared
     @ObservedObject private var unity = UnityLauncher.shared
     @ObservedObject private var heartMonitor = HeartRateMonitor.shared
+    @ObservedObject private var external = ExternalDisplayManager.shared
 
     @State private var bpm = 142
     @State private var showEndAlert = false
@@ -314,6 +317,17 @@ struct RunningView: View {
                         distanceKm: RunSettings.shared.distanceKm,
                         ghostDateIso: RunSettings.shared.ghostDateIso
                     )
+                } else {
+                    // §8.3: グラス切断で準備画面へ戻った後の再スタート。
+                    // 新規セッションは開始せず、スタンバイ中の表示だけ復帰させる
+                    bridge.resumeSession()
+                }
+            }
+            .onChange(of: external.isGlassesConnected) { wasConnected, isConnected in
+                // §8.3: 走行中にグラスが切断されたら準備画面へ戻す
+                // (接続されたことがある場合のみ反応 — 未接続環境で誤発火しない)
+                if wasConnected && !isConnected && session.isSessionActive {
+                    onGlassDisconnected?()
                 }
             }
             .onDisappear {

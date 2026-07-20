@@ -147,6 +147,20 @@ final class UnityBridge: NSObject, ObservableObject {
                     payload: ["command": "ConnectXREAL"])
     }
 
+    /// ARグラス切断 (§8.3): Unityをスタンバイへ移行させアバターを消去する。
+    /// 走行セッションは終了させないため、CSVログ書き出しは継続する。
+    func disconnectGlass() {
+        sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
+                    payload: ["command": "DisconnectXREAL"])
+    }
+
+    /// 準備画面からの再スタート (§8.3): スタンバイ中の走行表示を復帰させる。
+    /// 新規セッションは開始しない(記録は継続)。
+    func resumeSession() {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "ResumeSession"])
+    }
+
     /// Request past run history from Unity's session store (HistoryData event).
     func requestHistory() {
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",

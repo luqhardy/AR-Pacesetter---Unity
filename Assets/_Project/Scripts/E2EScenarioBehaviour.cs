@@ -392,6 +392,34 @@ public class E2EScenarioBehaviour : MonoBehaviour
             gpsMonitor.ResetSession();
         }
 
+        // ── Step 4c: ARグラス切断→再スタート (§8.3) ──────────────────────────
+        // 切断でスタンバイ(アバター消去)へ移行しつつCSVログは継続、
+        // 準備画面からの再スタート(ResumeSession)で通常追従へ復帰する
+        var deviceBridge = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
+        if (deviceBridge != null && stateController != null && !engine.IsSessionEnded)
+        {
+            var telemetryForGlass = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
+
+            deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
+            yield return null;
+            Check(stateController.currentState == GameStateController.ARVisionState.Standby,
+                "glass: disconnect moves FSM to Standby (avatar hidden, §8.3)");
+            Check(telemetryForGlass == null || telemetryForGlass.IsLogging,
+                "glass: CSV logging continues while disconnected (§8.3)");
+
+            // 再接続だけではアバターを復帰させない(準備画面からの再スタートを待つ)
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");
+            yield return null;
+            Check(stateController.currentState == GameStateController.ARVisionState.Standby,
+                "glass: reconnect alone does NOT resurrect avatar (§8.3)");
+
+            // 準備画面からの再スタート操作で復帰
+            bridge.OnSwiftCommand("{\"command\":\"ResumeSession\"}");
+            yield return null;
+            Check(stateController.currentState == GameStateController.ARVisionState.Normal,
+                "glass: ResumeSession restores normal pacing");
+        }
+
         // ── Step 5: 履歴取得 ────────────────────────────────────────────────
         bridge.OnSwiftCommand("{\"command\":\"RequestHistory\"}");
         yield return WaitScaled(0.3f);

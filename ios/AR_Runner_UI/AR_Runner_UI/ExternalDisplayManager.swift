@@ -41,6 +41,10 @@ final class ExternalDisplayManager: ObservableObject {
         externalWindow = nil
         isGlassesConnected = false
         print("[ExternalDisplay] ARグラス切断 — ARビューをiPhoneへ戻します")
+
+        // §8.3: Unityをスタンバイへ(アバター消去)。走行記録・CSVログは継続し、
+        // 再接続後は準備画面からの再スタートを待つ
+        UnityBridge.shared.disconnectGlass()
         // Unityビューの回収は phone 側 UnityContainerView.updateUIView が行う
     }
 

@@ -52,7 +52,10 @@ struct ContentView: View {
             // 5. Running screen (Unity ARビュー + HUD)
             case .running:
                 RunningView(
-                    onEnd: { screen = .stats }
+                    onEnd: { screen = .stats },
+                    // §8.3: グラス切断は準備画面へ戻す(走行記録・CSVログは継続し、
+                    // 再接続後の再スタート操作でアバターが復帰する)
+                    onGlassDisconnected: { screen = .deviceConnect }
                 )
 
             // 7. Stats

@@ -100,6 +100,7 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "UpdateMetrics": HandleUpdateMetrics(cmd); break;
             case "EndSession": HandleEndSession(); break;
             case "RequestHistory": HandleRequestHistory(); break;
+            case "ResumeSession": HandleResumeSession(); break;
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown command: {cmd.command}");
                 break;
@@ -217,6 +218,25 @@ public class ARSessionManagerBridge : MonoBehaviour
         SendAvatarStateIfChanged("Goal");
         SwiftMessageSender.SendSessionResult(record);
         Debug.Log("[SWIFT BRIDGE] EndSession — result sent to Swift.");
+    }
+
+    /// <summary>
+    /// §8.3: グラス切断でスタンバイ中の走行を、準備画面での再スタート操作後に再開する。
+    /// 新規セッションは開始せず(記録・CSVログは継続)、表示状態のみNormalへ戻す。
+    /// </summary>
+    private void HandleResumeSession()
+    {
+        if (avatarEngine == null || !avatarEngine.HasStarted || avatarEngine.IsSessionEnded)
+        {
+            Debug.LogWarning("[SWIFT BRIDGE] ResumeSession — 再開できる走行がありません。");
+            return;
+        }
+
+        if (gameStateController != null)
+            gameStateController.TransitionToState(GameStateController.ARVisionState.Normal);
+
+        SendAvatarStateIfChanged("Run");
+        Debug.Log("[SWIFT BRIDGE] ResumeSession — スタンバイから通常追従へ復帰。");
     }
 
     private void HandleRequestHistory()
