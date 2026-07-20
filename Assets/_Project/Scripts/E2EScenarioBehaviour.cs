@@ -93,6 +93,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 要件定義 6.1: 60fps維持(iOS既定30fpsを明示的に引き上げていること)
         Check(Application.targetFrameRate == 60, "render: target frame rate set to 60fps");
 
+        // §7.3: 再生速度同期。PlaybackSpeedが0だとロコモーションが停止するため、
+        // 走行中は必ず正であること(既定1.0 + 毎フレーム供給)
+        var runAnimator = AvatarRigLocator.FindBestAnimator(engine.transform);
+        if (runAnimator != null && HasFloatParam(runAnimator, "PlaybackSpeed"))
+            Check(runAnimator.GetFloat("PlaybackSpeed") > 0.01f,
+                "anim: PlaybackSpeed > 0 during run (locomotion not frozen)");
+
         // F-11 テレメトリCSV: 走行中にログが開始していること
         var telemetry = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
         Check(telemetry != null && telemetry.IsLogging, "telemetry: 100Hz CSV logging active during run");
@@ -406,6 +413,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
     }
 
     private bool _metricsSent = false;
+
+    private static bool HasFloatParam(Animator animator, string name)
+    {
+        foreach (var p in animator.parameters)
+            if (p.type == AnimatorControllerParameterType.Float && p.name == name) return true;
+        return false;
+    }
 
     /// <summary>
     /// 陸上トラック曲線部(半径36.5m)を1/4周してコーナー追従を検証する。

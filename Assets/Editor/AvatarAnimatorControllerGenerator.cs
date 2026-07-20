@@ -13,6 +13,11 @@ using System.IO;
 public class AvatarAnimatorControllerGenerator
 {
     private const string CONTROLLER_PATH = "Assets/_Project/Resources/AvatarAnimatorController.controller";
+
+    // 基本設計書 §7.3 の速度閾値(km/h → m/s)
+    private const float WalkThresholdMetersPerSec = 0.0278f;   // 0.1 km/h
+    private const float RunThresholdMetersPerSec = 1.3889f;    // 5.0 km/h
+    private const float SprintBlendMetersPerSec = 4.1667f;     // 15.0 km/h(視覚バリエーション)
     private const string Y_BOT_IDLE = "Assets/Y Bot@Idle.fbx";
     private const string Y_BOT_JOGGING = "Assets/Y Bot@Jogging.fbx";
     private const string Y_BOT_RUNNING = "Assets/Y Bot@Running.fbx";
@@ -77,6 +82,15 @@ public class AvatarAnimatorControllerGenerator
         // Float: Speed
         controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
 
+        // Float: PlaybackSpeed (§7.3 歩行の再生速度同期)。
+        // 既定1.0 — コード側が未設定でもアニメーションが停止しないようにする
+        controller.AddParameter(new AnimatorControllerParameter
+        {
+            name = "PlaybackSpeed",
+            type = AnimatorControllerParameterType.Float,
+            defaultFloat = 1.0f
+        });
+
         // Bool: IsHalted
         controller.AddParameter("IsHalted", AnimatorControllerParameterType.Bool);
 
@@ -92,7 +106,7 @@ public class AvatarAnimatorControllerGenerator
         controller.AddParameter("Goodbye", AnimatorControllerParameterType.Trigger);       // 終了時の挨拶 (AvatarVFXController)
         controller.AddParameter("CalmDownSign", AnimatorControllerParameterType.Trigger);  // バイタル警告 (AvatarVisualsAndActions)
 
-        Debug.Log("✓ Added 10 animator parameters");
+        Debug.Log("✓ Added 11 animator parameters");
     }
 
     private static void CreateAnimationLayers(AnimatorController controller)
@@ -122,7 +136,7 @@ public class AvatarAnimatorControllerGenerator
         }
 
         // 1. Create Locomotion blend tree (1D Speed blending)
-        var locomotionBlendTree = CreateLocomotionBlendTree(rootStateMachine, idleClip, joggingClip, runningClip, running2Clip);
+        var locomotionBlendTree = CreateLocomotionBlendTree(controller, rootStateMachine, idleClip, joggingClip, runningClip, running2Clip);
 
         // 2. Create InPlaceHalt state
         var inPlaceHaltState = rootStateMachine.AddState("InPlaceHalt", new Vector3(300, 100, 0));
@@ -162,7 +176,7 @@ public class AvatarAnimatorControllerGenerator
         Debug.Log("✓ Created state machine with 8 states and blend tree");
     }
 
-    private static AnimatorState CreateLocomotionBlendTree(AnimatorStateMachine stateMachine, AnimationClip idle, AnimationClip jogging, AnimationClip running, AnimationClip running2)
+    private static AnimatorState CreateLocomotionBlendTree(AnimatorController controller, AnimatorStateMachine stateMachine, AnimationClip idle, AnimationClip jogging, AnimationClip running, AnimationClip running2)
     {
         // Create the Locomotion state with a 1D blend tree
         var locomotionState = stateMachine.AddState("Locomotion", new Vector3(50, 100, 0));
@@ -173,22 +187,30 @@ public class AvatarAnimatorControllerGenerator
         blendTree.blendType = BlendTreeType.Simple1D;
         blendTree.blendParameter = "Speed";
 
-        // Add motion thresholds
+        // ★必須: 自動閾値(既定ON)は子を割り当てた瞬間に閾値を[0,1]へ均等再配置して
+        // しまう。設計書§7.3のkm/h基準閾値を保持するため必ず無効化する
+        blendTree.useAutomaticThresholds = false;
+
+        // ★必須: BlendTreeはコントローラのサブアセットとして登録しないと保存時に
+        // 破棄され、Locomotionのm_Motionが空(fileID:0)になる=ロコモーションが
+        // 一切再生されない。以前はこの登録が無く F-06 が無効化されていた
+        blendTree.hideFlags = HideFlags.HideInHierarchy;
+        AssetDatabase.AddObjectToAsset(blendTree, controller);
+
+        // 基本設計書 §7.3 のモーション遷移ルール(km/h基準)を m/s のSpeedへ換算:
+        //   待機(Idle) : 0 km/h
+        //   歩行(Walk) : 0.1 km/h 以上 5.0 km/h 未満  → 0.0278 〜 1.3889 m/s
+        //   走行(Run)  : 5.0 km/h 以上               → 1.3889 m/s 以上
+        // Running2 はRun以上の高速域(15km/h≒4.17m/s)でブレンドする視覚バリエーション
         var children = new List<ChildMotion>();
 
-        // Speed = 0.0: Idle
         children.Add(new ChildMotion { motion = idle, threshold = 0.0f, timeScale = 1f });
+        children.Add(new ChildMotion { motion = jogging, threshold = WalkThresholdMetersPerSec, timeScale = 1f });
+        children.Add(new ChildMotion { motion = running, threshold = RunThresholdMetersPerSec, timeScale = 1f });
 
-        // Speed = 1.5: Jogging
-        children.Add(new ChildMotion { motion = jogging, threshold = 1.5f, timeScale = 1f });
-
-        // Speed = 3.0: Running
-        children.Add(new ChildMotion { motion = running, threshold = 3.0f, timeScale = 1f });
-
-        // Speed = 4.5+: Running2 (sprint feel)
         if (running2 != null)
         {
-            children.Add(new ChildMotion { motion = running2, threshold = 4.5f, timeScale = 1f });
+            children.Add(new ChildMotion { motion = running2, threshold = SprintBlendMetersPerSec, timeScale = 1f });
         }
 
         blendTree.children = children.ToArray();
@@ -196,6 +218,11 @@ public class AvatarAnimatorControllerGenerator
         // Assign blend tree to state
         locomotionState.motion = blendTree;
         locomotionState.timeParameterActive = false;
+
+        // §7.3: 歩行は速度に応じて再生速度を同期させる。
+        // PlaybackSpeed(既定1.0)をコード側から毎フレーム供給する
+        locomotionState.speedParameterActive = true;
+        locomotionState.speedParameter = "PlaybackSpeed";
 
         return locomotionState;
     }

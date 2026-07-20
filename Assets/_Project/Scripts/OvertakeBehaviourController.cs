@@ -69,6 +69,10 @@ public class OvertakeBehaviourController : MonoBehaviour
                 || _engine.IsSessionEnded || _engine.IsWaitingForUser;
             float currentSpeed = isWaitingOrHalted ? 0f : _engine.GetTargetSpeed();
             SetAnimatorFloatSafe("Speed", currentSpeed);
+
+            // 基本設計書 §7.3: 歩行(0.1〜5.0km/h)は速度に応じて再生速度を同期。
+            // 走行域は1.0のまま(ブレンドツリーがRun/Sprintを担当)
+            SetAnimatorFloatSafe("PlaybackSpeed", ComputePlaybackSpeed(currentSpeed));
             SetAnimatorBoolSafe("IsHalted", isWaitingOrHalted);
             SetAnimatorBoolSafe("IsInPlaceJog", isWaitingOrHalted);
         }
@@ -96,6 +100,23 @@ public class OvertakeBehaviourController : MonoBehaviour
     }
 
     public Animator ActiveAnimator => avatarAnimator;
+
+    // §7.3 の速度閾値(km/h → m/s)と、歩行クリップの基準速度
+    private const float RunThresholdMetersPerSec = 1.3889f;  // 5.0 km/h
+    private const float NominalWalkSpeedMetersPerSec = 1.4f; // Mixamo歩行クリップの想定速度
+
+    /// <summary>
+    /// 歩行域では実速度/基準速度で再生速度を同期し、走行域・停止時は1.0を返す。
+    /// (0を返すとアニメーションが停止するため下限0.3でクランプ)
+    /// </summary>
+    public static float ComputePlaybackSpeed(float speedMetersPerSec)
+    {
+        if (speedMetersPerSec <= 0.01f || speedMetersPerSec >= RunThresholdMetersPerSec)
+            return 1.0f;
+
+        float ratio = speedMetersPerSec / NominalWalkSpeedMetersPerSec;
+        return Mathf.Clamp(ratio, 0.3f, 1.5f);
+    }
 
     /// <summary>
     /// Updates the active animator when switching avatar models.

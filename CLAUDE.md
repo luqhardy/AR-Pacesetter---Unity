@@ -51,7 +51,7 @@ Unityプロジェクト(本リポジトリ)+ SwiftUIホスト(`ios/`)のUaaLモ�
 
 1. ~~**アバター色**~~ → **移行済み**(`AvatarPaceColor.cs` + `AvatarVisualsAndActions.cs`)。§7.1のペースシンクロ色を実装: ジャスト(目標リード±1.5m)=緑 / 遅延(前方へ離隔)=橙→赤グラデ / 超過(追い抜き)=青。符号付きリード距離で判定。バイタル警告(深青・第1期スコープ外)は優先オーバーライドとして温存。**視覚反映にはアバターmaterialが発光(Emission)対応であること**
 2. ~~**F-11 CSVログ(100Hz)**~~ → **実装済み**(`RunTelemetryLogger.cs`)。`<persistentDataPath>/RunLogs/Log_YYYYMMDD_HHMMSS.csv`へ§5.2の9列を100Hz出力。GPS緯度経度は`GpsSignalMonitor`経由でSwiftから供給済み(ブリッジ配線完了)。IMU加速度は実機で`SetImuAcceleration`へ供給する想定(CoreMotion配線は未)。エディタではIMUをカメラ速度差分で近似・GPSは0
-3. **モーション閾値**: 現Animatorブレンドは0/1.5/3.0/4.5(m/s)。設計書はkm/h基準(Walk<5.0km/h≒1.39m/s、Run≥5.0km/h) — 要調整
+3. ~~**モーション閾値**~~ → **調整済み**(`AvatarAnimatorControllerGenerator.cs`)。§7.3のkm/h基準へ換算: Idle=0 / Walk=0.0278(0.1km/h) / Run=1.3889(5.0km/h) / Sprint=4.1667(15km/h)m/s。歩行は`PlaybackSpeed`(既定1.0)で再生速度を同期。**同時に既存バグを発見・修正**: BlendTreeが`AddObjectToAsset`未登録で保存時に破棄され、Locomotionの`m_Motion`が空=ロコモーションが一切再生されない状態だった。加えて`useAutomaticThresholds`が閾値を[0,1]へ均等再配置していたため無効化
 4. ~~**GPSロスト判定条件**~~ → **実装済み**(`GpsSignalMonitor.cs`)。§8.1の「更新1.5秒途絶 or 水平精度10m以上」でFSMを自動遷移、精度5m以内で復帰。Swift `LocationTracker`の生サンプル(精度不良も含む)を`UpdateMetrics`のgpsLatitude/gpsLongitude/gpsAccuracyで供給。**実測サンプル未受信時は非介入**なのでエディタのG/R/Aキー検証は従来どおり
 5. **オーラエフェクト(§7.2)**: 未実装
 6. **グラス切断→準備画面リセット(§8.3)**: 未実装(現状は外部ディスプレイ切断でiPhone表示へ回収のみ)

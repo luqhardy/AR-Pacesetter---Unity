@@ -531,6 +531,15 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 - Unity→Swiftの`VoiceAlert`イベント追加（`SwiftMessageSender.SendVoiceAlert`）。エディタ検証: `ARSessionManager`コンテキストメニュー「Simulate Voice Alert」（赤信号TTC2.5s→交差点TTC1.2s割込の優先度テスト）
 - 検知ソース（地図データ連携）は未接続 — HANDOVER未完了事項に記載。E2E 37項目全PASSで回帰確認
 
+### 2026-07-20 (2) — モーション閾値のkm/h基準化（§7.3）＋ **ロコモーション不動作の修正**
+
+- 閾値を設計書§7.3のkm/h基準へ換算: Idle=0 / Walk=0.0278（0.1km/h）/ Run=1.3889（5.0km/h）/ Sprint=4.1667（15km/h）m/s。歩行は`PlaybackSpeed`（既定1.0）で再生速度を同期（§7.3）
+- **既存バグを発見・修正（F-06が無効化されていた）**:
+  1. `new BlendTree()` を `AssetDatabase.AddObjectToAsset` で登録しておらず、保存時に破棄 → Locomotionの`m_Motion`が空（fileID:0）で **Idle/Walk/Runブレンドが一度も再生されていなかった**
+  2. `useAutomaticThresholds`（既定ON）が閾値を[0,1]へ均等再配置していた → 明示閾値が効かない
+  生成後の.controllerを実検査して両方を確認・修正（BlendTree 1件・閾値0/0.0278/1.3889/4.1667・GUID維持）
+- E2Eに「走行中PlaybackSpeed>0（ロコモーション凍結検知）」を追加。50項目全PASS
+
 ### 2026-07-20 — F-09 GPSロスト自動判定（§8.1）＋ CSVログのGPS配線
 
 - **`GpsSignalMonitor.cs` 新規**: 設計書§8.1の異常検知条件を実装 — 位置情報の更新が**1.5秒以上途絶**、または**水平精度誤差10m以上**でGPSロストと判定しFSMを自動で慣性移動へ遷移。精度5m以内の新鮮なサンプルで通常追従へ自動復帰
