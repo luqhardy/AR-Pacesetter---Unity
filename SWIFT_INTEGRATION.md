@@ -31,7 +31,13 @@ Unity単体をビルドしてもSwiftUI画面は含まれない。
 ### ① Unityエクスポート (Windows可)
 
 Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
-`ios/UnityExport/Unity-iPhone.xcodeproj` が生成される(iOS Build Supportモジュール必須)。
+`ios/UnityExport/Unity-iPhone.xcodeproj` が生成される。
+
+- **Unityバージョン: 6000.3.17f1**(`ProjectSettings/ProjectVersion.txt` と一致必須。
+  CIも `unityci/editor:ubuntu-6000.3.17f1-base-3` を使用)
+- **iOS Build Support モジュール必須**(Unity Hub → インストール → 対象バージョン → モジュールを加える)
+- エクスポート対象シーンは `EditorBuildSettings` の有効シーン。空の場合は
+  `Assets/Scenes/SampleScene.unity` にフォールバックする([IOSBuildExporter.cs](Assets/Editor/IOSBuildExporter.cs))
 
 ### ② Xcodeで統合ビルド (Mac)
 
@@ -74,6 +80,30 @@ UnityContainerView()
 `UnityFramework`未リンクのビルド(シミュレータ・UI単体開発)では自動でプレースホルダー表示と
 シミュレーションモードにフォールバックするため、SwiftUI開発は従来通り継続できる。
 
+### ④ 走行ログCSVの取り出し(F-11 — PoC成果物の回収手順)
+
+基本設計書が「実証実験の技術限界データ蓄積 = ソラド社への技術資産譲渡の基盤」と位置づける
+F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実地テスト後に取り出す手順が要る。
+
+- **出力先**: `Application.persistentDataPath/RunLogs/Log_YYYYMMDD_HHMMSS.csv`
+  (UnityのiOSにおける`persistentDataPath`はアプリコンテナの `Documents/`。
+  実体は `/var/mobile/Containers/Data/Application/<GUID>/Documents/RunLogs/`)
+- **取り出し(現状の手順・追加設定なしで可能)**:
+  1. iPhoneをMacへ接続 → Xcode **Window → Devices and Simulators**
+  2. 対象デバイス → *Installed Apps* → `AR_Runner_UI` を選択 → 歯車 → **Download Container…**
+  3. 保存された `.xcappdata` を右クリック → **パッケージの内容を表示** →
+     `AppData/Documents/RunLogs/` に `Log_*.csv` が入っている
+  4. `Docs/field-tests/YYYYMMDD/` へ格納(FIELD_TEST_PLAN.md §5)
+- **推奨(未適用・要チーム判断)**: `ios/AR_Runner_UI/Info.plist` に `UIFileSharingEnabled` と
+  `LSSupportsOpeningDocumentsInPlace` を **true** で追加すると、`RunLogs/` が iOS「ファイル」アプリの
+  *このiPhone内* に現れ、**Mac無しでその場で共有できる**(AirDrop/メール送信可)。
+  コード変更は不要で、`GENERATE_INFOPLIST_FILE=YES` 環境でも既存キーとマージされる。
+  実地テストの回転を上げたい場合は適用を検討すること。
+
+> 注意: 現状 `imu_accel_x/y/z` 列は実機でも**エディタ近似値**が入る。Swift(CoreMotion)から
+> `RunTelemetryLogger.SetImuAcceleration` へ供給する配線が未実装のため(HANDOVER.md §5)。
+> GPS列(`gps_latitude`/`gps_longitude`)は`UpdateMetrics`経由で実測値が入る。
+
 ## アーキテクチャ
 
 ```
@@ -96,10 +126,12 @@ UnityContainerView()
 | ターゲットGameObject | command | フィールド | Unity側の動作 |
 |---|---|---|---|
 | `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → `StartPacing()`。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
-| `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定 |
+| `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm`, `gpsLatitude`, `gpsLongitude`, `gpsAccuracy` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定。測位3値は`GpsSignalMonitor`(F-09 §8.1のロスト判定)とF-11 CSVログのGPS列へ供給される。**`gpsAccuracy > 0` が有効サンプルの目印**(未送信/負値は無効として完全に無視され、エディタ単体走行を阻害しない) |
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
+| `ARSessionManager` | `ResumeSession` | — | §8.3: グラス再接続後、**準備画面からの再スタート操作**でスタンバイ中の表示のみ復帰(新規セッションは開始せず記録は継続) |
 | `DeviceManager` | `ConnectXREAL` | — | ReadyチェックのARグラスをConnectedへ |
+| `DeviceManager` | `DisconnectXREAL` | — | §8.3: スタンバイ移行でアバターを消去。**走行セッションは終了させない**ためF-11のCSVログはBG継続。再接続だけではアバターを復帰させない(安全のため`ResumeSession`が必要) |
 
 `StartSession`は前セッションが終了済みの場合、全コンポーネント(エンジン・集計・HUD・
 セーフティログ・音響)を自動リセットしてから開始する — **同一起動内での再走行に対応**。
@@ -114,7 +146,7 @@ UnityContainerView()
 | `LatencyReport` | `ms` (double) | 走行中 1Hz(平滑化フレーム時間) |
 | `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答 |
 | `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
-| `LowBattery` | — | バッテリー10%以下でUnityがHUDモード退避した時(`lowBatteryMode`がtrueに) |
+| `LowBattery` | — | **現在発火しない** — 唯一の送出元 `SafetyAndSystemController` が実行時に生成されないため(HANDOVER.md §5)。Swift側の購読は将来の有効化に備えて残置。※HUDのバッテリー黄色点滅(`PeripheralHUDManager`)は別実装で正常動作 |
 | `VoiceAlert` | `kind`("Signal"/"Intersection"), `ttc` | 音声警告要求 → Swift側`VoiceAlertSpeaker`がAVSpeechSynthesizerで発話。重複時はTTCが短い方が割込(企画書4.3)。信号は長め振動併用 |
 
 Unity側の受信オブジェクト(`ARSessionManager`/`DeviceManager` GameObject)は

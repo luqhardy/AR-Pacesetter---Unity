@@ -53,7 +53,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 | 要件 | 実装 | 検証 |
 |---|---|---|
-| TTC優先の危険警告(赤点滅+音+振動) | `SafetyAndSystemController.cs` | エディタ(Tキー) |
+| TTC優先の危険警告(赤点滅+音+振動) | `SafetyAndSystemController.cs` | **未配線 — 実行時に存在しない**(§5参照) |
 | 特定音声＆優先度制御(赤信号/交差点のみ・TTC短優先で割込) | `VoiceAlertSpeaker.swift` + `VoiceAlert`イベント | 実機要(検知ソースの地図連携は未 — エディタはContextMenuで送信確認) |
 | 足音(路面連動)・心拍連動呼吸音 | `RunAudioEngine.cs`(全クリップ手続き生成) | エディタ試聴 |
 | 環境適応音響(45dB→自動音量、75dB上限) | 同上(実機マイク/エディタMキー) | エディタ |
@@ -107,6 +107,20 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 - **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
 - **実地フィールドテスト**: `Docs/FIELD_TEST_PLAN.md` の T1〜T9 を実施(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)
 - **ルート同期**: MapRouteView(Swift)で表示するコースがUnityの逸脱判定(`SilentRouteRecoverer.routeWaypoints`)へ未接続。実ルート運用時はStartSessionへポリライン(緯度経度→開始点基準のローカル座標変換)を追加する必要がある。現状の逸脱検知はシミュレーション(D キー/E2E)のみ
+- **`SafetyAndSystemController` が未配線(TTC危険警告・低バッテリー退避が実行時に不在)**: スクリプトは存在するが、
+  シーン(`SampleScene.unity`)にもプレハブにも配置されておらず、`ARVisionSystemsBootstrap` の `Ensure<>` にも無い。
+  `AddComponent` する箇所も皆無なので**実行時には一度も生成されない**。結果として TTC赤フラッシュ+警告音+振動、
+  最小HUDパネル、低バッテリー退避(アバター退避+Standby遷移)は動作せず、`UnityBridge.swift` が購読する
+  `LowBattery` イベントも唯一の送出元がここなので発火し得ない。READMEの「Tキー=TTC警告シミュレーション」も同じ理由で無効。
+  ※HUDのバッテリー10%黄色点滅(`PeripheralHUDManager`・Yキー)は別実装で、こちらは正常に動作する。
+
+  **有効化する前に併せて直すべき2点**(そのまま配線すると走行中に誤警報が鳴る):
+  1. **障害物の検知ソースが無い** — `Physics.SphereCast` の対象コライダーがシーンに1つも無く(実機ではARFoundationの
+     検出平面が対象になる)、地図/LiDARの危険源連携も未接続(音声警告の行と同じ制約)
+  2. **非検出時のTTC計算が誤り** — 障害物ヒット無しの場合に距離を`ttcScanRange`(8m)として計算するため、
+     前方に何も無くても閉速度が約5.33m/s(19.2km/h)を超えると`TTC≤1.5s`が成立し、
+     ループ再生の警告音と`Handheld.Vibrate()`が鳴り続ける。「非検出=安全」として扱う分岐が必要
+  第1期スコープ(F-01〜F-11)外の企画書4.3機能のため、上記を解消し実機検証できる段階まで**意図的に休眠のまま**としている
 
 解決済み(参考):
 - ~~HealthKit書き込み~~ → `HealthKitWorkoutSaver.swift` がSessionEnded受信時にHKWorkoutを保存

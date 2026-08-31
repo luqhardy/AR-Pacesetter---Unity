@@ -69,7 +69,7 @@ flowchart TD
 #### Phase 6 — 分析・安全・ベンチマーク
 
 - `AnalyticsManager.cs`：Synchronicity Rate、疲労指数、S〜Dグレード
-- `SafetyAndSystemController.cs`：TTC（Time-To-Collision）警告、低バッテリー退避
+- `SafetyAndSystemController.cs`：TTC（Time-To-Collision）警告、低バッテリー退避 — **未配線・実行時に不在**（HANDOVER.md §5）
 - `LatencyBenchmarkRunner.cs`：Motion-to-Photon ≤20ms 検証（Bキー）
 
 #### Phase 7 — 実機統合（本番）
@@ -88,7 +88,7 @@ flowchart TD
 | **C** | 崖・障害物シミュレーション |
 | **O / P** | 追い抜かれる / 追い抜く動作 |
 | **B** | レイテンシベンチマークHUD |
-| **T** | TTC衝突警告シミュレーション |
+| ~~**T**~~ | ~~TTC衝突警告シミュレーション~~ — **無効**（`SafetyAndSystemController`が未配線のため。HANDOVER.md §5） |
 | **D** | ルート逸脱シミュレーション |
 | **V** | 心拍スパイク（195BPM×6秒 → バイタル警告・深青） |
 | **M** | 環境騒音シミュレーション（>45dB → 自動音量調整） |
@@ -124,7 +124,7 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
 | `AnalyticsManager.cs` | 同期率・疲労・グレード |
 | `HeartRateReceiver.cs` | BLE心拍・ピッチ受信 |
 | `AvatarVisualsAndActions.cs` | バイオルミネッセンス |
-| `SafetyAndSystemController.cs` | TTC・低バッテリー |
+| `SafetyAndSystemController.cs` | TTC・低バッテリー（**未配線**） |
 | `LatencyBenchmarkRunner.cs` | レイテンシベンチマーク |
 | `SilentRouteRecoverer.cs` | ルート逸脱リカバリー |
 | `AvatarModelSwitcher.cs` | アバターモデル切替 |
@@ -265,6 +265,9 @@ TTC = d_obstacle / v_closing
 ```
 
 TTC ≤ 1.5s → 赤フラッシュ＋警告音
+
+> **注意**: この式を実装する `SafetyAndSystemController` は現在シーンにもBootstrapにも登録されておらず、
+> 実行時に生成されない（HANDOVER.md §5）。有効化前に「非検出時のTTC」の扱いを修正すること。
 
 ### K. ルート逸脱（Cross-Track Error）
 
@@ -505,8 +508,8 @@ SwiftUI画面込みの完成アプリは、常に **AR_Runner_UIスキームか�
 
 | 方向 | 経路 | 内容 |
 |---|---|---|
-| Swift → Unity | `sendMessageToGO` → GameObject `ARSessionManager` / `DeviceManager` の `OnSwiftCommand(json)` | `StartSession`（ペースkm/h・目標距離・身長・先行距離）/ `UpdateMetrics`（心拍・距離）/ `EndSession` / `ConnectXREAL` |
-| Unity → Swift | `UnitySwiftBridge.mm` → NSNotification `UnityToSwiftMessage` → `UnityBridge.onUnityMessage` | `SyncRateUpdated`(1Hz) / `AvatarStateChanged`(Idle・Run・Slow・Fast・Goal・Lost) / `GPSLost`・`GPSRecovered` / `LatencyReport` / `SessionEnded`（グレード・ランク・結果） |
+| Swift → Unity | `sendMessageToGO` → GameObject `ARSessionManager` / `DeviceManager` の `OnSwiftCommand(json)` | `StartSession`（ペースkm/h・目標距離・身長・先行距離）/ `UpdateMetrics`（心拍・距離・**測位3値**）/ `EndSession` / `RequestHistory` / `ResumeSession` / `ConnectXREAL` / `DisconnectXREAL`（計7種） |
+| Unity → Swift | `UnitySwiftBridge.mm` → NSNotification `UnityToSwiftMessage` → `UnityBridge.onUnityMessage` | `SyncRateUpdated`(1Hz) / `AvatarStateChanged`(Idle・Run・Slow・Fast・Goal・Lost) / `GPSLost`・`GPSRecovered` / `LatencyReport` / `SessionEnded`（グレード・ランク・結果）/ `HistoryData` / `VoiceAlert` / ~~`LowBattery`~~（送出元が未配線のため現在発火しない） |
 
 ブリッジ用GameObjectは起動時に自動生成されるためシーン配線は不要。
 Swift側の本番配線は [`ios/AR_Runner_UI/AR_Runner_UI/UnityBridge.swift`](ios/AR_Runner_UI/AR_Runner_UI/UnityBridge.swift)（置き換え済み）と
@@ -518,12 +521,30 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 1. **Unity単体（Windows可・Xcode不要）**: シーン再生 → Hierarchyの`ARSessionManager`を選択 → Inspectorコンテキストメニューの「Simulate StartSession / UpdateMetrics / EndSession」。Consoleに `[Unity → Swift] {"event":...}` が1Hzで出れば送信側OK
 2. **Swift単体（Mac・iOSシミュレータ可）**: 置き換え後のUnityBridge.swiftはUnityFramework未リンク時シミュレーションで動作
 3. **統合（Mac + iPhone実機）**: 上記②の構成でビルド。ARKit/GPSは実機必須
+4. **走行ログCSVの回収**: 実地テスト後、Xcode → Devices and Simulators → Download Container で
+   `AppData/Documents/RunLogs/Log_*.csv` を取り出す（手順詳細: SWIFT_INTEGRATION.md ④）
 
 詳細手順: [`SWIFT_INTEGRATION.md`](SWIFT_INTEGRATION.md)
 
 ---
 
 ## 6. 更新履歴
+
+### 2026-08-31 — ドキュメント同期: 未配線コンポーネントの記録＋ビルド/デプロイ手順の更新
+
+- **UI配線の棚卸しで、`SafetyAndSystemController` が実行時に一度も生成されないことを確認**（scene/prefab/asset のどこにもGUID `ee3904c3…` が無く、`ARVisionSystemsBootstrap` の `Ensure<>` にも `AddComponent` 呼び出しにも不在）。
+  TTC赤フラッシュ+警告音+振動・最小HUDパネル・低バッテリー退避が動作せず、`UnityBridge.swift` が購読する `LowBattery` イベントも唯一の送出元がここなので発火し得ない
+- HANDOVER.md が本機能の検証を「エディタ(Tキー)」と記載していたが**事実と異なる**ため「未配線 — 実行時に存在しない」へ訂正。README のショートカット表からもTキーを無効表記へ、スクリプト一覧・TTC数式節にも注記
+- 有効化を保留した理由を HANDOVER.md §5 / CLAUDE.md §差分8 に明記: (a) 障害物の検知ソースが無い（シーンにコライダーが1つも無く、地図/LiDAR連携も未接続） (b) **非検出時にTTCを`ttcScanRange`(8m)で計算する誤り**があり、前方に何も無くても閉速度 5.33m/s(19.2km/h) 超で警告が成立しループ警告音と振動が鳴り続ける。第1期スコープ(F-01〜F-11)外のため、この2点を解消し実機検証できるまで意図的に休眠のままとする
+**ビルド/デプロイ手順の追従**（実装に対して古くなっていた箇所を修正）
+
+- **ブリッジ契約の欠落を補完**（SWIFT_INTEGRATION.md / README §5）: §8.3で追加した `ResumeSession`・`DisconnectXREAL` の2コマンドが契約表に未記載だった（実装7種に対し表は5種）。`UpdateMetrics` も §8.1 で追加した `gpsLatitude`/`gpsLongitude`/`gpsAccuracy` が未記載だったため追記（`gpsAccuracy > 0` が有効サンプルの目印である点も明記）
+- **`LowBattery` イベントの実態を明記**: 送出元が未配線のため現在発火しないことを両ドキュメントに記載（Swift側の購読は将来の有効化に備え残置）
+- **F-11 CSVの取り出し手順を新設**（SWIFT_INTEGRATION.md ④）: PoCの成果物でありながら**実機からの回収方法がどこにも書かれていなかった**。出力先が `persistentDataPath/RunLogs/`（iOSではアプリコンテナの`Documents/`）であること、Xcode → Devices and Simulators → Download Container での取り出し手順、`Docs/field-tests/` への格納までを明文化。あわせて `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` を足せばMac無しで「ファイル」アプリから共有できる点を推奨事項として記載（未適用・要チーム判断）
+- **Unityバージョンをビルド手順に明記**: `6000.3.17f1`（ProjectVersion.txt・CIイメージと一致必須）とiOS Build Supportモジュール要件、エクスポート対象シーンのフォールバック仕様を追記
+- CSVの `imu_accel_*` 列が実機でもエディタ近似値である（CoreMotion配線が未実装）ことを取り出し手順の注意書きに明記
+
+- **コード変更なし**（ドキュメントのみ）。検証: ユニット40件 / フルコンパイル0エラー / E2E 55項目、いずれも変更前と同一で全PASS
 
 ### 2026-07-14 — 音声警告＆優先度制御（企画書4.3）
 
