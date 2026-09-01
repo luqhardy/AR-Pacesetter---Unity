@@ -46,6 +46,12 @@ public static class IOSBuildExporter
         {
             Debug.LogError($"[iOS EXPORT] {summary.result} — エラー {summary.totalErrors}件。" +
                            "iOS Build Supportモジュールがインストール済みか確認してください。");
+
+            // バッチモードでは終了コードで失敗を伝える。これが無いと -quit が 0 を返し、
+            // CIもシェルもエクスポート失敗を検知できない(実際に Microphone Usage
+            // Description 未設定で失敗していたのを長らく取りこぼしていた)
+            if (Application.isBatchMode)
+                EditorApplication.Exit(1);
         }
     }
 }

@@ -145,10 +145,7 @@ PlayerSettings:
   visionOSBundleVersion: 1.0
   tvOSBundleVersion: 1.0
   bundleVersion: 1.0.0
-  preloadedAssets:
-  - {fileID: 4800000, guid: e7c77f6eaab324a819efdc13b8125a39, type: 3}
-  - {fileID: 4800000, guid: 6743a50a812740be8c0aa3fccc46fae9, type: 3}
-  - {fileID: 8792172334962700932, guid: 3fd4fc0127790db4bae83f7b77da8d45, type: 2}
+  preloadedAssets: []
   metroInputSource: 0
   wsaTransparentSwapchain: 0
   m_HolographicPauseOnTrackingLoss: 1
@@ -581,9 +578,9 @@ PlayerSettings:
   logObjCUncaughtExceptions: 1
   enableCrashReportAPI: 0
   cameraUsageDescription: AR Camera
-  locationUsageDescription: 
-  microphoneUsageDescription: 
-  bluetoothUsageDescription: 
+  locationUsageDescription: "\u8D70\u884C\u8DDD\u96E2\u3068\u30DA\u30FC\u30B9\u306E\u8A08\u6E2C\u306B\u4F4D\u7F6E\u60C5\u5831\u3092\u4F7F\u7528\u3057\u307E\u3059"
+  microphoneUsageDescription: "\u74B0\u5883\u9A12\u97F3\u306B\u5408\u308F\u305B\u3066\u97F3\u91CF\u3092\u81EA\u52D5\u8ABF\u6574\u3059\u308B\u305F\u3081\u30DE\u30A4\u30AF\u3092\u4F7F\u7528\u3057\u307E\u3059"
+  bluetoothUsageDescription: "AR\u30B0\u30E9\u30B9\u30FB\u5FC3\u62CD\u8A08\u3068\u306E\u63A5\u7D9A\u306BBluetooth\u3092\u4F7F\u7528\u3057\u307E\u3059"
   macOSTargetOSVersion: 12.0
   switchNMETAOverride: 
   switchNetLibKey: 

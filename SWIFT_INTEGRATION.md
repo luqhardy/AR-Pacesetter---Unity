@@ -36,6 +36,11 @@ Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
 - **Unityバージョン: 6000.3.17f1**(`ProjectSettings/ProjectVersion.txt` と一致必須。
   CIも `unityci/editor:ubuntu-6000.3.17f1-base-3` を使用)
 - **iOS Build Support モジュール必須**(Unity Hub → インストール → 対象バージョン → モジュールを加える)
+- **Player Settings の使用目的文が空だとエクスポートは失敗する**: `Microphone`/`Location`/`Bluetooth` を
+  スクリプトが使う場合、Unity側(`ProjectSettings`)の Usage Description が空のままだと
+  `BuildFailedException` になる(Swiftアプリ側の`INFOPLIST_KEY_*`とは別物で、両方必要)。設定済み
+- バッチ実行: `Unity.exe -batchmode -quit -projectPath <repo> -executeMethod IOSBuildExporter.ExportIOS`
+  — 失敗時は終了コード1を返す
 - エクスポート対象シーンは `EditorBuildSettings` の有効シーン。空の場合は
   `Assets/Scenes/SampleScene.unity` にフォールバックする([IOSBuildExporter.cs](Assets/Editor/IOSBuildExporter.cs))
 

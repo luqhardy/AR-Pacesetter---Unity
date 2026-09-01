@@ -587,6 +587,18 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
   フレームヒッチ時にカメラが円弧を数mテレポートしていた。実走では起こらない入力でアンカー補間が
   追随できず、**同一コードでPASS/FAILが揺れていた**(min lead 1.4m ⇔ 0.1m)。1歩相当(50ms)に制限
 
+**C3 iOSエクスポートが失敗し続けていた問題(追加検出)**
+
+- `Build → Export iOS` を実行したところ **`Microphone class is used but Microphone Usage Description is
+  empty in Player Settings.` で失敗**していた。`RunAudioEngine`が環境適応音響でマイクを使うため、
+  Unity側Player Settingsの使用目的文が必須(Swiftアプリの`INFOPLIST_KEY_*`とは別物)。
+  Microphone/Location/Bluetooth の3件を設定し、**エクスポート成功を確認**
+  (`ios/UnityExport/Unity-iPhone.xcodeproj` 生成)。`ios/UnityExport/`が空だった原因はこれ
+- **失敗が検知できなかった原因も修正**: エクスポート失敗時に`Debug.LogError`だけを出していたため
+  `-quit`が**終了コード0**を返しており、CIもシェルも失敗に気づけなかった。バッチモードでは
+  `EditorApplication.Exit(1)`を返すよう変更
+- 残るC3のMac作業(UnityFrameworkのEmbed & Sign / DataフォルダのTarget Membership)は未実施
+
 **検証**: フルコンパイル0エラー / ユニット**52件**(GroundFloorTracker 12件を追加) /
 Swift構文PASS / **E2E 60項目を3回連続で全PASS**(コーナー判定は3回とも min 1.4m・max 1.8m で一致し、
 フレーク解消を確認)。C3(UnityFrameworkのEmbed & Sign)はMac作業のため未実施 — 完了するまで
