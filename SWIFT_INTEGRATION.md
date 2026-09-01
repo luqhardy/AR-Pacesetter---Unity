@@ -50,6 +50,12 @@ Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
 
 ### ② Xcodeで統合ビルド (Mac)
 
+> 借りたMac + 無料Apple IDで1回だけビルドする場合は
+> [Docs/BUILD_ON_BORROWED_MAC.md](Docs/BUILD_ON_BORROWED_MAC.md) に当日用のチェックリストがある。
+> 無料アカウントでは HealthKit をプロビジョニングできないため、
+> `tools/prepare-free-signing.sh` でケイパビリティを外してから署名すること
+> (HealthKitは第1期スコープ外なので検証内容に影響しない)。
+
 1. `ios/ARRunner.xcworkspace` を開く(両プロジェクトが並んで表示される)
 2. **初回のみ**: `AR_Runner_UI` ターゲット → General → *Frameworks, Libraries, and Embedded Content* →
    `Unity-iPhone` プロジェクト内の **UnityFramework.framework** を追加し **Embed & Sign** に設定

@@ -522,6 +522,10 @@ Windowsで①を実行 → 生成物をCIへ渡し、macOSランナーは `xcode
 Unityをランナーへ入れずに済む。実機へ入れるには署名が必要（Apple Developer Program）で、
 配布はTestFlightが最短。詳細と現状は SWIFT_INTEGRATION.md ② / HANDOVER.md §5 を参照。
 
+**借りたMac + 無料Apple IDで1回だけビルドする場合**は、手順を1枚にまとめた
+[Docs/BUILD_ON_BORROWED_MAC.md](Docs/BUILD_ON_BORROWED_MAC.md) を参照
+(事前確認・USB転送・`tools/prepare-free-signing.sh`・Xcode設定・CSV回収・失敗時の対処)。
+
 > **現状の注意**: ②が未実施の間、Swift側は `#if canImport(UnityFramework)` の偽実装で動作する。
 > アプリはビルドも起動もでき統計もそれらしく表示されるが、**Unityには一切繋がっていない**。
 > 走行画面に「Unity AR View (UnityFramework 未リンク)」が出ていたらこの状態。
