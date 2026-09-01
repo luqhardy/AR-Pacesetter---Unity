@@ -41,6 +41,10 @@ Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
   `BuildFailedException` になる(Swiftアプリ側の`INFOPLIST_KEY_*`とは別物で、両方必要)。設定済み
 - バッチ実行: `Unity.exe -batchmode -quit -projectPath <repo> -executeMethod IOSBuildExporter.ExportIOS`
   — 失敗時は終了コード1を返す
+- **エクスポート後は `ProjectSettings/ProjectSettings.asset` の差分を必ず確認すること**:
+  ビルド処理が `preloadedAssets` を空にすることがある。ここには
+  `Assets/XR/XRGeneralSettings.asset` が含まれており、**空のままコミットするとプレイヤービルドで
+  XR(ARKit)ローダーが初期化されなくなる**。空になっていたら復元してからコミットする
 - エクスポート対象シーンは `EditorBuildSettings` の有効シーン。空の場合は
   `Assets/Scenes/SampleScene.unity` にフォールバックする([IOSBuildExporter.cs](Assets/Editor/IOSBuildExporter.cs))
 
