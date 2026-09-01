@@ -530,6 +530,68 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-01 — コードベース監査の指摘対応(C1/C2/H2〜H6/M3)
+
+**C1 実機クラッシュの修正(最優先)**
+
+- `HealthKitWorkoutSaver` は毎回の`SessionEnded`で**書き込み**許可を要求するが、
+  `NSHealthUpdateUsageDescription` がビルド設定に存在しなかった。iOSはこのキー無しで
+  share許可を要求したプロセスを**強制終了する**ため、**走行を終えるたびに結果表示の直前で落ちていた**。
+  両ビルド構成へキーを追加(entitlementとコードは元から正しい)
+
+**C2 GPSロスト判定が実機で成立しない問題の修正**
+
+- Swiftの1Hzタイマーが `LocationTracker` の**キャッシュ済みfixを毎秒再送**しており、Unity側の
+  `ReportGpsUpdate` が呼ばれるたびに更新時刻をリセットしていた。このため設計書§8.1の
+  **「1.5秒途絶」判定が原理的に成立しない**状態だった。実際にGPSが切れると`didUpdateLocations`が
+  止まり精度値も最後の良好値のまま固まるので、10m判定も発火しない = **F-09/F-10が実機で完全に不動作**
+- `LocationTracker.latestFixDate`(CoreLocationの発行時刻)を追加し、**前回送信と異なるfixのときだけ**
+  測位3値を添付するよう変更。同一fixのときは`gpsAccuracy`を送らない(=無効)ため、Unityは
+  更新時刻を進めず、実際の途絶を正しく検知できる
+
+**M3 バックグラウンドでUnityへの供給が途切れる問題**
+
+- メトリクス送出を`LocationTracker.onNewFix`からも駆動。画面ロックでタイマーが止まっても
+  CoreLocationは動き続けるため、Unityへの供給とCSVのGPS列が途切れない
+
+**H2〜H4 捏造データの排除**
+
+- **心拍**: 未取得時の `Int.random(in: 138...152)` / `(138...148)` を全廃。実測が無ければ0=不明として
+  送り、HUDは "--" を表示する(従来は仮の心拍がUnityのバイタル警告判定にも流れていた)
+- **距離**: GPS未取得時の推定(`paceKmH/3600`)を**表示専用**に分離。Unityへ送るのは実測のみとし、
+  ゴール判定とHealthKitへ推定値が混入しないようにした。推定表示中はHUDに「推定」を出す
+- **経過時間**: タイマーの発火回数を数える方式(`elapsedSeconds += 1`)から**壁時計基準**へ変更。
+  バックグラウンドやタイマー合体で過少カウントし、Unity側(`_runStartUtc`)と食い違っていた
+
+**H5 F-11 CSVのIMU列を実測化**
+
+- iOSの`Input.gyro`はCoreMotionが実体なので、`Input.gyro.userAcceleration`を**100Hzで直接取得**し
+  m/s²へ換算して`imu_accel_x/y/z`へ供給。UnitySendMessageで毎秒100件のJSONを流す必要がなく、
+  Swift側の配線も不要。優先順位は Swift供給 > 端末IMU > カメラ速度差分の近似で、
+  供給元は`RunTelemetryLogger.ImuSource`から判別できる
+
+**H6 アバターが接地せず浮き上がる不具合の修正**
+
+- 実測フロア(コライダー/ARプレーン)が無い間、`GetCurrentGroundLevel`が
+  `userCamera.position.y - 1.5f` を**毎フレーム再計算**していたため、「床」が頭・端末の上下動に
+  追従してアバターが一緒に浮き上がっていた(走行開始前から発生)
+- `GroundFloorTracker.cs` 新規(Unity非依存の純ロジック): 床を**1回だけ確定して保持**し、実測が
+  来ればそちらを優先、実測が途切れても直前の床を維持する。ユニットテスト12件で
+  「カメラが動いても床が追従しない」ことを含めて検証
+- 併せて床の由来(`Measured`/`Provisional`)をログ出力。実測フロアを掴むまで描画を抑止する
+  `hideUntilMeasuredFloor` も追加(既定OFF — エディタ/E2Eには実測フロアが無いため)
+
+**E2Eのフレーク修正**
+
+- コーナー追従シナリオが`Time.deltaTime`(timeScale=3で増幅)をそのまま角度前進に使っており、
+  フレームヒッチ時にカメラが円弧を数mテレポートしていた。実走では起こらない入力でアンカー補間が
+  追随できず、**同一コードでPASS/FAILが揺れていた**(min lead 1.4m ⇔ 0.1m)。1歩相当(50ms)に制限
+
+**検証**: フルコンパイル0エラー / ユニット**52件**(GroundFloorTracker 12件を追加) /
+Swift構文PASS / **E2E 60項目を3回連続で全PASS**(コーナー判定は3回とも min 1.4m・max 1.8m で一致し、
+フレーク解消を確認)。C3(UnityFrameworkのEmbed & Sign)はMac作業のため未実施 — 完了するまで
+Swift側は`#if canImport(UnityFramework)`の偽実装で動作する点に注意
+
 ### 2026-08-31 — ドキュメント同期: 未配線コンポーネントの記録＋ビルド/デプロイ手順の更新
 
 - **UI配線の棚卸しで、`SafetyAndSystemController` が実行時に一度も生成されないことを確認**（scene/prefab/asset のどこにもGUID `ee3904c3…` が無く、`ARVisionSystemsBootstrap` の `Ensure<>` にも `AddComponent` 呼び出しにも不在）。

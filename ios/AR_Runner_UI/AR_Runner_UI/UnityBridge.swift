@@ -288,48 +288,112 @@ final class ARSessionManager: ObservableObject {
     private let bridge = UnityBridge.shared
 
     @Published var isSessionActive = false
+
+    /// 画面表示用の距離(km)。GPS未取得の間は設定ペースからの推定で連続性を保つ。
+    /// **推定値はUnityのゴール判定やHealthKitへは渡さない**(H3)
     @Published var currentDistance: Double = 0
+
+    /// 実測(CoreLocation)のみの距離(km)。Unityへ送るのはこちら
+    @Published var measuredDistanceKm: Double = 0
+
+    /// currentDistance に推定分が含まれているか(HUDの「推定」表示用)
+    @Published var isDistanceEstimated = false
+
     @Published var elapsedSeconds: Int = 0
 
     private var timer: Timer?
 
+    /// 経過時間の基準となる実時刻。タイマーの発火回数を数えると
+    /// バックグラウンド・タイマー合体で過少カウントになるため壁時計で測る(H4)
+    private var startDate: Date?
+
+    /// 最後にUnityへ送った測位サンプルの時刻。同じfixを再送しないための番兵(C2)
+    private var lastSentFixDate: Date?
+
+    /// 設定ペース(推定距離の算出に使う)
+    private var configuredPaceKmH: Double = 0
+
     func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil) {
         isSessionActive = true
+        startDate = Date()
+        elapsedSeconds = 0
+        currentDistance = 0
+        measuredDistanceKm = 0
+        isDistanceEstimated = false
+        lastSentFixDate = nil
+        configuredPaceKmH = paceKmH
 
         // 実測センサー起動: CoreLocation(距離/速度) + HealthKit(心拍・Watch経由)
         LocationTracker.shared.start()
         HeartRateMonitor.shared.start()
 
         bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm, ghostDateIso: ghostDateIso)
+
+        // 実測が届くたびに送る — 画面ロック中もCoreLocationは動き続けるため、
+        // タイマーが止まってもUnityへの供給が途切れない(M3)
+        LocationTracker.shared.onNewFix = { [weak self] in
+            self?.pumpMetrics(estimateWhenNoGps: false)
+        }
+
+        // タイマーはHUD更新と、GPSが無い環境での推定距離の前進を担当する
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.elapsedSeconds += 1
+            self?.pumpMetrics(estimateWhenNoGps: true)
+        }
+    }
 
-            // 距離: GPS実測が取れていれば実測、なければ設定ペースから推定(シミュレータ)
-            let gpsDistance = LocationTracker.shared.totalDistanceKm
-            if gpsDistance > 0.001 {
-                self.currentDistance = gpsDistance
-            } else {
-                self.currentDistance += paceKmH / 3600
-            }
+    /// Unityへメトリクスを1回送る。
+    /// - Parameter estimateWhenNoGps: GPS未取得時に表示用距離を推定で前進させるか
+    ///   (タイマー駆動のときだけ true。実測駆動では二重に進めない)
+    private func pumpMetrics(estimateWhenNoGps: Bool) {
+        guard isSessionActive else { return }
+        let tracker = LocationTracker.shared
 
-            // ペース: GPS実測速度(0.5km/h以上で有効)、なければ設定値
-            let gpsSpeed = LocationTracker.shared.currentSpeedKmH
-            let effectivePace = gpsSpeed > 0.5 ? gpsSpeed : paceKmH
+        // 経過時間は壁時計から算出(タイマーの発火回数に依存しない — H4)
+        if let start = startDate {
+            elapsedSeconds = max(0, Int(Date().timeIntervalSince(start)))
+        }
 
-            // 心拍: HealthKit実測(Watch装着時)、なければ仮値
-            let realBpm = HeartRateMonitor.shared.latestBpm
-            let effectiveBpm = realBpm > 0 ? realBpm : Int.random(in: 138...152)
+        // 距離: 実測と表示用を分離する(H3)
+        measuredDistanceKm = tracker.totalDistanceKm
+        if measuredDistanceKm > 0.001 {
+            currentDistance = measuredDistanceKm
+            isDistanceEstimated = false
+        } else if estimateWhenNoGps {
+            // 表示の連続性のためだけの推定。Unityへは送らない
+            currentDistance += configuredPaceKmH / 3600
+            isDistanceEstimated = true
+        }
 
-            // 測位サンプル: GPSロスト自動判定(§8.1)とCSVログのGPS列(§5.2)へ
-            let tracker = LocationTracker.shared
-            self.bridge.updateRunnerMetrics(
+        // ペース: GPS実測速度(0.5km/h以上で有効)、なければ設定値
+        let gpsSpeed = tracker.currentSpeedKmH
+        let effectivePace = gpsSpeed > 0.5 ? gpsSpeed : configuredPaceKmH
+
+        // 心拍: HealthKit実測(Watch装着時)のみ。未取得は0=不明として送る(H2)
+        let bpm = HeartRateMonitor.shared.latestBpm
+
+        // 測位サンプルは「前回送ったfixと違う」ときだけ添付する。
+        // 同じfixを毎秒再送すると、Unity側の更新途絶タイマーが永久にリセットされ
+        // F-09のロスト判定(1.5秒途絶)が成立しなくなる(C2)
+        let fixDate = tracker.latestFixDate
+        let isNewFix = fixDate != nil && fixDate != lastSentFixDate
+
+        if isNewFix {
+            lastSentFixDate = fixDate
+            bridge.updateRunnerMetrics(
                 paceKmH: effectivePace,
-                heartRate: effectiveBpm,
-                distanceKm: self.currentDistance,
+                heartRate: bpm,
+                distanceKm: measuredDistanceKm,
                 gpsLatitude: tracker.latestLatitude,
                 gpsLongitude: tracker.latestLongitude,
                 gpsAccuracy: tracker.latestAccuracyMeters
+            )
+        } else {
+            // 測位は添付しない(gpsAccuracy既定 -1 = 無効)。Unityは測位時刻を更新せず、
+            // 実際にGPSが途絶えていれば正しくロストと判定できる
+            bridge.updateRunnerMetrics(
+                paceKmH: effectivePace,
+                heartRate: bpm,
+                distanceKm: measuredDistanceKm
             )
         }
     }
@@ -344,7 +408,9 @@ final class ARSessionManager: ObservableObject {
     func endLocally() {
         timer?.invalidate()
         timer = nil
+        startDate = nil
         isSessionActive = false
+        LocationTracker.shared.onNewFix = nil
         LocationTracker.shared.stop()
         HeartRateMonitor.shared.stop()
     }

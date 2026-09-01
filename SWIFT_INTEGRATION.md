@@ -100,8 +100,9 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
   コード変更は不要で、`GENERATE_INFOPLIST_FILE=YES` 環境でも既存キーとマージされる。
   実地テストの回転を上げたい場合は適用を検討すること。
 
-> 注意: 現状 `imu_accel_x/y/z` 列は実機でも**エディタ近似値**が入る。Swift(CoreMotion)から
-> `RunTelemetryLogger.SetImuAcceleration` へ供給する配線が未実装のため(HANDOVER.md §5)。
+> `imu_accel_x/y/z` 列は実機では **CoreMotion の実測値**(`Input.gyro.userAcceleration` を
+> 100Hzで取得し m/s² へ換算)。エディタはジャイロが無いためカメラ速度差分の近似になる。
+> 供給元は `RunTelemetryLogger.ImuSource`(`device` / `external` / `approximated`)で判別できる。
 > GPS列(`gps_latitude`/`gps_longitude`)は`UpdateMetrics`経由で実測値が入る。
 
 ## アーキテクチャ
@@ -126,7 +127,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | ターゲットGameObject | command | フィールド | Unity側の動作 |
 |---|---|---|---|
 | `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → `StartPacing()`。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
-| `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm`, `gpsLatitude`, `gpsLongitude`, `gpsAccuracy` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定。測位3値は`GpsSignalMonitor`(F-09 §8.1のロスト判定)とF-11 CSVログのGPS列へ供給される。**`gpsAccuracy > 0` が有効サンプルの目印**(未送信/負値は無効として完全に無視され、エディタ単体走行を阻害しない) |
+| `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm`, `gpsLatitude`, `gpsLongitude`, `gpsAccuracy` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定。測位3値は`GpsSignalMonitor`(F-09 §8.1のロスト判定)とF-11 CSVログのGPS列へ供給される。**`gpsAccuracy > 0` が有効サンプルの目印**(未送信/負値は無効として完全に無視され、エディタ単体走行を阻害しない)<br>**測位3値は「前回と異なる新しいfixのとき」だけ添付すること。** 同じfixを毎秒再送するとUnity側の更新途絶タイマーが際限なくリセットされ、F-09の「1.5秒途絶」判定が永久に成立しなくなる。`distanceKm` は**実測のみ**を送る(推定距離を送るとゴール判定とHealthKitへ混入する) |
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
 | `ARSessionManager` | `ResumeSession` | — | §8.3: グラス再接続後、**準備画面からの再スタート操作**でスタンバイ中の表示のみ復帰(新規セッションは開始せず記録は継続) |

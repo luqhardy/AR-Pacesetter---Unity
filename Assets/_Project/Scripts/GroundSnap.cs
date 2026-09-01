@@ -19,9 +19,29 @@ public class GroundSnap : MonoBehaviour
     [SerializeField] private float obstacleDetectionDistance = 3.0f; // Requirement 4.2: Within 3.0 meters
     [SerializeField] private float minObstacleHeight = 1.5f;       // Requirement 4.2: Obstruction >= 1.5m
 
+    [Header("Floor Acquisition")]
+    [Tooltip("実測フロアが未取得の間だけ使う想定端末保持高(m)。1回だけ採用して固定される")]
+    [SerializeField] private float assumedCameraHeightMeters = 1.5f;
+    [Tooltip("実測フロア(コライダー/ARプレーン)を掴むまでアバターの描画を抑止する。" +
+             "エディタ/E2Eのシーンには実測フロアが存在しないため既定OFF。実機で有効化を検討")]
+    [SerializeField] private bool hideUntilMeasuredFloor = false;
+
+    // 床面高さの確定・保持(純ロジック)。実測が途切れてもカメラに追従させないための要
+    private readonly GroundFloorTracker _floor = new GroundFloorTracker();
+    private bool _renderersSuppressed = false;
+
     private float _targetY;
     private float _currentYVelocity;
     private bool _simulateObstacleActive = false;
+
+    /// <summary>実測フロア(コライダー/ARプレーン)を掴んでいるか。暫定推定中は false。</summary>
+    public bool HasMeasuredFloor => _floor.HasMeasuredFloor;
+
+    /// <summary>現在確定している床面高さ(ワールドY)。</summary>
+    public float ResolvedFloorY => _floor.FloorY;
+
+    /// <summary>再走行時などに床の確定をやり直す。</summary>
+    public void ResetFloor() => _floor.Reset();
 
     /// <summary>E2E/エディタ検証用: 障害物検知の強制ON/OFF(Cキーと同じ)。</summary>
     public bool SimulateObstacle
@@ -173,11 +193,71 @@ public class GroundSnap : MonoBehaviour
             Quaternion targetRot = Quaternion.FromToRotation(transform.up, _currentNormal) * transform.rotation;
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * alignmentSpeed);
         }
+
+        ApplyFloorVisibilityGate();
     }
 
+    /// <summary>
+    /// 実測フロアを掴むまでアバターの描画を抑止する(既定OFF)。
+    /// GameObject自体は無効化しない — 無効化するとこの GroundSnap も止まり、
+    /// 復帰判定が二度と走らなくなるため、Renderer の enable のみを切り替える。
+    /// </summary>
+    private void ApplyFloorVisibilityGate()
+    {
+        if (!hideUntilMeasuredFloor)
+        {
+            if (_renderersSuppressed) SetAvatarRenderersEnabled(true);
+            return;
+        }
+
+        bool shouldHide = !_floor.HasMeasuredFloor;
+        if (shouldHide == _renderersSuppressed) return; // 変化時のみ適用
+        SetAvatarRenderersEnabled(!shouldHide);
+    }
+
+    private void SetAvatarRenderersEnabled(bool visible)
+    {
+        Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+            renderers[i].enabled = visible;
+
+        _renderersSuppressed = !visible;
+        Debug.Log($"[GroundSnap] 実測フロア未取得によるアバター描画の{(visible ? "再開" : "抑止")} " +
+                  $"(Renderer {renderers.Length}件)");
+    }
+
+    /// <summary>
+    /// 床面高さを解決する。実測(コライダー/ARプレーン)があればそれを採用し、
+    /// 無ければ <see cref="GroundFloorTracker"/> が確定済みの床を保持する。
+    /// **カメラ高からの推定は最初の1回のみ**(毎フレーム再計算するとアバターが
+    /// 頭の上下動に追従して浮き上がるため)。
+    /// </summary>
     private float GetCurrentGroundLevel(out Vector3 normal)
     {
+        bool measured = TryMeasureGroundLevel(out float measuredY, out normal);
+
+        // 実測を一度も得ていない時だけ使う暫定値(1回だけ採用され固定される)
+        float provisional = userCamera != null
+            ? userCamera.position.y - assumedCameraHeightMeters
+            : 0f;
+
+        if (_floor.Resolve(measured, measuredY, provisional, out float floorY))
+        {
+            Debug.Log($"[GroundSnap] 床面の由来: {_floor.Source} (Y={floorY:F3})" +
+                      (_floor.HasMeasuredFloor
+                          ? ""
+                          : " — 実測フロア未取得のためカメラ高からの暫定値を固定。" +
+                            "シーンにコライダーが無い/ARプレーン未検出の可能性"));
+        }
+
+        return floorY;
+    }
+
+    /// <summary>実測の床面(コライダー → ARプレーン)を探す。見つからなければ false。</summary>
+    private bool TryMeasureGroundLevel(out float groundY, out Vector3 normal)
+    {
         normal = Vector3.up;
+        groundY = 0f;
         // Perform standard vertical down-cast to snap precisely to colliders
         // Use a safe height (at least camera height) to prevent falling through the floor forever
         float safeY = Mathf.Max(transform.position.y, userCamera != null ? userCamera.position.y : 0f) + 10.0f;
@@ -204,7 +284,11 @@ public class GroundSnap : MonoBehaviour
             }
         }
         
-        if (found) return highestGround;
+        if (found)
+        {
+            groundY = highestGround;
+            return true;
+        }
 
         // Fallback 1: AR Raycast against detected AR Planes
         if (_arRaycastManager != null)
@@ -225,18 +309,16 @@ public class GroundSnap : MonoBehaviour
                         found = true;
                     }
                 }
-                if (found) return highestGround;
+                if (found)
+                {
+                    groundY = highestGround;
+                    return true;
+                }
             }
         }
 
-        // Fallback 2: Heuristic floor level based on user height
-        if (userCamera != null)
-        {
-            return userCamera.position.y - 1.5f; // Assumes phone is held at 1.5m height
-        }
-
-        // Fallback 3: baseline zero-plane
-        return 0f; 
+        // 実測なし — 確定済みの床の保持は GroundFloorTracker が担当する
+        return false;
     }
 
     private bool IsObstacleDetected()

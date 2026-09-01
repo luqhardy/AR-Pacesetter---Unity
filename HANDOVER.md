@@ -33,7 +33,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 |---|---|---|
 | 3.0m先行追従・Vector Forward純化(1.5s移動平均) | `AvatarEngine.cs` | E2E(直線・コーナー) |
 | 速度連動 Walk/Jog/Run ブレンド | `OvertakeBehaviourController.cs` + Animator | エディタ目視 |
-| 自動接地(±15cm/0.3sイージング・断崖判定) | `GroundSnap.cs` | **E2E自動**(障害物停止/再開) |
+| 自動接地(±15cm/0.3sイージング・断崖判定) | `GroundSnap.cs` + `GroundFloorTracker.cs` | **E2E自動**(障害物停止/再開・**床の固定**) |
 | 離隔待機(10mで座標固定+手招き、7mで再開) | `AvatarEngine.cs` | **E2E自動** |
 | バイタル警告(HR185+で深青+CalmDownSign) | `AvatarVisualsAndActions.cs` | **E2E自動** |
 | VFX(起動粒子集積・終了挨拶消滅・接地パルス) | `AvatarVFXController.cs` | エディタ目視 |
@@ -105,6 +105,24 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 - **XREAL SDK統合**: グラス表示は外部ディスプレイ経由で実装済み(`ExternalDisplayManager.swift`・SDK不要)。SDK固有機能(6DoF・空間メッシュ等)が必要になった場合のみNRSDK導入を検討
 - **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
+  - **未実施であることの確認方法と症状(重要)**: `ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj` に
+    `UnityFramework` の文字列が1つも無い場合、リンクは未実施。このとき Swift 側は
+    `#if canImport(UnityFramework)` が偽になり **UnityLauncher / UnityBridge がダミー実装へ落ちる** —
+    `launch()` はフラグを立てるだけ、`sendToUnity` は送信されず、`simulateUnityResponse` が
+    偽のイベントを返す。**アプリはビルドも起動も成功し、統計もそれらしく表示されるため
+    「動いているが実際には何も繋がっていない」状態になる**。走行画面に
+    「Unity AR View (UnityFramework 未リンク)」のプレースホルダーが出ていたら未リンク。
+    併せて `ios/UnityExport/` が空なら手順① (Build → Export iOS) も未実施
+- **床(接地)の基準はARプレーン頼み**: 実測フロアはコライダーまたはARプレーンからのみ得られる。
+  エディタのシーンにはコライダーが1つも無いため常に暫定床で動作する。実機でも起動直後は
+  ARKitが平面を検出するまで暫定床のままなので、**実フロアへのキャリブレーションは未実装**。
+  暫定床は`GroundFloorTracker`が**1回だけ確定して固定**するのでアバターが浮き上がることはないが、
+  絶対高さが正しい保証は無い(端末をどの高さで起動したかに依存する)。
+  `GroundSnap.hideUntilMeasuredFloor` を有効化すると実測フロアを掴むまでアバター描画を抑止できる
+  (既定OFF — エディタ/E2Eでは実測フロアが存在せず常時非表示になってしまうため)
+- **Mac側の残作業(コード修正では閉じられない)**: UnityFrameworkのEmbed & Sign と
+  `Data`フォルダのTarget Membership変更(SWIFT_INTEGRATION.md ②-2/②-3)。
+  これが済むまで Swift 側は `#if canImport(UnityFramework)` の偽実装で動き続ける
 - **実地フィールドテスト**: `Docs/FIELD_TEST_PLAN.md` の T1〜T9 を実施(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)
 - **ルート同期**: MapRouteView(Swift)で表示するコースがUnityの逸脱判定(`SilentRouteRecoverer.routeWaypoints`)へ未接続。実ルート運用時はStartSessionへポリライン(緯度経度→開始点基準のローカル座標変換)を追加する必要がある。現状の逸脱検知はシミュレーション(D キー/E2E)のみ
 - **`SafetyAndSystemController` が未配線(TTC危険警告・低バッテリー退避が実行時に不在)**: スクリプトは存在するが、

@@ -79,6 +79,37 @@ public class E2EScenarioBehaviour : MonoBehaviour
             analytics.AmbientTemperature = originalTemp; // 走行の疲労計算を汚さない
         }
 
+        // ── Step 0c: 床の確定 (F-05 — 「アバターが接地せず浮き上がる」不具合の回帰防止) ──
+        // エディタのシーンにはコライダーもARプレーンも無いため実測フロアは得られない。
+        // その状況で暫定床を1回だけ採用して固定し、以降カメラが上下しても
+        // 床(=アバターY)が追従しないことを検証する。走行前に発生する不具合なので
+        // StartSession より前に確認する。
+        var groundSnap = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
+        Check(groundSnap != null, "ground: GroundSnap present");
+        if (groundSnap != null)
+        {
+            Check(!groundSnap.HasMeasuredFloor,
+                "ground: no measured floor in editor scene (provisional latch expected)");
+
+            yield return WaitScaled(0.3f);
+            float floorBefore   = groundSnap.ResolvedFloorY;
+            float avatarYBefore = groundSnap.transform.position.y;
+            float camYBefore    = _cameraMover.position.y;
+
+            // 端末を持ち上げる / グラスで上を向く動作の再現
+            _cameraMover.position += Vector3.up * 2.0f;
+            yield return WaitScaled(0.6f);
+
+            Check(Mathf.Abs(groundSnap.ResolvedFloorY - floorBefore) < 0.01f,
+                "ground: latched floor does not move when camera rises 2m");
+            Check(Mathf.Abs(groundSnap.transform.position.y - avatarYBefore) < 0.25f,
+                "ground: avatar does not fly up with the camera (F-05 regression)");
+
+            _cameraMover.position = new Vector3(_cameraMover.position.x, camYBefore,
+                                                _cameraMover.position.z);
+            yield return WaitScaled(0.3f);
+        }
+
         // ── Step 1: StartSession (目標60m — ゴール自動終了を早く踏むため) ──
         bridge.OnSwiftCommand(
             "{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":0.06," +
@@ -103,6 +134,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // F-11 テレメトリCSV: 走行中にログが開始していること
         var telemetry = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
         Check(telemetry != null && telemetry.IsLogging, "telemetry: 100Hz CSV logging active during run");
+
+        // H5: IMUの供給元。エディタにはジャイロが無いので近似にフォールバックするのが正。
+        // 実機では "device"(CoreMotion)、Swift供給時は "external" になる
+        Check(telemetry != null && telemetry.ImuSource == "approximated",
+            "telemetry: IMU source falls back to approximation in editor (device/external on hardware)");
         string telemetryPath = telemetry != null ? telemetry.CurrentFilePath : null;
 
         var visualsForColor = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
@@ -265,7 +301,6 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
 
         // ── Step 3c: 障害物停止 (断崖・壁 → 足踏み待機 → 解除で再開) ──────────
-        var groundSnap = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
         if (groundSnap != null)
         {
             groundSnap.SimulateObstacle = true;
@@ -483,7 +518,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         while (theta < quarterTurnRadians)
         {
-            float dTheta = angularSpeed * Time.deltaTime;
+            // フレームヒッチ時に Time.deltaTime(timeScale=3で更に増幅)をそのまま使うと、
+            // カメラが1フレームで円弧を数m「テレポート」してしまい、アンカー補間が
+            // 追随できず先行距離が一時的に潰れる — 実走ではあり得ない入力で、
+            // 判定がフレームレート次第で揺れる原因だった。1歩相当に制限する
+            float dt = Mathf.Min(Time.deltaTime, 0.05f);
+            float dTheta = angularSpeed * dt;
             theta += dTheta;
 
             // 円弧に沿ってカメラを移動(上から見て時計回り=右旋回)。

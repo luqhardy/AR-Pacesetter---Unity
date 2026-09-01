@@ -19,6 +19,16 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     @Published private(set) var latestAccuracyMeters: Double = -1
     @Published private(set) var isAuthorized = false
 
+    /// 直近の測位サンプルのタイムスタンプ(CoreLocation発行時刻)。
+    /// 「前回送った時刻と違うか」で新鮮さを判定するために使う —
+    /// 同じfixを再送するとUnityのGPSロスト判定(§8.1)が永久に成立しなくなる
+    @Published private(set) var latestFixDate: Date?
+
+    /// 新しい測位サンプルを受信するたびに呼ばれる。
+    /// タイマーではなくこれで駆動することで、画面ロック中(タイマー停止)でも
+    /// Unityへメトリクスを送り続けられる
+    var onNewFix: (() -> Void)?
+
     private let manager = CLLocationManager()
     private var lastLocation: CLLocation?
     private var isTracking = false
@@ -38,6 +48,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         totalDistanceKm = 0
         currentSpeedKmH = 0
         lastLocation = nil
+        latestFixDate = nil
         isTracking = true
 
         manager.requestWhenInUseAuthorization()
@@ -59,6 +70,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
 
     func stop() {
         isTracking = false
+        onNewFix = nil
         manager.allowsBackgroundLocationUpdates = false
         manager.stopUpdatingLocation()
     }
@@ -79,6 +91,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
             latestLatitude = location.coordinate.latitude
             latestLongitude = location.coordinate.longitude
             latestAccuracyMeters = location.horizontalAccuracy
+            latestFixDate = location.timestamp
 
             // 距離積算には精度不良・無効サンプルを使わない (要件定義 6.2: 精度半径ゲート)
             guard location.horizontalAccuracy >= 0,
@@ -97,6 +110,9 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
                 currentSpeedKmH = location.speed * 3.6
             }
         }
+
+        // 実測が届いたタイミングでUnityへ送る(バックグラウンドでも動く経路)
+        onNewFix?()
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

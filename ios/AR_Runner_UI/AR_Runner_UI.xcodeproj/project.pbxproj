@@ -261,6 +261,7 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Apple Watch・ARグラスとの接続にBluetoothを使用します";
 				INFOPLIST_KEY_NSCameraUsageDescription = "AR伴走アバターの表示にカメラを使用します";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "リアルタイム心拍表示のためヘルスケアデータを読み取ります";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "走行の記録(距離・消費カロリー)をワークアウトとしてヘルスケアへ保存します";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "走行距離・ペースの計測に位置情報を使用します";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "周囲の騒音レベルに応じた音量自動調整にマイクを使用します";
 				INFOPLIST_KEY_NSMotionUsageDescription = "ランニングピッチの計測にモーションデータを使用します";
@@ -301,6 +302,7 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Apple Watch・ARグラスとの接続にBluetoothを使用します";
 				INFOPLIST_KEY_NSCameraUsageDescription = "AR伴走アバターの表示にカメラを使用します";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "リアルタイム心拍表示のためヘルスケアデータを読み取ります";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "走行の記録(距離・消費カロリー)をワークアウトとしてヘルスケアへ保存します";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "走行距離・ペースの計測に位置情報を使用します";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "周囲の騒音レベルに応じた音量自動調整にマイクを使用します";
 				INFOPLIST_KEY_NSMotionUsageDescription = "ランニングピッチの計測にモーションデータを使用します";

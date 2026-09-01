@@ -135,7 +135,8 @@ struct RunningView: View {
     @ObservedObject private var heartMonitor = HeartRateMonitor.shared
     @ObservedObject private var external = ExternalDisplayManager.shared
 
-    @State private var bpm = 142
+    /// HealthKit(Watch)実測のみ。未取得は0=不明として "--" を表示する(H2)
+    @State private var bpm = 0
     @State private var showEndAlert = false
     @State private var showGoalOverlay = false
 
@@ -177,6 +178,12 @@ struct RunningView: View {
                             Text(String(format: "%.2fkm", session.currentDistance))
                                 .font(.system(size: 34, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
+                            if session.isDistanceEstimated {
+                                // GPS未取得中の表示値は推定 — 実測と混同させない(H3)
+                                Text("推定")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.arGrayText)
+                            }
                         }
                     }
                     .padding(.horizontal, 24)
@@ -199,9 +206,9 @@ struct RunningView: View {
                                 Image(systemName: "heart.fill")
                                     .foregroundColor(Color(red: 1, green: 0.25, blue: 0.25))
                                     .font(.system(size: 13))
-                                Text("\(bpm)")
+                                Text(bpm > 0 ? "\(bpm)" : "--")
                                     .font(.system(size: 24, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(bpm > 0 ? .white : .arGrayText)
                                 Text("bpm")
                                     .font(.system(size: 11))
                                     .foregroundColor(.arGrayText)
@@ -335,9 +342,8 @@ struct RunningView: View {
                 RunSettings.shared.ghostDateIso = nil
             }
             .onReceive(timer) { _ in
-                // 心拍: HealthKit実測(Watch装着時)を優先、未取得時は仮表示
-                let realBpm = heartMonitor.latestBpm
-                bpm = realBpm > 0 ? realBpm : Int.random(in: 138...148)
+                // 心拍はHealthKit実測のみ。Watch未装着なら "--" のまま
+                bpm = heartMonitor.latestBpm
             }
             .onChange(of: bridge.avatarState) { _, newState in
                 // Unity側の自動ゴール（目標距離到達）→ ローカル停止 → 統計画面へ

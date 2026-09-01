@@ -48,6 +48,12 @@ public class RunTelemetryLogger : MonoBehaviour
     private Vector3 _imuAccel;
     private bool _imuExternal;
 
+    // 実機IMU(CoreMotion)。Unityの Input.gyro は iOS では CoreMotion が実体なので
+    // Swiftブリッジを介さずに100Hzの実測加速度が取れる — UnitySendMessageで
+    // 毎秒100件のJSONを流すより遥かに安く、配線も要らない
+    private bool _deviceImuActive;
+    private const float StandardGravity = 9.80665f; // Input.gyro は g 単位で返る
+
     // エディタ近似用: カメラ速度の差分で加速度を出す
     private Vector3 _lastCamPos;
     private Vector3 _lastCamVel;
@@ -74,10 +80,45 @@ public class RunTelemetryLogger : MonoBehaviour
         _gpsExternal = true;
     }
 
+    /// <summary>
+    /// 外部(Swift/CoreMotion)からIMU加速度を供給する。呼ばれた時点で
+    /// 端末IMU・エディタ近似の両方より優先される。
+    /// </summary>
     public void SetImuAcceleration(Vector3 accelMetersPerSec2)
     {
         _imuAccel = accelMetersPerSec2;
         _imuExternal = true;
+    }
+
+    /// <summary>IMUの取得元。CSVの信頼性判断とE2E検証に使う。</summary>
+    public string ImuSource =>
+        _imuExternal ? "external" : (_deviceImuActive ? "device" : "approximated");
+
+    /// <summary>
+    /// 端末のIMU(iOSではCoreMotion)を100Hzで起動する。F-11のCSVの
+    /// imu_accel_x/y/z 列を実測で埋めるための唯一の供給源(H5)。
+    /// </summary>
+    private void EnableDeviceImu()
+    {
+        if (_deviceImuActive || !SystemInfo.supportsGyroscope) return;
+
+        Input.gyro.enabled = true;
+        Input.gyro.updateInterval = SampleIntervalSeconds; // 0.01s = 100Hz
+        _deviceImuActive = true;
+        Debug.Log("[TELEMETRY] 端末IMU(CoreMotion)を100Hzで起動 — CSVのimu_accel列は実測値になります");
+    }
+
+    /// <summary>
+    /// 端末IMUから重力成分を除いた加速度を取り込む(m/s²へ換算)。
+    /// Input.gyro.userAcceleration は g 単位・重力除去済み。
+    /// </summary>
+    private bool TryReadDeviceImu()
+    {
+        if (!_deviceImuActive) return false;
+
+        Vector3 g = Input.gyro.userAcceleration;
+        _imuAccel = new Vector3(g.x, g.y, g.z) * StandardGravity;
+        return true;
     }
 
     void Update()
@@ -91,7 +132,9 @@ public class RunTelemetryLogger : MonoBehaviour
 
         if (!_logging) return;
 
-        UpdateImuApproximation();
+        // 優先順位: Swift供給 > 端末IMU(CoreMotion) > カメラ速度差分の近似
+        if (!_imuExternal && !TryReadDeviceImu())
+            UpdateImuApproximation();
 
         // 100Hz サンプリング: 経過時間分の行をまとめて書き出す
         _sampleAccumulator += Time.deltaTime;
@@ -105,7 +148,7 @@ public class RunTelemetryLogger : MonoBehaviour
 
     private void UpdateImuApproximation()
     {
-        if (_imuExternal || userCamera == null) return;
+        if (userCamera == null) return;
 
         if (!_camInit)
         {
@@ -151,6 +194,9 @@ public class RunTelemetryLogger : MonoBehaviour
 
     private void StartLogging()
     {
+        // 走行開始と同時に端末IMUを起動する(F-11のimu_accel列を実測で埋める)
+        EnableDeviceImu();
+
         string dir = Path.Combine(Application.persistentDataPath, "RunLogs");
         Directory.CreateDirectory(dir);
         _filePath = Path.Combine(dir, $"Log_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv");
