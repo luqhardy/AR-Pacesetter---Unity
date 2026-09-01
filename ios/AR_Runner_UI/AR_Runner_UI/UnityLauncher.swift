@@ -1,5 +1,6 @@
 import SwiftUI
 import MachO
+import Combine   // ObservableObject / @Published (Xcode 26 は SwiftUI 経由の暗黙再エクスポートをしない)
 #if canImport(UnityFramework)
 import UnityFramework
 #endif

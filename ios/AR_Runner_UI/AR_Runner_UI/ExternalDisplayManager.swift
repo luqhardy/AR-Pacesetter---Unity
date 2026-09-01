@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine   // ObservableObject / @Published (Xcode 26 は SwiftUI 経由の暗黙再エクスポートをしない)
 
 // MARK: - External Display (ARグラス) Manager
 // XREAL One は iPhone(USB-C) に対して外部ディスプレイとして振る舞うため、
