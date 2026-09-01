@@ -154,52 +154,8 @@ extern "C" {
         [[HeartRateBLEManager sharedInstance] stopScan];
     }
 
-    // --- Kalman Filter Pipeline Constants & Functions ---
-    static float estimateX = 0.0f;
-    static float estimateY = 0.0f;
-    static float estimateZ = 0.0f;
-    static float pX = 1.0f;
-    static float pY = 1.0f;
-    static float pZ = 1.0f;
-    static float processNoise = 0.05f; // Q
-    static float measurementNoise = 0.8f; // R
-    static float lteWeight = 0.12f;
-
-    void InitKalmanFilter(float pNoise, float mNoise, float lteW) {
-        processNoise = pNoise;
-        measurementNoise = mNoise;
-        lteWeight = lteW;
-        estimateX = 0.0f;
-        estimateY = 0.0f;
-        estimateZ = 0.0f;
-        pX = 1.0f;
-        pY = 1.0f;
-        pZ = 1.0f;
-    }
-
-    void UpdateKalmanFilter(float accelX, float accelY, float accelZ, float* smoothX, float* smoothY, float* smoothZ) {
-        // Predict stage
-        pX = pX + processNoise;
-        pY = pY + processNoise;
-        pZ = pZ + processNoise;
-
-        // Kalman Gain calculation
-        float kX = pX / (pX + measurementNoise);
-        float kY = pY / (pY + measurementNoise);
-        float kZ = pZ / (pZ + measurementNoise);
-
-        // Correction stage (state update)
-        estimateX = estimateX + kX * (accelX - estimateX);
-        estimateY = estimateY + kY * (accelY - estimateY);
-        estimateZ = estimateZ + kZ * (accelZ - estimateZ);
-
-        // Error covariance update stage
-        pX = (1.0f - kX) * pX;
-        pY = (1.0f - kY) * pY;
-        pZ = (1.0f - kZ) * pZ;
-
-        *smoothX = estimateX;
-        *smoothY = estimateY;
-        *smoothZ = estimateZ;
-    }
+    // カルマンフィルタの実体は KalmanFilterNative.mm に一本化している。
+    // 以前はここにも同名の InitKalmanFilter / UpdateKalmanFilter があり、
+    // iOSリンク時に duplicate symbol (2件) になっていたため削除した。
+    // このファイルは心拍BLEの責務のみを持つ。
 }
