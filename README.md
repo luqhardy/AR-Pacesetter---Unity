@@ -494,15 +494,37 @@ SwiftUI画面込みの完成アプリは、常に **AR_Runner_UIスキームか�
 ```
 ① Unityエクスポート（Windows可）
    Unityメニュー Build → Export iOS (ios/UnityExport)
+   （CLI: Unity.exe -batchmode -quit -projectPath <repo>
+          -executeMethod IOSBuildExporter.ExportIOS   ※失敗時は終了コード1）
    → ios/UnityExport/Unity-iPhone.xcodeproj が生成される
 
-② 統合ビルド（Mac）
+② 統合ビルド（macOS環境。実機のみ — ARKitはシミュレータ不可）
    ios/ARRunner.xcworkspace を開く
-   → 初回のみ: AR_Runner_UIターゲットに UnityFramework.framework を Embed & Sign
+   → 初回のみ(a): AR_Runner_UIターゲットに UnityFramework.framework を Embed & Sign
+   → 初回のみ(b): Unity-iPhone側 Data フォルダの Target Membership を UnityFramework へ
    → AR_Runner_UIスキームで実機ビルド = SwiftUI + Unity 両方入りの1アプリ
 ```
 
 つまり Unity側は「ビルドするもの」ではなく「**エクスポートして ios/UnityExport に置かれる部品**」。
+
+**①の前提条件**（どれか欠けるとエクスポートは失敗する）:
+
+- **Unity 6000.3.17f1**（`ProjectSettings/ProjectVersion.txt` と一致必須）
+- **iOS Build Support モジュール**（Unity Hub → インストール → 対象バージョン → モジュールを加える）
+- **Player Settings の使用目的文が空でないこと** — `Microphone`/`Location`/`Bluetooth` を
+  スクリプトが使うため、空だと `BuildFailedException` になる。設定済み（Swiftアプリ側の
+  `INFOPLIST_KEY_*` とは**別物**で、両方必要）
+- エクスポート後は `ProjectSettings.asset` の差分を確認する。ビルド処理が `preloadedAssets` を
+  空にすることがあり、`XRGeneralSettings.asset` が消えるとXR(ARKit)ローダーが初期化されなくなる
+
+**②はMacの所有が必須ではない**: リポジトリが公開のためGitHub ActionsのmacOSランナーが無料で使える。
+Windowsで①を実行 → 生成物をCIへ渡し、macOSランナーは `xcodebuild` のみ実行する構成にすると、
+Unityをランナーへ入れずに済む。実機へ入れるには署名が必要（Apple Developer Program）で、
+配布はTestFlightが最短。詳細と現状は SWIFT_INTEGRATION.md ② / HANDOVER.md §5 を参照。
+
+> **現状の注意**: ②が未実施の間、Swift側は `#if canImport(UnityFramework)` の偽実装で動作する。
+> アプリはビルドも起動もでき統計もそれらしく表示されるが、**Unityには一切繋がっていない**。
+> 走行画面に「Unity AR View (UnityFramework 未リンク)」が出ていたらこの状態。
 
 ### メッセージ契約（実装済み）
 
@@ -598,6 +620,18 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
   `-quit`が**終了コード0**を返しており、CIもシェルも失敗に気づけなかった。バッチモードでは
   `EditorApplication.Exit(1)`を返すよう変更
 - 残るC3のMac作業(UnityFrameworkのEmbed & Sign / DataフォルダのTarget Membership)は未実施
+
+**ビルド手順の訂正(README §5)**
+
+- ②の初回手順に **`Data` フォルダの Target Membership 変更が抜けていた**(SWIFT_INTEGRATION.md ②-3 には
+  記載済み)。抜けたままだとリンクが通らないため追記
+- ①の前提条件(Unityバージョン・iOS Build Supportモジュール・**Player Settingsの使用目的文**・
+  `preloadedAssets`の確認)を明記。従来READMEには前提が一切書かれておらず、実際にこれが原因で
+  エクスポートが失敗し続けていた
+- ②に**Macの所有は必須でない**旨を追記(公開リポジトリのためGitHub ActionsのmacOSランナーが無料。
+  Windowsで①→CIで`xcodebuild`のみ、が最短)
+- ②未実施時に「動いているように見えるがUnityに繋がっていない」状態になることを警告として明記
+- ※E2Eの「終了コード 0=全PASS / 1=FAILあり」の記載は**実測で正しいことを確認**(失敗時 exit=1)
 
 **検証**: フルコンパイル0エラー / ユニット**52件**(GroundFloorTracker 12件を追加) /
 Swift構文PASS / **E2E 60項目を3回連続で全PASS**(コーナー判定は3回とも min 1.4m・max 1.8m で一致し、
