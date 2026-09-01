@@ -52,6 +52,18 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
       ls ios/UnityExport/Unity-iPhone.xcodeproj    # 存在すればOK
       ```
 
+- [ ] **実行権限を修復する(Windows経由で運んだ場合は必須)**
+
+      ```bash
+      chmod +x ios/UnityExport/usymtool ios/UnityExport/usymtoolarm64 ios/UnityExport/*.sh
+      xattr -dr com.apple.quarantine ios/UnityExport   # ダウンロード由来の隔離属性を外す
+      ```
+
+      Windowsで固めたアーカイブは拡張子の無いMach-Oバイナリの実行ビットを保存しない。
+      未修復だと `Command PhaseScriptExecution failed with a nonzero exit code` で
+      ビルドが落ちる(`process_symbols.sh` が `usymtool` を起動できないため)。
+      il2cppのビルドフェーズは自前で `chmod +x` するので影響を受けない。
+
 - [ ] **無料Apple ID用の下準備スクリプトを実行する**(Bundle IDは自分専用のものにする)
 
       ```bash
@@ -116,6 +128,9 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 | 署名エラー(HealthKit) | 手順2のスクリプトを実行していない |
 | 署名エラー(Bundle IDが使用中) | Bundle IDを更にユニークなものへ |
 | `Unity-iPhone` がworkspaceで赤い | `ios/UnityExport/` のコピー漏れ(手順2) |
+| `PhaseScriptExecution failed with a nonzero exit code` | `usymtool`/`usymtoolarm64` の実行権限が落ちている(手順2の chmod) |
+| Target Dependencies に `UnityFramework` が出てこない | 実行先(Destination)がシミュレータになっている。Unity側は `SUPPORTED_PLATFORMS = iphoneos` で実機専用のため候補から除外される |
+| `ld: framework not found UnityFramework` | UnityFrameworkが未ビルド。スキームのBuild一覧へ追加するか、Target Dependenciesに登録する |
 | アプリが7日で起動しなくなる | 無料アカウントの仕様。再ビルドで延長される |
 
 ## 7. 持ち帰るもの
