@@ -78,10 +78,22 @@ final class UnityLauncher: ObservableObject {
 
         let framework = frameworkClass.getInstance()
         if framework?.appController() == nil {
-            // Unityにホストアプリの実行ヘッダを渡す（UaaL公式サンプルと同じ手順）
-            let header = UnsafeMutablePointer<MachHeader>.allocate(capacity: 1)
-            header.pointee = _mh_execute_header
-            framework?.setExecuteHeader(header)
+            // Unityにホストアプリ（メイン実行ファイル）のMachヘッダを渡す。
+            //
+            // UaaL公式サンプルは `_mh_execute_header` を直接参照するが、Swiftから
+            // 参照すると Xcode 26 のリンカで "Undefined symbol: __mh_execute_header"
+            // になる。この記号は実行ファイルのリンク時にのみ供給されるものであり、
+            // dyld から実行中イメージのヘッダを取ればリンク時記号に依存しない。
+            // インデックス0は常にメイン実行ファイル。
+            //
+            // 併せて、以前はヘッダを構造体ごとコピーして渡していたが誤り。
+            // Unityはヘッダ直後に続くロードコマンドを走査するため、
+            // 構造体だけ複製したポインタでは不正なメモリを読むことになる。
+            // 実体のポインタをそのまま渡す（確保も解放も不要）。
+            if let mainImage = _dyld_get_image_header(0) {
+                framework?.setExecuteHeader(
+                    UnsafeRawPointer(mainImage).assumingMemoryBound(to: MachHeader.self))
+            }
         }
         return framework
     }
