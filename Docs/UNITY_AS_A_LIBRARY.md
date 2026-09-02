@@ -220,6 +220,18 @@ Almost every failure above is a compile or link error that a macOS CI runner cat
 device or a signing certificate (`CODE_SIGNING_ALLOWED=NO`). If you're exporting on one machine and
 building on another, that job pays for itself immediately.
 
+This repo's implementation is [`.github/workflows/ios-build.yml`](../.github/workflows/ios-build.yml).
+It fetches the exported project from a GitHub Release, then builds two things:
+
+1. **`UnityFramework`** — catches duplicate symbols in `.mm` plugins and IL2CPP link errors. Nothing else
+   in a Unity project surfaces these: not C# compilation, not unit tests, not editor Play Mode.
+2. **The host app** — catches Swift compile errors.
+
+One caveat worth understanding: while the framework's link settings (Embed & Sign, `Data` target
+membership) are done by hand in Xcode rather than committed to the `pbxproj`, CI compiles the host with
+`canImport(UnityFramework)` **false** — so the framework-linked branch of your code isn't covered. Commit
+those settings and the gap closes.
+
 ---
 
 See also: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION.md) for this project's specific message contract,

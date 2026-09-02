@@ -223,6 +223,18 @@ xattr -dr com.apple.quarantine ios/UnityExport   # ダウンロード由来の�
 実機も署名も要りません(`CODE_SIGNING_ALLOWED=NO`)。
 エクスポートと実機ビルドを別マシンで行う構成なら、このCIジョブはすぐに元が取れます。
 
+本リポジトリの実装は [`.github/workflows/ios-build.yml`](../.github/workflows/ios-build.yml)。
+GitHub Releaseからエクスポート産物を取得し、2つをビルドします:
+
+1. **`UnityFramework`** — `.mm` プラグインの重複シンボルとIL2CPPのリンクエラーを検出する。
+   C#のコンパイルにもユニットテストにもエディタのPlay Modeにも現れない種類の失敗
+2. **ホストアプリ** — Swift側のコンパイルエラーを検出する
+
+注意点: フレームワークのリンク設定(Embed & Sign / `Data` の Target Membership)を
+Xcodeで手作業する運用のままだと、CIでは `canImport(UnityFramework)` が **false** で
+コンパイルされるため、**フレームワーク有りの分岐は検証されません**。
+リンク設定を `pbxproj` へコミットすればこの穴は塞がります。
+
 ---
 
 関連: このプロジェクト固有のメッセージ契約は [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION.md)、

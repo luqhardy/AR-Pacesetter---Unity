@@ -1,0 +1,139 @@
+# iOS コンパイル/リンク検証 (macOSランナー・署名なし)
+#
+# 目的: 実機を借りずに「ビルドが通るか」だけを毎回確かめる。
+#   実機ビルドで踏んだ失敗のほとんど — Combineの未import・.mmの重複シンボル・
+#   undefined symbol・リンク順 — はコンパイル/リンクの段階で出るため、
+#   証明書も端末も無しに数分で検出できる (CODE_SIGNING_ALLOWED=NO)。
+#
+# 前提: Unityのエクスポート産物は生成物のため git 管理外。
+#   Releaseに上げてある `unity-export-<commit>` の tar.gz を取得して使う。
+#   既定では最新の `unity-export-*` プレリリースを自動で選ぶ。
+#   Unity側のC#を変更したら、新しいエクスポートを上げてから実行すること
+#   (Swiftだけの変更なら既存のエクスポートで足りる)。
+#
+# 注意: リポジトリが公開のため GitHub ホストの macOS ランナーは無料。
+name: iOS build (compile & link)
+
+on:
+  workflow_dispatch:
+    inputs:
+      export_tag:
+        description: "使用するエクスポートのタグ (空なら最新の unity-export-* を自動選択)"
+        required: false
+        default: ""
+  push:
+    branches: [master]
+    paths:
+      - "ios/**"
+      - "Assets/Plugins/iOS/**"
+      - ".github/workflows/ios-build.yml"
+
+jobs:
+  build:
+    name: Compile & link (no signing)
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          echo "--- 利用可能なXcode ---"
+          ls /Applications | grep -i '^Xcode' || true
+          # Deployment Target が iOS 26.0 のため Xcode 26 を優先する。
+          # ランナーイメージに無ければ既定のまま進み、失敗すればログで分かる
+          if [ -d /Applications/Xcode_26.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.app
+          else
+            echo "::warning::Xcode_26 が見つかりません。Deployment Target iOS 26.0 が通らない可能性があります"
+          fi
+          xcodebuild -version
+
+      - name: Resolve export tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.export_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release list --limit 30 \
+                  --json tagName --jq '[.[] | select(.tagName | startswith("unity-export-"))][0].tagName')
+          fi
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "::error::unity-export-* のReleaseが見つかりません。先にエクスポートを公開してください"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "::notice::使用するエクスポート: $TAG (対象コミット: ${GITHUB_SHA:0:8})"
+
+      - name: Download Unity export
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --pattern 'UnityExport.tar.gz' --output /tmp/UnityExport.tar.gz
+          rm -rf ios/UnityExport
+          tar xzf /tmp/UnityExport.tar.gz -C ios/
+
+          # Windowsで固めたアーカイブでは拡張子の無いMach-Oバイナリの実行ビットが落ちる。
+          # 未修復だと process_symbols.sh が usymtool を起動できず
+          # PhaseScriptExecution failed になる (IL2CPPフェーズは自前でchmodするので無関係)
+          chmod +x ios/UnityExport/usymtool ios/UnityExport/usymtoolarm64 ios/UnityExport/*.sh || true
+
+          test -f ios/UnityExport/Unity-iPhone.xcodeproj/project.pbxproj \
+            || { echo "::error::エクスポートの展開に失敗しました"; exit 1; }
+
+      # ── 1. Unity側 ─────────────────────────────────────────────────────────
+      # ネイティブプラグイン(.mm)の重複シンボルやIL2CPPのリンクは
+      # ここでしか検出できない。C#コンパイルにもE2Eにも現れない種類の失敗
+      - name: Build UnityFramework
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ios/UnityExport/Unity-iPhone.xcodeproj \
+            -target UnityFramework \
+            -configuration Debug \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            -derivedDataPath /tmp/dd \
+            2>&1 | tee /tmp/unityframework.log || {
+              echo "── 失敗箇所 ──"
+              grep -E "error:|duplicate symbol|Undefined symbol" /tmp/unityframework.log | head -40
+              exit 1; }
+
+      # ── 2. ホストアプリ ────────────────────────────────────────────────────
+      # SwiftUI側のコンパイルエラー(Combineの未import等)を検出する。
+      #
+      # 既知の限界: UnityFramework のリンク設定 (Embed & Sign / Data の
+      # Target Membership) は Xcode で手作業する運用のため、コミット済みの
+      # pbxproj には入っていない。よってここでは `#if canImport(UnityFramework)`
+      # が false 側でコンパイルされ、**フレームワーク有りの分岐は検証されない**。
+      # (例: _mh_execute_header の不具合はこのジョブでは捕まらなかった)
+      # リンク設定をpbxprojへコミットすれば、この限界は解消できる。
+      - name: Build host app (AR_Runner_UI)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -workspace ios/ARRunner.xcworkspace \
+            -scheme AR_Runner_UI \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            -derivedDataPath /tmp/dd \
+            2>&1 | tee /tmp/hostapp.log || {
+              echo "── 失敗箇所 ──"
+              grep -E "error:|Undefined symbol" /tmp/hostapp.log | head -40
+              exit 1; }
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-logs
+          path: |
+            /tmp/unityframework.log
+            /tmp/hostapp.log
+          retention-days: 7
+          if-no-files-found: ignore
