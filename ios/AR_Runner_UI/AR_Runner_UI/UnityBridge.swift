@@ -100,13 +100,18 @@ final class UnityBridge: NSObject, ObservableObject {
 
     /// Start the AR running session with pace settings.
     /// ghostDateIso を渡すと過去セッションと競走するゴーストモードになる。
-    func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil) {
+    /// - Parameter hideUnityHud: UnityのHUDを隠してSwiftUI側に描かせるか。
+    ///   ARビューがiPhoneに出ている間はSwiftUIのHUDを使う(手に持って正面から見る
+    ///   画面に適した意匠)。グラス出力中はUnityのF-07 HUDが担当する。
+    func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
+                      hideUnityHud: Bool = false) {
         var payload: [String: Any] = [
             "command": "StartSession",
             "targetPaceKmH": targetPaceKmH,
             "distanceKm": distanceKm,
             "avatarHeightCm": 175,
-            "forwardOffsetM": 3.0
+            "forwardOffsetM": 3.0,
+            "hideUnityHud": hideUnityHud
         ]
         if let ghost = ghostDateIso, !ghost.isEmpty {
             payload["mode"] = "ghost"
@@ -313,7 +318,8 @@ final class ARSessionManager: ObservableObject {
     /// 設定ペース(推定距離の算出に使う)
     private var configuredPaceKmH: Double = 0
 
-    func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil) {
+    func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
+               hideUnityHud: Bool = false) {
         isSessionActive = true
         startDate = Date()
         elapsedSeconds = 0
@@ -327,7 +333,8 @@ final class ARSessionManager: ObservableObject {
         LocationTracker.shared.start()
         HeartRateMonitor.shared.start()
 
-        bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm, ghostDateIso: ghostDateIso)
+        bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm,
+                            ghostDateIso: ghostDateIso, hideUnityHud: hideUnityHud)
 
         // 実測が届くたびに送る — 画面ロック中もCoreLocationは動き続けるため、
         // タイマーが止まってもUnityへの供給が途切れない(M3)

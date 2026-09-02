@@ -161,6 +161,10 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(hud.PaceAnchor == new Vector2(1f, 1f), $"hud: pace anchored top-right (got {hud.PaceAnchor})");
         }
 
+        // HUD所有権: hideUnityHud 未送信なら従来どおりUnityが描く(エディタ/E2E)
+        if (hud != null)
+            Check(hud.IsHudVisible, "hud: Unity HUD owns the display when hideUnityHud is not sent");
+
         // 開始カウントダウンのAR表示(音のカウントと同じ0.6秒刻み)
         var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
         Check(countdown != null, "countdown: CountdownDisplay auto-created by bootstrap");
@@ -421,6 +425,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 400mトラックの曲線部(半径36.5m)を1/4周。アバターが先行を維持し、
         // ワープせず、進行方向(接線)に追従して旋回することを検証する。
         yield return StartCoroutine(RunCornerFollowingTest(engine));
+
+        // HUD所有権の切り替え: hideUnityHud=true でUnity側が引っ込むこと
+        if (hud != null)
+        {
+            hud.SetHudVisible(false);
+            yield return null;
+            Check(!hud.IsHudVisible, "hud: Unity HUD hides when SwiftUI owns the display");
+            hud.SetHudVisible(true);
+            yield return null;
+            Check(hud.IsHudVisible, "hud: Unity HUD returns when it owns the display again");
+        }
 
         // ── Step 4: GPS喪失→復帰 FSM ──────────────────────────────────────
         if (stateController != null)

@@ -68,6 +68,7 @@ public class PeripheralHUDManager : MonoBehaviour
     private GameStateController _gameState;
     private PaceHudDisplay.PaceState _currentPaceState = PaceHudDisplay.PaceState.Unknown;
     private bool _peripheralLayoutApplied;
+    private bool _hudHidden;
 
     // HUD自動抑制 (企画書 2. スタビライズ — 横を向いた際は表示を自動抑制)
     private const float GazeSuppressYawRateDegPerSec = 120f; // この角速度を超えたら抑制
@@ -311,6 +312,7 @@ public class PeripheralHUDManager : MonoBehaviour
     private void UpdateSafetyWarning()
     {
         if (textSafetyWarning == null) return;
+        if (_hudHidden) return; // Unity側HUDが非表示のときはSwiftのバナーが担当する
 
         bool gpsLost = false;
         if (_gameState != null)
@@ -365,6 +367,31 @@ public class PeripheralHUDManager : MonoBehaviour
         ApplyOutline(textSafetyWarning); // 明るい路面でも読めるよう黒アウトライン
         go.SetActive(false);
     }
+
+    /// <summary>
+    /// UnityのHUDを丸ごと出すか隠すか。表示面がどちらかで所有者を切り替える:
+    ///   グラス接続中 = UnityのF-07 HUD(周辺視野レイアウトはグラス用に設計されている)
+    ///   iPhone表示中 = SwiftUI側のHUD(手に持って正面から見る画面に適した意匠)
+    /// 二重に描かないための単一所有者スイッチ。既定は表示(エディタ/E2Eは従来どおり)。
+    /// </summary>
+    public void SetHudVisible(bool visible)
+    {
+        _hudHidden = !visible;
+
+        SetReadoutVisible(textTime, visible);
+        SetReadoutVisible(textDistance, visible);
+        SetReadoutVisible(textPace, visible);
+        SetReadoutVisible(textNotificationAlert, visible);
+
+        // 隠すときは警告も一緒に伏せる(Swift側がGPSバナーを出すため二重にならない)
+        if (!visible && textSafetyWarning != null)
+            textSafetyWarning.gameObject.SetActive(false);
+
+        Debug.Log($"[HUD] Unity側HUDを{(visible ? "表示" : "非表示")}に切り替え");
+    }
+
+    /// <summary>E2E/検証用: UnityのHUDが表示されているか。</summary>
+    public bool IsHudVisible => !_hudHidden;
 
     /// <summary>E2E/検証用: F-10の警告が今表示されているか。</summary>
     public bool IsSafetyWarningVisible =>

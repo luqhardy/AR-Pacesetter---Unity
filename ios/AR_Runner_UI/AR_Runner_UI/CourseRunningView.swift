@@ -151,11 +151,11 @@ struct RunningView: View {
         unity.isRunning && unity.unityRootView != nil
     }
 
-    /// SwiftUI側で統計HUDを出すか。
-    /// Unityが実際に描画しているときは統計はUnity側のHUD(F-07)が受け持つため、
-    /// ここで同じ値を重ねるとグラス未接続時に**二重HUD**になる(監査M1)。
-    /// UnityFramework未リンク(シミュレータ/UI単体開発)のときだけSwiftUIが担当する。
-    private var showsSwiftStatsHud: Bool { !hasUnityView }
+    /// SwiftUI側で統計HUDを出すか。**表示面で所有者をひとつに決める**(監査M1):
+    ///   iPhone表示中  = SwiftUI(手に持って正面から見る画面に適した意匠)
+    ///   グラス出力中  = UnityのF-07 HUD(周辺視野レイアウトはグラス用の設計)
+    /// どちらの場合も二重には描かない。Unity側は StartSession の hideUnityHud で切り替える。
+    private var showsSwiftStatsHud: Bool { !external.isGlassesConnected }
 
     /// グラス出力中はiPhoneを「操作面」として扱う。
     /// 走行中は腕・ポケットの端末を読めないので、統計を並べるより
@@ -367,7 +367,9 @@ struct RunningView: View {
                     session.start(
                         paceKmH: RunSettings.shared.paceKmH,
                         distanceKm: RunSettings.shared.distanceKm,
-                        ghostDateIso: RunSettings.shared.ghostDateIso
+                        ghostDateIso: RunSettings.shared.ghostDateIso,
+                        // iPhoneに映している間はSwiftUIがHUDを持つ
+                        hideUnityHud: !ExternalDisplayManager.shared.isGlassesConnected
                     )
                 } else {
                     // §8.3: グラス切断で準備画面へ戻った後の再スタート。

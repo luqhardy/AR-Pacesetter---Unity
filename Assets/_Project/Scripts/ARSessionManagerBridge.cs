@@ -33,6 +33,10 @@ public class ARSessionManagerBridge : MonoBehaviour
         public double gpsLatitude;
         public double gpsLongitude;
         public float gpsAccuracy;
+
+        // 表示面の所有権: true でUnity側HUDを隠しSwiftUIへ譲る。
+        // 未送信(false)なら従来どおりUnityがHUDを描く — エディタ/E2Eは影響を受けない
+        public bool hideUnityHud;
     }
 
     [Header("Engine Links (auto-found if empty)")]
@@ -181,6 +185,10 @@ public class ARSessionManagerBridge : MonoBehaviour
         // Swift側がオンボーディング/設定UIを持つため、Unityのセットアップ画面は閉じる
         if (paceCalibration != null)
             paceCalibration.HideSetupUiForExternalControl();
+
+        // HUDの所有者を確定させる(開始時に決めることで一瞬の二重表示を避ける)
+        if (hudManager != null)
+            hudManager.SetHudVisible(!cmd.hideUnityHud);
 
         if (sessionController != null)
             sessionController.OnRunStarted(showUnityUi: false);
