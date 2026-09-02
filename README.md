@@ -990,6 +990,7 @@ Swift側は`#if canImport(UnityFramework)`の偽実装で動作する点に注�
 - [`AGENTS.md`](AGENTS.md) — エージェント向け技術仕様（数式・FSM・レイテンシ予算）
 - [`Assets/AvatarStateTransitions.md`](Assets/AvatarStateTransitions.md) — Animator状態遷移ガイド
 - [`SWIFT_INTEGRATION.md`](SWIFT_INTEGRATION.md) — Swift UI（AR-runner）連携ガイド
+- [`Docs/UNITY_AS_A_LIBRARY.md`](Docs/UNITY_AS_A_LIBRARY.md) / [`.ja`](Docs/UNITY_AS_A_LIBRARY.ja.md) — **UaaL汎用ガイド（英/日）**: SwiftUIアプリへUnityを組み込む手順と落とし穴
 - [`HANDOVER.md`](HANDOVER.md) — 技術資産引き継ぎドキュメント（企画書要件→実装→検証の対応表・DoD）
 - `Docs/AR-Vision_基本設計書_v2.docx` — 基本設計書（実装実態で全面記載）
 - `Docs/AR-Vision_成果発表_draft.pptx` — 成果発表スライドのドラフト（9枚）

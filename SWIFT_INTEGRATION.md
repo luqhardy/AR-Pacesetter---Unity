@@ -1,5 +1,10 @@
 # Swift UI 連携ガイド (モノレポ構成 / Unity as a Library)
 
+> UaaLそのものの汎用的な手順・落とし穴は
+> [Docs/UNITY_AS_A_LIBRARY.md](Docs/UNITY_AS_A_LIBRARY.md)(English) /
+> [Docs/UNITY_AS_A_LIBRARY.ja.md](Docs/UNITY_AS_A_LIBRARY.ja.md)(日本語)にまとめてある。
+> 本ファイルは**このプロジェクト固有**の構成とメッセージ契約を扱う。
+
 SwiftUIアプリとUnityを**1つのリポジトリ・1つのXcodeアプリ**として管理する。
 SwiftUI側のオリジナルは [kyainna/AR-runner](https://github.com/kyainna/AR-runner)(`ios/AR_Runner_UI/` に取り込み済み)。
 

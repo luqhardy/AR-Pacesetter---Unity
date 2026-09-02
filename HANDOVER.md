@@ -16,6 +16,7 @@
 | [AGENTS.md](AGENTS.md) | 技術仕様の一次情報(数式・GPS FSM・レイテンシ予算 ≤20ms) |
 | [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) | SwiftUI⇄Unity連携(モノレポ構成・メッセージ契約・ビルド手順) |
 | [Docs/BUILD_ON_BORROWED_MAC.md](Docs/BUILD_ON_BORROWED_MAC.md) | 借りたMac+無料Apple IDでの実機ビルド当日手順 |
+| [Docs/UNITY_AS_A_LIBRARY.md](Docs/UNITY_AS_A_LIBRARY.md) / [.ja](Docs/UNITY_AS_A_LIBRARY.ja.md) | **UaaL汎用ガイド**(英/日)。SwiftUIアプリへUnityを組み込む手順と落とし穴 |
 | [Assets/AvatarStateTransitions.md](Assets/AvatarStateTransitions.md) | Animatorパラメータ定義(Speed/IsHalted/Beckon/Goodbye/Nod等) |
 
 ```
