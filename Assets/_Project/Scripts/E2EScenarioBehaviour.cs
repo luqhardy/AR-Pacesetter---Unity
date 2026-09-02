@@ -152,7 +152,20 @@ public class E2EScenarioBehaviour : MonoBehaviour
             // 目標ペースの定数ではなく現在ペース書式であること(F-07 右上)
             Check(!hud.CurrentPaceText.StartsWith("Target"),
                 $"hud: pace shows current pace, not the target constant (got '{hud.CurrentPaceText}')");
+
+            // F-07: 補助表示を伏せ、時間/距離=左上・ペース=右上へ再配置していること
+            Check(hud.VisibleAuxiliaryReadoutCount == 0,
+                $"hud: auxiliary readouts hidden for F-07 centre clearance (visible {hud.VisibleAuxiliaryReadoutCount})");
+            Check(hud.TimeAnchor == new Vector2(0f, 1f), $"hud: time anchored top-left (got {hud.TimeAnchor})");
+            Check(hud.DistanceAnchor == new Vector2(0f, 1f), $"hud: distance anchored top-left (got {hud.DistanceAnchor})");
+            Check(hud.PaceAnchor == new Vector2(1f, 1f), $"hud: pace anchored top-right (got {hud.PaceAnchor})");
         }
+
+        // 開始カウントダウンのAR表示(音のカウントと同じ0.6秒刻み)
+        var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
+        Check(countdown != null, "countdown: CountdownDisplay auto-created by bootstrap");
+        if (countdown != null)
+            Check(countdown.IsShowing, $"countdown: visible right after start (showing '{countdown.CurrentText}')");
 
         var visualsForColor = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
 
@@ -199,6 +212,8 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(syncObserved, "run: live sync rate exceeded 30% during run");
         Check(justColorObserved, "color: pace-sync GREEN (just) while on target pace (§7.1)");
         Check(livePaceObserved, "hud: live pace value rendered during run (not '--')");
+        if (countdown != null)
+            Check(!countdown.IsShowing, "countdown: cleared once the run is underway");
         Check(paceGreenObserved, "hud: pace reads GREEN while holding target pace (F-07)");
 
         // §7.2: 目標ペース維持中はオーラ(5m以上の遅れ表示)を出さないこと

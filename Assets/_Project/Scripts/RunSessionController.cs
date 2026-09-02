@@ -204,6 +204,9 @@ public class RunSessionController : MonoBehaviour
         if (telemetryLogger != null) telemetryLogger.ResetSession();
         var gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
         if (gpsMonitor != null) gpsMonitor.ResetSession();
+        // 再走行でもカウントダウンをやり直す
+        var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
+        if (countdown != null) countdown.ResetSession();
 
         Debug.Log("[SESSION] Reset complete — ready for a new run.");
     }

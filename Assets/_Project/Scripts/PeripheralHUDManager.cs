@@ -17,6 +17,12 @@ public class PeripheralHUDManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI textGrade;              // Real-time run rating (S - D)
     [SerializeField] private TextMeshProUGUI textNotificationAlert;  // Fading overlay alert for splits
 
+    [Header("F-07 周辺視野レイアウト")]
+    [Tooltip("F-07の4ゾーン(左上=時間/距離・右上=現在ペース・中央=完全透過・下部=警告時のみ)へ絞る。" +
+             "補助表示(心拍/ピッチ/シンクロ率/疲労/グレード)を隠し、残る3項目を規定の隅へ再配置する。" +
+             "デバッグで全項目を見たい場合のみインスペクタでOFFにする")]
+    [SerializeField] private bool peripheralModeOnly = true;
+
     [Header("Safety Warning (F-10)")]
     [Tooltip("HUD下部の警告行。未割当なら実行時に生成する(F-07: 下部=警告時のみ)")]
     [SerializeField] private TextMeshProUGUI textSafetyWarning;
@@ -61,6 +67,7 @@ public class PeripheralHUDManager : MonoBehaviour
     private const string GpsSearchingWarning = "GPS信号を探索中：安全のため減速してください";
     private GameStateController _gameState;
     private PaceHudDisplay.PaceState _currentPaceState = PaceHudDisplay.PaceState.Unknown;
+    private bool _peripheralLayoutApplied;
 
     // HUD自動抑制 (企画書 2. スタビライズ — 横を向いた際は表示を自動抑制)
     private const float GazeSuppressYawRateDegPerSec = 120f; // この角速度を超えたら抑制
@@ -103,6 +110,10 @@ public class PeripheralHUDManager : MonoBehaviour
             _sessionBridge = FindFirstObjectByType<ARSessionManagerBridge>(FindObjectsInactive.Include);
         if (_gameState == null)
             _gameState = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
+        // レイアウト確定を先に済ませる。装飾(アウトライン)より前に置くことで、
+        // 装飾側で何かあってもF-07の配置だけは確実に適用される
+        ApplyPeripheralLayout();
+
         if (textSafetyWarning == null)
             BuildSafetyWarningLabel();
 
@@ -335,6 +346,9 @@ public class PeripheralHUDManager : MonoBehaviour
         go.transform.SetParent(canvas.transform, false);
 
         textSafetyWarning = go.AddComponent<TextMeshProUGUI>();
+        // 既存HUDと同じフォントを引き継ぐ(未指定だとマテリアル未解決でアウトラインが効かない)
+        if (textTime != null && textTime.font != null)
+            textSafetyWarning.font = textTime.font;
         textSafetyWarning.fontSize = 22;
         textSafetyWarning.alignment = TextAlignmentOptions.Center;
         textSafetyWarning.color = PaceBehindRed;
@@ -361,6 +375,85 @@ public class PeripheralHUDManager : MonoBehaviour
 
     /// <summary>E2E/検証用: 現在ペースの判定状態(緑=維持 / 赤=遅れ)。</summary>
     public PaceHudDisplay.PaceState CurrentPaceState => _currentPaceState;
+
+    /// <summary>
+    /// F-07 周辺視野レイアウトを適用する。
+    ///
+    /// シーンの配置は設計書と一致していなかった(時間=右上・距離=左下・ペース=右下、
+    /// さらに補助表示5件が右下に積まれ、通知が Text_Pitch と同座標で重なっていた)。
+    /// 走行中に視線を這わせずに読めることが F-07 の目的なので、
+    /// 補助表示を伏せ、残る3項目を規定のゾーンへ再配置する。
+    ///
+    /// シーンを書き換えず実行時に行うため、OFFにすれば元の配置に戻る。
+    /// </summary>
+    private void ApplyPeripheralLayout()
+    {
+        if (!peripheralModeOnly || _peripheralLayoutApplied) return;
+        _peripheralLayoutApplied = true;
+
+        // 中央を空けるため補助表示を伏せる。値の算出自体は継続する
+        // (アバターのバイタル警告やリザルト集計はこれらの数値に依存しているため)
+        SetReadoutVisible(textHeartRate, false);
+        SetReadoutVisible(textPitch, false);
+        SetReadoutVisible(textSyncRate, false);
+        SetReadoutVisible(textFatigueIndex, false);
+        SetReadoutVisible(textGrade, false);
+
+        // 左上: 時間・距離 / 右上: 現在ペース
+        AnchorTo(textTime,     new Vector2(0f, 1f), new Vector2(100f, -100f), TextAlignmentOptions.TopLeft);
+        AnchorTo(textDistance, new Vector2(0f, 1f), new Vector2(100f, -170f), TextAlignmentOptions.TopLeft);
+        AnchorTo(textPace,     new Vector2(1f, 1f), new Vector2(-100f, -100f), TextAlignmentOptions.TopRight);
+
+        // スプリット通知は上部中央へ退避(元は右下で Text_Pitch と重なっていた)。
+        // 下部は F-10 の警告専用ゾーンなので使わない
+        AnchorTo(textNotificationAlert, new Vector2(0.5f, 1f), new Vector2(0f, -260f),
+                 TextAlignmentOptions.Center);
+
+        Debug.Log("[HUD] F-07 周辺視野レイアウトを適用: 補助表示5件を非表示、時間/距離=左上・ペース=右上へ再配置");
+    }
+
+    private static void SetReadoutVisible(TextMeshProUGUI text, bool visible)
+    {
+        if (text == null) return;
+        if (text.gameObject.activeSelf != visible)
+            text.gameObject.SetActive(visible);
+    }
+
+    private static void AnchorTo(TextMeshProUGUI text, Vector2 anchor, Vector2 offset,
+                                 TextAlignmentOptions alignment)
+    {
+        if (text == null) return;
+
+        RectTransform rt = text.rectTransform;
+        rt.anchorMin = anchor;
+        rt.anchorMax = anchor;
+        rt.pivot = anchor;
+        rt.anchoredPosition = offset;
+        rt.sizeDelta = new Vector2(560f, 64f);
+
+        text.alignment = alignment;
+        text.enableWordWrapping = false;
+    }
+
+    /// <summary>E2E/検証用: 表示中の補助readout数(F-07適用時は0であること)。</summary>
+    public int VisibleAuxiliaryReadoutCount
+    {
+        get
+        {
+            int n = 0;
+            if (textHeartRate != null && textHeartRate.gameObject.activeSelf) n++;
+            if (textPitch != null && textPitch.gameObject.activeSelf) n++;
+            if (textSyncRate != null && textSyncRate.gameObject.activeSelf) n++;
+            if (textFatigueIndex != null && textFatigueIndex.gameObject.activeSelf) n++;
+            if (textGrade != null && textGrade.gameObject.activeSelf) n++;
+            return n;
+        }
+    }
+
+    /// <summary>E2E/検証用: 各要素のアンカー((0,1)=左上 / (1,1)=右上)。</summary>
+    public Vector2 TimeAnchor => textTime != null ? textTime.rectTransform.anchorMin : Vector2.zero;
+    public Vector2 DistanceAnchor => textDistance != null ? textDistance.rectTransform.anchorMin : Vector2.zero;
+    public Vector2 PaceAnchor => textPace != null ? textPace.rectTransform.anchorMin : Vector2.zero;
 
     private void ApplyHudAlpha(float alpha)
     {
@@ -436,9 +529,22 @@ public class PeripheralHUDManager : MonoBehaviour
     private static void ApplyOutline(TextMeshProUGUI text)
     {
         if (text == null) return;
-        // fontMaterialへのアクセスでインスタンス化されるため共有マテリアルは汚さない
-        text.outlineColor = new Color32(0, 0, 0, 255);
-        text.outlineWidth = 0.15f; // TMPのSDF基準で約1px相当
+
+        // アウトラインは装飾であり、これが原因で初期化を止めてはならない。
+        // 実行時生成直後のTextMeshProUGUIでは TMP 内部の SetOutlineThickness が
+        // NullReferenceException を投げることがあり(マテリアルインスタンスが
+        // まだ生成されていない)、実際に Start() が中断して F-07レイアウト適用と
+        // visualsEngine の自動解決が丸ごと飛んでいた。
+        try
+        {
+            // fontMaterialへのアクセスでインスタンス化されるため共有マテリアルは汚さない
+            text.outlineColor = new Color32(0, 0, 0, 255);
+            text.outlineWidth = 0.15f; // TMPのSDF基準で約1px相当
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[HUD] アウトライン適用をスキップ ({text.name}): {e.GetType().Name}");
+        }
     }
 
     // --- THE BLE INPUT GATEWAYS ---
