@@ -54,6 +54,13 @@ public class GroundSnap : MonoBehaviour
     private float _lerpTimer = 0f;
     private float _startY = 0f;
     
+    /// <summary>これ以上「上向き」の面のみ地面として採用する(cos45°≒0.7)。
+    /// 壁・天井を床と誤認するとアバターが壁の高さへ跳ね上がり視界から消える。</summary>
+    private const float GroundNormalMinDot = 0.7f;
+
+    /// <summary>これ以下の「上向き成分」なら壁とみなす。床や緩斜面を障害物にしない。</summary>
+    private const float WallNormalMaxDot = 0.5f;
+
     private static RaycastHit[] s_RaycastHits = new RaycastHit[32];
     private static RaycastHit[] s_SphereCastHits = new RaycastHit[32];
 
@@ -124,6 +131,12 @@ public class GroundSnap : MonoBehaviour
             else
             {
                 Debug.Log("[CLIFF EXCEPTION] Path is now clear. Avatar resuming forward pace.");
+
+                // 停止中はペーシングのアンカーが更新されないため、解除時に現在位置で
+                // 取り直す。これが無いと停止中に置き去りにされたアバターが古い
+                // アンカーから復帰し、視界に戻るまでが遅い(あるいはワープする)
+                if (avatarEngine != null && userCamera != null)
+                    avatarEngine.ResyncPacingAnchor(transform.position, userCamera.position);
             }
         }
     }
@@ -275,7 +288,12 @@ public class GroundSnap : MonoBehaviour
             
             // Fix: Ignore the user camera's root as well to prevent snapping to the player's head/body
             if (userCamera != null && h.transform.root == userCamera.root) continue;
-            
+
+            // 壁・天井を床と誤認しない。ARKitは垂直平面もコライダー付きで生成するため、
+            // 面の向きを見ないと壁の上端を「最も高い地面」として拾ってしまい、
+            // アバターが壁の高さへ跳ね上がって視界から消える
+            if (Vector3.Dot(h.normal, Vector3.up) < GroundNormalMinDot) continue;
+
             if (h.point.y > highestGround)
             {
                 highestGround = h.point.y;
@@ -301,6 +319,9 @@ public class GroundSnap : MonoBehaviour
                 highestGround = -1000f;
                 foreach (var hit in s_Hits)
                 {
+                    // 垂直平面(壁)は地面にしない
+                    if (Vector3.Dot(hit.pose.up, Vector3.up) < GroundNormalMinDot) continue;
+
                     if (hit.pose.position.y > highestGround)
                     {
                         highestGround = hit.pose.position.y;
@@ -344,7 +365,14 @@ public class GroundSnap : MonoBehaviour
         {
             var h = s_SphereCastHits[i];
             if (h.transform.root == transform.root) continue;
-            
+
+            // 開始位置がコライダー内部だと normal が零ベクトルで返り、壁と誤判定される
+            if (h.distance <= 0.0001f) continue;
+
+            // ほぼ垂直な面(=進路を塞ぐ壁)のみを障害物とみなす。
+            // 床や緩斜面のコライダーを「高さ1.5m以上」だけで障害物にしない
+            if (Mathf.Abs(Vector3.Dot(h.normal, Vector3.up)) > WallNormalMaxDot) continue;
+
             // Verify if the height of the obstruction qualifies as a solid cliff or wall (>= 1.5m)
             if (h.collider != null)
             {
@@ -393,13 +421,11 @@ public class GroundSnap : MonoBehaviour
         }
         else
         {
-            // If we cast down 10 meters and find no ground, check if there is ground under the user.
-            // If there is ground under the user, then missing ground ahead is a real cliff/void.
-            // If there is no ground under the user either, we are in a colliderless scene, so do not halt.
-            if (groundUnderUser)
-            {
-                return true;
-            }
+            // 前方に地面が「見つからない」ことは断崖の証拠にならない。
+            // ARKitの平面検出はまばらで、平坦な床でも3m先が未検出のことが普通にある。
+            // ここで停止させていたため屋内では未検出域のたびにアバターが足踏みを始め、
+            // ユーザーが追い越して視界から消えていた(=「壁でアバターが消える」の実体)。
+            // 断崖は**実測された落差**でのみ判定する(上の foundGroundAhead 分岐)。
         }
 
         return false;

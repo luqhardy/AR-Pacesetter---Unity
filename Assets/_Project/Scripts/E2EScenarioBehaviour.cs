@@ -353,10 +353,30 @@ public class E2EScenarioBehaviour : MonoBehaviour
             yield return WaitScaled(0.4f);
             Check(engine.IsHalted, "obstacle: avatar halts at simulated wall");
 
+            // 停止中にユーザーが追い越す状況を作る(実機で「アバターが消えた」ケース)
+            _cameraMover.position += _cameraMover.forward * 4.0f;
+            yield return WaitScaled(0.3f);
+
             groundSnap.SimulateObstacle = false;
             yield return WaitScaled(0.4f);
             Check(!engine.IsHalted, "obstacle: avatar resumes when path clears");
+
+            // 解除後、置き去りにされたアバターが前方の定位置へ戻ってくること。
+            // アンカーを取り直していないと古い位置から復帰するため視界に戻らない
+            yield return WaitScaled(2.0f);
+            Vector3 toAvatar = engine.transform.position - _cameraMover.position;
+            toAvatar.y = 0f;
+            float leadAfterClear = toAvatar.magnitude;
+            bool inFront = Vector3.Dot(toAvatar.normalized, _cameraMover.forward) > 0f;
+            Check(inFront && leadAfterClear < 6.0f,
+                $"obstacle: avatar returns in front after the wall clears (lead {leadAfterClear:F1}m, inFront={inFront})");
         }
+
+        // 地面判定は上向きの面のみを採用する(壁を床と誤認するとアバターが跳ね上がる)。
+        // エディタのシーンには実測フロアが無いため、暫定床が維持されることで代替検証する
+        if (groundSnap != null)
+            Check(!groundSnap.HasMeasuredFloor,
+                "ground: no wall/ceiling was mistaken for a measured floor");
 
         // ── Step 3d: ルート逸脱 → サイレント復帰 ─────────────────────────────
         var recoverer = FindFirstObjectByType<SilentRouteRecoverer>(FindObjectsInactive.Include);
