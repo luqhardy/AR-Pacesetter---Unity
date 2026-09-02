@@ -402,6 +402,41 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(!groundSnap.HasMeasuredFloor,
                 "ground: no wall/ceiling was mistaken for a measured floor");
 
+        // LiDARの検出範囲外へ出ても床を保持し続けること。
+        // (実機ではPlaneWithinInfinityで平面を延長し、それも無ければ確定床を保持する)
+        //
+        // 注意: ここでカメラを一瞬でテレポートさせると、アンカー補間が追随できず
+        // 後続シナリオの初期状態まで壊す。実走と同じく**連続的に**前進させる
+        if (groundSnap != null && _cameraMover != null)
+        {
+            float floorBeforeWalk = groundSnap.ResolvedFloorY;
+            bool floorHeld = true;
+            float walked = 0f;
+
+            while (walked < 6.0f)
+            {
+                float step = RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f);
+                _cameraMover.position += _cameraMover.forward * step;
+                walked += step;
+
+                if (Mathf.Abs(groundSnap.ResolvedFloorY - floorBeforeWalk) > 0.01f)
+                    floorHeld = false;
+
+                yield return null;
+            }
+
+            Check(floorHeld,
+                $"ground: floor holds while walking beyond any detected surface " +
+                $"({floorBeforeWalk:F2} → {groundSnap.ResolvedFloorY:F2})");
+
+            // 前進を止めてアバターが定位置へ戻るのを待つ
+            yield return WaitScaled(1.5f);
+            Vector3 lead = engine.transform.position - _cameraMover.position;
+            lead.y = 0f;
+            Check(lead.magnitude < 6.0f,
+                $"ground: avatar still tracking after leaving the mapped area (lead {lead.magnitude:F1}m)");
+        }
+
         // ── Step 3d: ルート逸脱 → サイレント復帰 ─────────────────────────────
         var recoverer = FindFirstObjectByType<SilentRouteRecoverer>(FindObjectsInactive.Include);
         var safetyLogger = FindFirstObjectByType<SafetyEventLogger>(FindObjectsInactive.Include);

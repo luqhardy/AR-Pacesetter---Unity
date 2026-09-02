@@ -28,6 +28,14 @@ public class GroundSnap : MonoBehaviour
              "エディタ/E2Eのシーンには実測フロアが存在しないため既定OFF。実機で有効化を検討")]
     [SerializeField] private bool hideUntilMeasuredFloor = false;
 
+    [Tooltip("検出済み平面を無限に延長して拾うとき、確定済みの床からこの高さ以内なら" +
+             "「同じ床の続き」として採用する(m)。机など別の高さの面を誤って床にしないための上限")]
+    [SerializeField] private float extendedFloorToleranceMeters = 0.5f;
+
+    [Tooltip("前方の壁・断崖でアバターを足踏み停止させる(基本設計書 §4.2)。" +
+             "陸上トラックのように壁が単なる背景の環境ではOFFにすると素直に走り続ける")]
+    [SerializeField] private bool haltOnObstacles = true;
+
     // 床面高さの確定・保持(純ロジック)。実測が途切れてもカメラに追従させないための要
     private readonly GroundFloorTracker _floor = new GroundFloorTracker();
     private bool _renderersSuppressed = false;
@@ -338,6 +346,45 @@ public class GroundSnap : MonoBehaviour
                     return true;
                 }
             }
+
+            // Fallback 2: 検出済み平面を「無限に延長」して拾う。
+            //
+            // LiDAR/平面検出は歩いた範囲しか地面を作らないため、検出済み領域から
+            // 出た瞬間に実測が途切れる。PlaneWithinInfinity は検出済み平面を
+            // 境界の外まで延長して判定してくれる = ソフト的に床を伸ばす。
+            //
+            // 注意: ここで「最も高い面」を採ると、机などの平面が無限に延長されて
+            // フロア全体が机の高さになってしまう。**確定済みの床に最も近い候補**を選び、
+            // 許容差を超える面は「床の続き」ではないとみなして採用しない。
+            if (_arRaycastManager.Raycast(ray, s_Hits, TrackableType.PlaneWithinInfinity))
+            {
+                bool got = false;
+                float bestY = 0f;
+                float bestDelta = float.MaxValue;
+
+                foreach (var hit in s_Hits)
+                {
+                    if (Vector3.Dot(hit.pose.up, Vector3.up) < GroundNormalMinDot) continue;
+
+                    float y = hit.pose.position.y;
+                    // 床が確定していれば「それに近い面」、未確定なら「低い面」を優先する
+                    float delta = _floor.HasFloor ? Mathf.Abs(y - _floor.FloorY) : -y;
+
+                    if (!got || delta < bestDelta)
+                    {
+                        bestDelta = delta;
+                        bestY = y;
+                        got = true;
+                    }
+                }
+
+                if (got && (!_floor.HasFloor || bestDelta <= extendedFloorToleranceMeters))
+                {
+                    groundY = bestY;
+                    normal = Vector3.up;
+                    return true;
+                }
+            }
         }
 
         // 実測なし — 確定済みの床の保持は GroundFloorTracker が担当する
@@ -351,6 +398,10 @@ public class GroundSnap : MonoBehaviour
         {
             return true;
         }
+
+        // トラック走行では周囲の壁は単なる背景で、そこで伴走者が止まる必要はない。
+        // OFFにすると前方の壁・断崖による足踏み停止を行わない(接地判定には影響しない)
+        if (!haltOnObstacles) return false;
 
         if (userCamera == null) return false;
 
