@@ -58,6 +58,21 @@ public class ARSessionManagerBridge : MonoBehaviour
 
     // 目標距離ゴール判定 (StartSessionのdistanceKm)
     private double _goalDistanceMeters = 0;
+
+    // 実測ペース(Swift/CoreLocation)。F-07の「現在ペース」表示に使う。
+    // 距離と同じく、途絶えたら古い値を使い続けないよう鮮度で失効させる
+    private float _swiftReportedPaceKmH;
+    private float _swiftPaceReceivedTime = -999f;
+    private const float MeasuredPaceFreshnessSeconds = 5f;
+
+    /// <summary>
+    /// Swiftから供給された実測ペース(km/h)。未受信または鮮度切れなら0。
+    /// 0のときUnity側は自前のカメラ移動量から算出したペースへフォールバックする。
+    /// </summary>
+    public float MeasuredPaceKmH =>
+        (Time.time - _swiftPaceReceivedTime) <= MeasuredPaceFreshnessSeconds
+            ? _swiftReportedPaceKmH
+            : 0f;
     private double _swiftReportedDistanceMeters = 0;
     private bool _goalReached = false;
 
@@ -186,6 +201,13 @@ public class ARSessionManagerBridge : MonoBehaviour
         // gpsAccuracy > 0 のときのみ有効サンプルとして扱う
         if (gpsMonitor != null && cmd.gpsAccuracy > 0f)
             gpsMonitor.ReportGpsUpdate(cmd.gpsLatitude, cmd.gpsLongitude, cmd.gpsAccuracy);
+
+        // 実測ペース(F-07 現在ペース表示用)。0以下は無効サンプルとして無視する
+        if (cmd.paceKmH > 0)
+        {
+            _swiftReportedPaceKmH = (float)cmd.paceKmH;
+            _swiftPaceReceivedTime = Time.time;
+        }
 
         // 心拍はBLE受信と同じ入口に流す(アバター発光/HUD/バイタル警告が連動)
         if (heartRateReceiver != null && cmd.heartRate > 0)

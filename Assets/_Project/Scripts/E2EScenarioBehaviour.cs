@@ -141,12 +141,27 @@ public class E2EScenarioBehaviour : MonoBehaviour
             "telemetry: IMU source falls back to approximation in editor (device/external on hardware)");
         string telemetryPath = telemetry != null ? telemetry.CurrentFilePath : null;
 
+        // ── F-07 現在ペース表示 / F-10 安全警告 ────────────────────────────
+        var hud = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
+        Check(hud != null, "hud: PeripheralHUDManager present");
+        if (hud != null)
+        {
+            // 走行前・平常時は下部の警告ゾーンが空であること(F-07: 下部=警告時のみ)
+            Check(!hud.IsSafetyWarningVisible, "hud: no safety warning while GPS is healthy (F-07 bottom zone clear)");
+
+            // 目標ペースの定数ではなく現在ペース書式であること(F-07 右上)
+            Check(!hud.CurrentPaceText.StartsWith("Target"),
+                $"hud: pace shows current pace, not the target constant (got '{hud.CurrentPaceText}')");
+        }
+
         var visualsForColor = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
 
         // ── Step 2: 走行シミュレーション(カメラを前進させる) ────────────────
         float elapsed = 0f;
         bool syncObserved = false;
         bool justColorObserved = false;
+        bool livePaceObserved = false;   // F-07: 実際の数値が出ること
+        bool paceGreenObserved = false;  // F-07: 目標を保っている間は緑
         Vector3 runDirection = Vector3.forward;
         while (!engine.IsSessionEnded && elapsed < StepTimeoutSeconds)
         {
@@ -161,6 +176,16 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 && visualsForColor.PaceColorState == "Just")
                 justColorObserved = true;
 
+            // F-07 右上: 走行中は "--" ではなく実ペースが出て、目標維持中は緑であること
+            if (hud != null && elapsed > 4f)
+            {
+                if (!livePaceObserved && !hud.CurrentPaceText.StartsWith("--"))
+                    livePaceObserved = true;
+                if (!paceGreenObserved
+                    && hud.CurrentPaceState == PaceHudDisplay.PaceState.Maintaining)
+                    paceGreenObserved = true;
+            }
+
             // 途中でSwiftメトリクスも1回注入(実機経路の確認)
             if (!_metricsSent && elapsed > 3f)
             {
@@ -173,6 +198,8 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(engine.IsSessionEnded, "goal: session auto-finished by goal distance");
         Check(syncObserved, "run: live sync rate exceeded 30% during run");
         Check(justColorObserved, "color: pace-sync GREEN (just) while on target pace (§7.1)");
+        Check(livePaceObserved, "hud: live pace value rendered during run (not '--')");
+        Check(paceGreenObserved, "hud: pace reads GREEN while holding target pace (F-07)");
 
         // §7.2: 目標ペース維持中はオーラ(5m以上の遅れ表示)を出さないこと
         var aura = FindFirstObjectByType<AvatarAuraEffect>(FindObjectsInactive.Include);
@@ -385,6 +412,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
         {
             stateController.TransitionToState(GameStateController.ARVisionState.InertialMovement);
             yield return WaitScaled(0.5f);
+
+            // F-10: ロスト中はHUD下部に赤字の減速警告が出ること。
+            // 実機で「アバターが理由も分からず消える」状態だったのを塞ぐ回帰テスト
+            if (hud != null)
+                Check(hud.IsSafetyWarningVisible,
+                    "hud: safety warning shown while GPS is lost (F-10)");
+
             stateController.TransitionToState(GameStateController.ARVisionState.Reaccumulation);
             // 注意: Reaccumulation遷移は精度を99にリセットする(要再確認ゲート)ため、
             // 遷移後に精度を設定する(実機ではCoreLocationの精度更新に相当)
@@ -393,6 +427,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
             yield return WaitScaled(3.0f); // 1.5s粒子演出 + 精度ゲート + 頷き
             Check(stateController.currentState == GameStateController.ARVisionState.Normal,
                 "gps: recovered to Normal after reaccumulation");
+
+            // 復帰したら警告は消えること(下部ゾーンを空へ戻す)
+            yield return null;
+            if (hud != null)
+                Check(!hud.IsSafetyWarningVisible,
+                    "hud: safety warning cleared after GPS recovery (F-10)");
         }
 
         // ── Step 4b: GPSロスト自動判定 (F-09 / 基本設計書§8.1) ────────────────
@@ -461,7 +501,6 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(SessionDataStore.LoadAllSessions().Count > 0, "history: at least one session persisted");
 
         // ── Step 6: HUD自動抑制 (首振り検知で四隅表示をフェード) ──────────────
-        var hud = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
         if (hud != null)
         {
             bool sawSuppressed = false;

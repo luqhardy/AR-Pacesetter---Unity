@@ -17,6 +17,10 @@ public class PeripheralHUDManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI textGrade;              // Real-time run rating (S - D)
     [SerializeField] private TextMeshProUGUI textNotificationAlert;  // Fading overlay alert for splits
 
+    [Header("Safety Warning (F-10)")]
+    [Tooltip("HUD下部の警告行。未割当なら実行時に生成する(F-07: 下部=警告時のみ)")]
+    [SerializeField] private TextMeshProUGUI textSafetyWarning;
+
     [Header("Engine Links")]
     [SerializeField] private Transform userCamera;       // XR Origin Main Camera
     [SerializeField] private AvatarEngine avatarEngine;   // For fetching target speed
@@ -41,6 +45,22 @@ public class PeripheralHUDManager : MonoBehaviour
 
     // Editor: V key spikes HR to test the vital-warning (deep blue) state
     private float _hrSpikeUntil = -1f;
+
+    // F-07 現在ペース: 実測(Swift)が無い環境では自前の移動量から算出する。
+    // 生の瞬間速度は歩幅ごとに跳ねるため時定数3秒で平滑化する
+    private float _smoothedSpeedMps;
+    private const float SpeedSmoothingTauSeconds = 3.0f;
+    private ARSessionManagerBridge _sessionBridge;
+
+    // F-07/F-10 ペース色と警告色
+    private static readonly Color PaceMaintainingGreen = new Color(0.30f, 0.92f, 0.45f);
+    private static readonly Color PaceBehindRed        = new Color(1.00f, 0.36f, 0.30f);
+    private static readonly Color PaceUnknownNeutral   = new Color(0.85f, 0.87f, 0.88f);
+
+    // F-10: ロスト継続時にHUD下部へ出す赤字警告(設計書の文言そのまま)
+    private const string GpsSearchingWarning = "GPS信号を探索中：安全のため減速してください";
+    private GameStateController _gameState;
+    private PaceHudDisplay.PaceState _currentPaceState = PaceHudDisplay.PaceState.Unknown;
 
     // HUD自動抑制 (企画書 2. スタビライズ — 横を向いた際は表示を自動抑制)
     private const float GazeSuppressYawRateDegPerSec = 120f; // この角速度を超えたら抑制
@@ -78,6 +98,13 @@ public class PeripheralHUDManager : MonoBehaviour
         {
             _lastUserPosition = userCamera.position;
         }
+
+        if (_sessionBridge == null)
+            _sessionBridge = FindFirstObjectByType<ARSessionManagerBridge>(FindObjectsInactive.Include);
+        if (_gameState == null)
+            _gameState = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
+        if (textSafetyWarning == null)
+            BuildSafetyWarningLabel();
 
         if (visualsEngine == null)
         {
@@ -159,6 +186,14 @@ public class PeripheralHUDManager : MonoBehaviour
             }
         }
         
+        // F-07 現在ペース用の速度平滑化。停止時も減衰するよう毎フレーム更新する
+        {
+            float dt = Mathf.Max(Time.deltaTime, 0.0001f);
+            float instantSpeed = frameMovementDistance / dt;
+            float k = 1f - Mathf.Exp(-dt / SpeedSmoothingTauSeconds);
+            _smoothedSpeedMps += (instantSpeed - _smoothedSpeedMps) * k;
+        }
+
         // Always update tracking position to prevent accumulation of ignored deltas or jumps
         _lastUserPosition = userCamera.position;
 
@@ -168,14 +203,32 @@ public class PeripheralHUDManager : MonoBehaviour
             textDistance.text = string.Format("{0:F2} km", totalKm);
         }
 
-        // 3. Dynamic Performance Pace Formatting
+        // 3. F-07 右上=現在ペース(遅れ=赤 / 維持=緑)
+        //    従来は目標ペース(定数)を出しており走行中のフィードバックになっていなかった。
+        //    実測(Swift/CoreLocation)を優先し、無ければ自前の平滑化速度から算出する。
         if (textPace != null && avatarEngine != null)
         {
-            float targetPace = avatarEngine.TargetPaceMinutesPerKm;
-            int paceMin = Mathf.FloorToInt(targetPace);
-            int paceSec = Mathf.FloorToInt((targetPace - paceMin) * 60f);
-            textPace.text = string.Format("Target {0}:{1:00}/km", paceMin, paceSec);
+            float measuredKmh = _sessionBridge != null ? _sessionBridge.MeasuredPaceKmH : 0f;
+            float currentPace = measuredKmh > 0f
+                ? PaceHudDisplay.KmhToPaceMinutesPerKm(measuredKmh)
+                : PaceHudDisplay.SpeedToPaceMinutesPerKm(_smoothedSpeedMps);
+
+            textPace.text = PaceHudDisplay.Format(currentPace);
+
+            PaceHudDisplay.PaceState state = PaceHudDisplay.Evaluate(
+                currentPace, avatarEngine.TargetPaceMinutesPerKm,
+                PaceHudDisplay.DefaultBehindTolerance);
+            _currentPaceState = state;
+
+            Color paceColor = state == PaceHudDisplay.PaceState.Behind ? PaceBehindRed
+                            : state == PaceHudDisplay.PaceState.Maintaining ? PaceMaintainingGreen
+                            : PaceUnknownNeutral;
+
+            // 首振り抑制のアルファを潰さないよう、色だけ差し替える
+            textPace.color = new Color(paceColor.r, paceColor.g, paceColor.b, textPace.color.a);
         }
+
+        UpdateSafetyWarning();
 
         // 4. Update HUD Fields dynamically from Analytics (Requirement 4.3)
         if (analytics != null)
@@ -238,6 +291,76 @@ public class PeripheralHUDManager : MonoBehaviour
 
         ApplyHudAlpha(_hudVisibility);
     }
+
+    /// <summary>
+    /// F-10: GPSロスト中はHUD下部に赤字警告を出す。設計書が「下部=警告時のみ」と
+    /// 定めるゾーンで、平常時は完全に空にしておく。
+    /// フェード完了(Standby)まで出し続け、通常追従へ復帰したら消す。
+    /// </summary>
+    private void UpdateSafetyWarning()
+    {
+        if (textSafetyWarning == null) return;
+
+        bool gpsLost = false;
+        if (_gameState != null)
+        {
+            var st = _gameState.currentState;
+            gpsLost = st == GameStateController.ARVisionState.InertialMovement
+                   || st == GameStateController.ARVisionState.FadeOut
+                   || st == GameStateController.ARVisionState.Standby;
+        }
+
+        // 走行中のみ。準備画面・終了後に警告を残さない
+        bool running = avatarEngine != null && avatarEngine.HasStarted && !avatarEngine.IsSessionEnded;
+        bool show = gpsLost && running;
+
+        if (textSafetyWarning.gameObject.activeSelf != show)
+            textSafetyWarning.gameObject.SetActive(show);
+
+        if (show)
+            textSafetyWarning.text = GpsSearchingWarning;
+    }
+
+    /// <summary>
+    /// F-10の警告行をHUD下部へ実行時生成する(シーン配線不要)。
+    /// 首振り抑制のフェードにもバッテリー点滅の色変更にも巻き込まないため、
+    /// ApplyHudAlpha / ApplyHudTextColor の対象からは意図的に外している。
+    /// </summary>
+    private void BuildSafetyWarningLabel()
+    {
+        Canvas canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
+        if (canvas == null) return;
+
+        GameObject go = new GameObject("SafetyWarning", typeof(RectTransform), typeof(CanvasRenderer));
+        go.transform.SetParent(canvas.transform, false);
+
+        textSafetyWarning = go.AddComponent<TextMeshProUGUI>();
+        textSafetyWarning.fontSize = 22;
+        textSafetyWarning.alignment = TextAlignmentOptions.Center;
+        textSafetyWarning.color = PaceBehindRed;
+        textSafetyWarning.raycastTarget = false;
+        textSafetyWarning.enableWordWrapping = false;
+
+        RectTransform rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0f);
+        rt.anchorMax = new Vector2(0.5f, 0f);
+        rt.pivot = new Vector2(0.5f, 0f);
+        rt.anchoredPosition = new Vector2(0f, 64f);
+        rt.sizeDelta = new Vector2(900f, 44f);
+
+        ApplyOutline(textSafetyWarning); // 明るい路面でも読めるよう黒アウトライン
+        go.SetActive(false);
+    }
+
+    /// <summary>E2E/検証用: F-10の警告が今表示されているか。</summary>
+    public bool IsSafetyWarningVisible =>
+        textSafetyWarning != null && textSafetyWarning.gameObject.activeSelf;
+
+    /// <summary>E2E/検証用: 現在ペース表示の文字列。</summary>
+    public string CurrentPaceText => textPace != null ? textPace.text : string.Empty;
+
+    /// <summary>E2E/検証用: 現在ペースの判定状態(緑=維持 / 赤=遅れ)。</summary>
+    public PaceHudDisplay.PaceState CurrentPaceState => _currentPaceState;
 
     private void ApplyHudAlpha(float alpha)
     {
