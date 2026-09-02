@@ -53,12 +53,19 @@ public class DeviceManagerBridge : MonoBehaviour
                 if (readyCheck != null)
                     readyCheck.SetDeviceState("glass", ReadyCheckController.DeviceState.Connected);
                 IsGlassDisconnected = false;
+
+                // 光学シースルーのグラスへ出す間はカメラ映像を描かない。
+                // 現実の上に「現実の動画」を重ねると二重像になり全体が濁るため
+                SetPassthrough(false);
+
                 // §8.3: 再接続でも即座にアバターを出現させない。Swiftが準備画面へ戻り、
                 // ユーザー操作後に ResumeSession/StartSession が来てから復帰する
                 Debug.Log("[SWIFT BRIDGE] ConnectXREAL — glass Connected (アバター復帰は再スタート操作を待つ)。");
                 break;
 
             case "DisconnectXREAL":
+                // iPhone表示へ戻るのでカメラ映像を復帰させる(ビデオシースルー)
+                SetPassthrough(true);
                 HandleGlassDisconnected();
                 break;
 
@@ -66,6 +73,14 @@ public class DeviceManagerBridge : MonoBehaviour
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown device command: {cmd.command}");
                 break;
         }
+    }
+
+    /// <summary>パススルー表示の切り替え(コントローラ未配置でも落ちない)。</summary>
+    private void SetPassthrough(bool enabled)
+    {
+        var passthrough = FindFirstObjectByType<ARPassthroughController>(FindObjectsInactive.Include);
+        if (passthrough != null)
+            passthrough.SetPassthroughEnabled(enabled);
     }
 
     /// <summary>

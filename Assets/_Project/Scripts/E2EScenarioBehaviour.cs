@@ -165,6 +165,30 @@ public class E2EScenarioBehaviour : MonoBehaviour
         if (hud != null)
             Check(hud.IsHudVisible, "hud: Unity HUD owns the display when hideUnityHud is not sent");
 
+        // 光学シースルー対応: グラス接続でカメラ映像を切り、切断で戻すこと
+        var passthrough = FindFirstObjectByType<ARPassthroughController>(FindObjectsInactive.Include);
+        var deviceBridge = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
+        Check(passthrough != null, "passthrough: ARPassthroughController auto-created by bootstrap");
+        if (passthrough != null && deviceBridge != null)
+        {
+            Check(passthrough.IsPassthroughEnabled, "passthrough: camera feed shown on the phone by default");
+
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");
+            yield return null;
+            Check(!passthrough.IsPassthroughEnabled,
+                "passthrough: camera feed off while output goes to see-through glasses");
+
+            deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
+            yield return null;
+            Check(passthrough.IsPassthroughEnabled,
+                "passthrough: camera feed restored when back on the phone");
+
+            // 切断はスタンバイへ遷移させるため、後続シナリオのために通常へ戻す
+            if (stateController != null)
+                stateController.TransitionToState(GameStateController.ARVisionState.Normal);
+            yield return null;
+        }
+
         // 開始カウントダウンのAR表示(音のカウントと同じ0.6秒刻み)
         var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
         Check(countdown != null, "countdown: CountdownDisplay auto-created by bootstrap");
@@ -520,7 +544,6 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // ── Step 4c: ARグラス切断→再スタート (§8.3) ──────────────────────────
         // 切断でスタンバイ(アバター消去)へ移行しつつCSVログは継続、
         // 準備画面からの再スタート(ResumeSession)で通常追従へ復帰する
-        var deviceBridge = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
         if (deviceBridge != null && stateController != null && !engine.IsSessionEnded)
         {
             var telemetryForGlass = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);

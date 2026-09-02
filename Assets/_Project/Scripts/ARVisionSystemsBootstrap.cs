@@ -64,6 +64,7 @@ public static class ARVisionSystemsBootstrap
         Ensure<GhostPaceDriver>();
         Ensure<GpsSignalMonitor>(); // F-09 GPSロスト自動判定(§8.1)
         Ensure<CountdownDisplay>(); // 走行開始カウントダウンのAR表示(音のカウントと同期)
+        Ensure<ARPassthroughController>(); // 光学シースルー時のカメラ映像抑止
 
         // F-11: 100Hz テレメトリCSVロガー(基本設計書§5.2 — PoCの核)。
         // アバターtransformを読むためエンジンと同居させる

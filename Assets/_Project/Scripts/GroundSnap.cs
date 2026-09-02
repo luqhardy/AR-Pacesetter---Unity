@@ -20,8 +20,10 @@ public class GroundSnap : MonoBehaviour
     [SerializeField] private float minObstacleHeight = 1.5f;       // Requirement 4.2: Obstruction >= 1.5m
 
     [Header("Floor Acquisition")]
-    [Tooltip("実測フロアが未取得の間だけ使う想定端末保持高(m)。1回だけ採用して固定される")]
-    [SerializeField] private float assumedCameraHeightMeters = 1.5f;
+    [Tooltip("実測フロアが未取得の間だけ使う想定端末保持高(m)。1回だけ採用して固定される。" +
+             "第1期は胸マウント運用のため既定1.2m(手持ち・目線高なら1.5m前後)。" +
+             "ARプレーンを掴めば実測値が優先されるので、効くのは走行開始直後だけ")]
+    [SerializeField] private float assumedCameraHeightMeters = 1.2f;
     [Tooltip("実測フロア(コライダー/ARプレーン)を掴むまでアバターの描画を抑止する。" +
              "エディタ/E2Eのシーンには実測フロアが存在しないため既定OFF。実機で有効化を検討")]
     [SerializeField] private bool hideUntilMeasuredFloor = false;
