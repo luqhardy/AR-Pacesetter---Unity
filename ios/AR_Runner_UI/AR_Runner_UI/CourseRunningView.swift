@@ -151,6 +151,17 @@ struct RunningView: View {
         unity.isRunning && unity.unityRootView != nil
     }
 
+    /// SwiftUI側で統計HUDを出すか。
+    /// Unityが実際に描画しているときは統計はUnity側のHUD(F-07)が受け持つため、
+    /// ここで同じ値を重ねるとグラス未接続時に**二重HUD**になる(監査M1)。
+    /// UnityFramework未リンク(シミュレータ/UI単体開発)のときだけSwiftUIが担当する。
+    private var showsSwiftStatsHud: Bool { !hasUnityView }
+
+    /// グラス出力中はiPhoneを「操作面」として扱う。
+    /// 走行中は腕・ポケットの端末を読めないので、統計を並べるより
+    /// 大きく押せる終了操作を置くほうが役に立つ。
+    private var isControlSurface: Bool { external.isGlassesConnected && hasUnityView }
+
     var body: some View {
         ARScreen {
             ZStack {
@@ -165,6 +176,7 @@ struct RunningView: View {
 
                 // HUD
                 VStack(spacing: 0) {
+                    if showsSwiftStatsHud {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 1) {
                             ARLabel(text: RunSettings.shared.ghostDateIso != nil ? "ゴースト競走中" : "伴走中")
@@ -193,9 +205,11 @@ struct RunningView: View {
                         LinearGradient(colors: [.black.opacity(0.65), .clear],
                                        startPoint: .top, endPoint: .bottom)
                     )
+                    } // showsSwiftStatsHud
 
                     Spacer()
 
+                    if showsSwiftStatsHud {
                     VStack(spacing: 0) {
                         LinearGradient(colors: [.clear, .black.opacity(0.72)],
                                        startPoint: .top, endPoint: .bottom)
@@ -239,24 +253,55 @@ struct RunningView: View {
                         .padding(.vertical, 20)
                         .background(Color.black.opacity(0.78))
                     }
+                    } // showsSwiftStatsHud
                 }
 
-                // Stop button
-                VStack {
-                    HStack {
+                // 終了操作。グラス出力中はiPhoneが操作面になるので大きく置く
+                if isControlSurface {
+                    VStack(spacing: 20) {
                         Spacer()
-                        Button { showEndAlert = true } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 15, weight: .bold))
+
+                        VStack(spacing: 4) {
+                            Text("ARビューはグラスに出力中")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.arGrayText)
+                            Text(elapsedStr)
+                                .font(.system(size: 64, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
-                                .frame(width: 42, height: 42)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().strokeBorder(Color.arBorder, lineWidth: 1))
                         }
-                        .padding(.trailing, 20)
-                        .padding(.top, 60)
+
+                        Button { showEndAlert = true } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "stop.fill")
+                                    .font(.system(size: 22, weight: .bold))
+                                Text("終了")
+                                    .font(.system(size: 22, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, minHeight: 88)
+                            .background(Color(red: 0.85, green: 0.25, blue: 0.2), in: RoundedRectangle(cornerRadius: 18))
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.bottom, 48)
                     }
-                    Spacer()
+                } else {
+                    // Stop button
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Button { showEndAlert = true } label: {
+                                Image(systemName: "stop.fill")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 42, height: 42)
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .overlay(Circle().strokeBorder(Color.arBorder, lineWidth: 1))
+                            }
+                            .padding(.trailing, 20)
+                            .padding(.top, 60)
+                        }
+                        Spacer()
+                    }
                 }
 
                 // ゴール到達オーバーレイ（Unityの目標距離自動終了 → AvatarState "Goal"）
