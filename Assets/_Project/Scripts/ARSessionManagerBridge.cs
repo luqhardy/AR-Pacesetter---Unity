@@ -178,9 +178,10 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (cmd.forwardOffsetM > 0.1)
             avatarEngine.SetLeadDistance((float)cmd.forwardOffsetM);
 
-        // アバター身長: 175cm基準の相対スケール
-        if (cmd.avatarHeightCm > 0)
-            avatarEngine.transform.localScale = Vector3.one * (cmd.avatarHeightCm / BaselineAvatarHeightCm);
+        // アバター身長: 実測した描画高さから逆算して指定身長の実寸に合わせる。
+        // 旧実装は localScale = 指定cm / 175 としており、「モデルはスケール1で175cm」
+        // という未検証の前提に依存していた(実際には実物より大きく表示されていた)
+        avatarEngine.ApplyHeightCm(cmd.avatarHeightCm > 0 ? cmd.avatarHeightCm : BaselineAvatarHeightCm);
 
         // Swift側がオンボーディング/設定UIを持つため、Unityのセットアップ画面は閉じる
         if (paceCalibration != null)

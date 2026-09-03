@@ -117,6 +117,15 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return WaitScaled(0.5f);
         Check(engine.HasStarted, "start: engine.HasStarted after StartSession");
 
+        // 企画書 §4.1 実寸: StartSessionで175cmを指定しているので、実際の描画身長も
+        // それに一致すること。旧実装は固定倍率(cm/175)で、モデルの素の大きさ次第で
+        // 実物より大きく表示されていた(実機で報告された不具合)
+        float avatarHeight = engine.MeasuredAvatarHeightMeters;
+        Check(avatarHeight > 0.01f, $"scale: avatar height is measurable ({avatarHeight:F2}m)");
+        if (avatarHeight > 0.01f)
+            Check(Mathf.Abs(avatarHeight - 1.75f) < 0.15f,
+                $"scale: avatar renders at real-world height for 175cm (measured {avatarHeight:F2}m)");
+
         var fakeShadow = FindFirstObjectByType<FakeShadowRenderer>(FindObjectsInactive.Include);
         Check(fakeShadow != null && fakeShadow.IsVisible,
             "render: fake shadow visible under avatar");

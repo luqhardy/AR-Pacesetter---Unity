@@ -595,6 +595,116 @@ public class AvatarEngine : MonoBehaviour
     }
 
     /// <summary>Swiftブリッジ用: 先行距離 (forwardOffsetM) の外部設定。</summary>
+    /// <summary>
+    /// 現在の設定で表示される公称身長(m)。0なら計測できていない。E2E/検証用。
+    /// VFXの起動演出(ルートのスケールを0.15→1.0で動かす)の途中経過は含めない。
+    /// </summary>
+    public float MeasuredAvatarHeightMeters
+    {
+        get
+        {
+            Transform model = ResolveModelRoot();
+            return model == null ? 0f : MeasureUnitHeight(model) * model.localScale.y;
+        }
+    }
+
+    /// <summary>直近に指定された身長(cm)。モデル差し替え後の再適用に使う。</summary>
+    public float RequestedHeightCm { get; private set; } = AvatarScale.BaselineHeightCm;
+
+    /// <summary>
+    /// アバターを指定身長(cm)の実寸へ合わせる (企画書 §4.1)。
+    ///
+    /// **モデル側のTransformを縮尺する**。ルートの localScale は
+    /// AvatarVFXController が起動/消滅演出で動かしており、そこへ身長を混ぜると
+    /// 演出とスケールが取り合いになるため触らない。
+    ///
+    /// 倍率は固定値ではなく**実測した描画高さから逆算**する。FBXの単位や
+    /// インポート設定でモデルの素の大きさは変わるため、決め打ちだと実物と合わない。
+    /// </summary>
+    /// <returns>適用できたか(モデル未解決・計測失敗時は false で現状維持)</returns>
+    public bool ApplyHeightCm(float heightCm)
+    {
+        if (heightCm > 0f) RequestedHeightCm = heightCm;
+
+        Transform model = ResolveModelRoot();
+        if (model == null)
+        {
+            Debug.LogWarning("[AVATAR SCALE] モデルのTransformを解決できず身長を適用できません。");
+            return false;
+        }
+
+        // スケール1相当の素の高さ。これを基準に必要な倍率を出す
+        float unitHeight = MeasureUnitHeight(model);
+        if (!AvatarScale.TryComputeScale(unitHeight, 1f, RequestedHeightCm, out float scale))
+        {
+            Debug.LogWarning($"[AVATAR SCALE] 素の身長を計測できず適用を見送りました " +
+                             $"(unitHeight={unitHeight:F3}m)");
+            return false;
+        }
+
+        float before = unitHeight * model.localScale.y;
+        model.localScale = Vector3.one * scale;
+
+        Debug.Log($"[AVATAR SCALE] 身長 {RequestedHeightCm:F0}cm へ調整: " +
+                  $"変更前 {before:F2}m → scale {scale:F3} (公称 {MeasuredAvatarHeightMeters:F2}m)");
+        return true;
+    }
+
+    /// <summary>モデル差し替え後などに、同じ身長指定で再適用する。</summary>
+    public void ReapplyHeight() => ApplyHeightCm(RequestedHeightCm);
+
+    /// <summary>表示中のモデル(Animatorが載っているTransform)。</summary>
+    private Transform ResolveModelRoot()
+    {
+        Animator anim = AvatarRigLocator.FindBestAnimator(transform);
+        return anim != null ? anim.transform : null;
+    }
+
+    /// <summary>
+    /// モデルの「スケール1相当」の身長(m)を測る。
+    ///
+    /// ワールド空間の <c>Renderer.bounds</c> ではなく、**オーサリング時の
+    /// <c>localBounds</c> をモデル空間へ変換**して測る。理由が2つある:
+    ///   1. ワールドboundsはアニメーションのポーズで変わる(走行中は脚が曲がって縮む)
+    ///   2. ワールドboundsは親のスケールを含む。AvatarVFXControllerが起動演出で
+    ///      ルートのスケールを0.15→1.0と動かすため、その途中で測ると小さく出て
+    ///      演出ぶんまで打ち消す方向に補正してしまう
+    /// モデル空間へ落とすことで、ポーズにも親のスケールにも左右されない素の高さが得られる。
+    ///
+    /// スキンメッシュのみを対象にするので、足元の影(MeshRenderer)や
+    /// オーラのLineRendererは巻き込まない。
+    /// </summary>
+    private static float MeasureUnitHeight(Transform model)
+    {
+        if (model == null) return 0f;
+
+        var renderers = model.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        if (renderers.Length == 0) return 0f;
+
+        bool any = false;
+        float minY = 0f, maxY = 0f;
+
+        foreach (var r in renderers)
+        {
+            Bounds lb = r.localBounds; // ポーズ非依存のオーサリング値
+            Matrix4x4 toModel = model.worldToLocalMatrix * r.transform.localToWorldMatrix;
+
+            for (int corner = 0; corner < 8; corner++)
+            {
+                Vector3 p = new Vector3(
+                    (corner & 1) == 0 ? lb.min.x : lb.max.x,
+                    (corner & 2) == 0 ? lb.min.y : lb.max.y,
+                    (corner & 4) == 0 ? lb.min.z : lb.max.z);
+
+                float y = toModel.MultiplyPoint3x4(p).y;
+                if (!any) { minY = maxY = y; any = true; }
+                else { if (y < minY) minY = y; if (y > maxY) maxY = y; }
+            }
+        }
+
+        return any ? (maxY - minY) : 0f;
+    }
+
     public void SetLeadDistance(float meters)
     {
         leadDistanceMeters = Mathf.Clamp(meters, 1.0f, 10.0f);

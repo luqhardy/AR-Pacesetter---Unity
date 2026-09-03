@@ -27,5 +27,6 @@
     <Compile Include="..\..\Assets\_Project\Scripts\AuraFeedback.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GroundFloorTracker.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\PaceHudDisplay.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\AvatarScale.cs" />
   </ItemGroup>
 </Project>
