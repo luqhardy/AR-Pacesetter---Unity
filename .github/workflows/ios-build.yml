@@ -44,10 +44,12 @@ jobs:
           ls /Applications | grep -i '^Xcode' || true
           # Deployment Target が iOS 26.0 のため Xcode 26 を優先する。
           # ランナーイメージに無ければ既定のまま進み、失敗すればログで分かる
-          if [ -d /Applications/Xcode_26.app ]; then
-            sudo xcode-select -s /Applications/Xcode_26.app
+          XCODE_APP=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE_APP" ]; then
+            echo "選択: $XCODE_APP"
+            sudo xcode-select -s "$XCODE_APP"
           else
-            echo "::warning::Xcode_26 が見つかりません。Deployment Target iOS 26.0 が通らない可能性があります"
+            echo "::warning::Xcode 26系が見つかりません。Deployment Target iOS 26.0 が通らない可能性があります"
           fi
           xcodebuild -version
 
@@ -88,12 +90,16 @@ jobs:
       # ── 1. Unity側 ─────────────────────────────────────────────────────────
       # ネイティブプラグイン(.mm)の重複シンボルやIL2CPPのリンクは
       # ここでしか検出できない。C#コンパイルにもE2Eにも現れない種類の失敗
+      # `-target` ではなく `-scheme` を使う: xcodebuild は -derivedDataPath を
+      # -scheme とセットでしか受け付けず、-target 併用は
+      # "The flag -scheme ... is required when specifying -derivedDataPath" で落ちる。
+      # Unity-iPhone は共有スキームで、UnityFramework を依存としてビルドする
       - name: Build UnityFramework
         run: |
           set -o pipefail
           xcodebuild build \
             -project ios/UnityExport/Unity-iPhone.xcodeproj \
-            -target UnityFramework \
+            -scheme Unity-iPhone \
             -configuration Debug \
             -sdk iphoneos \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
