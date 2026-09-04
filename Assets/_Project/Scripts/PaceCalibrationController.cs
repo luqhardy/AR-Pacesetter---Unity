@@ -59,7 +59,10 @@ public class PaceCalibrationController : MonoBehaviour
         // グラス視界に一瞬映るのを防ぐため最初から構築しない
         buildSetupPanelAtRuntime = false;
 #endif
-        if (buildSetupPanelAtRuntime && setupPanel == null)
+        // An external/demo StartSession can arrive between Awake and Start.
+        // In that case HideSetupUiForExternalControl has already armed this
+        // controller, so do not recreate the setup panel after it was hidden.
+        if (!_hasStarted && buildSetupPanelAtRuntime && setupPanel == null)
             BuildSetupPanel();
 
         EnsureCanvasVisible();

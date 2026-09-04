@@ -15,6 +15,20 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "9D25AB9C213FB47800354C27"
+               BuildableName = "UnityFramework.framework"
+               BlueprintName = "UnityFramework"
+               ReferencedContainer = "container:../UnityExport/Unity-iPhone.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "2106D77F2FD91B9D00D4980C"
                BuildableName = "AR_Runner_UI.app"
                BlueprintName = "AR_Runner_UI"

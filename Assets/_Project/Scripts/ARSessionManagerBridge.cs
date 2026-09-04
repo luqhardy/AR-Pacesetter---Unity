@@ -33,6 +33,10 @@ public class ARSessionManagerBridge : MonoBehaviour
         public double gpsLatitude;
         public double gpsLongitude;
         public float gpsAccuracy;
+        // true only when CoreLocation delivered a genuinely new fix. Cached timer
+        // retransmissions must not refresh Unity's 5-second freshness windows.
+        public bool locationSampleFresh;
+        public bool speedSampleValid;
     }
 
     [Header("Engine Links (auto-found if empty)")]
@@ -46,6 +50,8 @@ public class ARSessionManagerBridge : MonoBehaviour
     [SerializeField] private LatencyBenchmarkRunner latencyRunner;
     [SerializeField] private GhostPaceDriver ghostDriver;
     [SerializeField] private GpsSignalMonitor gpsMonitor;
+    [SerializeField] private GoalLineController goalLineController;
+    [SerializeField] private RunnerTrackingState runnerTracking;
 
     private const float ReportIntervalSeconds = 1.0f;
     private const float BaselineAvatarHeightCm = 175f; // 企画書 §4.1
@@ -75,6 +81,12 @@ public class ARSessionManagerBridge : MonoBehaviour
             : 0f;
     private double _swiftReportedDistanceMeters = 0;
     private bool _goalReached = false;
+    // CoreLocation starts before the visual countdown so GPS can settle. Keep
+    // the raw total for calibration, then subtract the value captured at START.
+    private double _latestRawDistanceMeters = 0;
+    private double _runStartDistanceBaselineMeters = 0;
+    private bool _runDistanceBaselineCaptured = false;
+    private bool _previousRunMotionActive = false;
 
     void Awake()
     {
@@ -91,6 +103,8 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (latencyRunner == null) latencyRunner = FindFirstObjectByType<LatencyBenchmarkRunner>(FindObjectsInactive.Include);
         if (ghostDriver == null) ghostDriver = FindFirstObjectByType<GhostPaceDriver>(FindObjectsInactive.Include);
         if (gpsMonitor == null) gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        if (goalLineController == null) goalLineController = FindFirstObjectByType<GoalLineController>(FindObjectsInactive.Include);
+        if (runnerTracking == null) runnerTracking = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
     }
 
     // ── Swift → Unity エントリポイント ───────────────────────────────────────
@@ -124,6 +138,7 @@ public class ARSessionManagerBridge : MonoBehaviour
 
     private void HandleStartSession(SwiftCommand cmd)
     {
+        ResolveRunnerTracking();
         if (avatarEngine == null)
         {
             Debug.LogError("[SWIFT BRIDGE] StartSession ignored — AvatarEngine not found.");
@@ -145,7 +160,15 @@ public class ARSessionManagerBridge : MonoBehaviour
         // 目標距離: 到達したらUnity側から自動終了する (SessionEnded送信)
         _goalDistanceMeters = cmd.distanceKm > 0 ? cmd.distanceKm * 1000.0 : 0;
         _swiftReportedDistanceMeters = 0;
+        _latestRawDistanceMeters = 0;
+        _runStartDistanceBaselineMeters = 0;
+        _runDistanceBaselineCaptured = false;
+        _previousRunMotionActive = false;
         _goalReached = false;
+        if (goalLineController != null)
+            goalLineController.ConfigureGoal(_goalDistanceMeters);
+        if (runnerTracking != null)
+            runnerTracking.BeginSession((float)cmd.targetPaceKmH, cmd.distanceKm);
 
         // km/h → 分/km 変換 (例: 12km/h → 5:00/km)
         if (cmd.targetPaceKmH > 0.1)
@@ -197,15 +220,56 @@ public class ARSessionManagerBridge : MonoBehaviour
 
     private void HandleUpdateMetrics(SwiftCommand cmd)
     {
+        ResolveRunnerTracking();
+        // Only Swift's explicit acceptance flag refreshes distance/pace. Raw GPS
+        // accuracy is still forwarded to the signal-loss FSM, including bad fixes.
+        bool freshLocationSample = cmd.locationSampleFresh;
+        bool validSpeedSample = cmd.speedSampleValid;
+#if UNITY_EDITOR
+        // Existing ContextMenu/E2E JSON predates locationSampleFresh. Keep those
+        // deterministic editor-only commands useful without weakening device semantics.
+        if (!freshLocationSample && (cmd.paceKmH > 0 || cmd.distanceKm > 0))
+            freshLocationSample = true;
+        if (!validSpeedSample && cmd.paceKmH > 0)
+            validSpeedSample = true;
+#endif
+
+        bool runMotionActive = avatarEngine != null && avatarEngine.IsRunMotionActive;
+        double distanceFromStartKm = 0.0;
+        if (freshLocationSample && cmd.distanceKm >= 0.0)
+        {
+            double previousRawDistanceMeters = _latestRawDistanceMeters;
+            _latestRawDistanceMeters = Math.Max(0.0, cmd.distanceKm * 1000.0);
+
+            // If a location callback lands before this MonoBehaviour's Update on
+            // the START frame, use the last pre-callback total as the baseline.
+            if (runMotionActive && !_runDistanceBaselineCaptured)
+                CaptureRunDistanceBaseline(previousRawDistanceMeters);
+
+            if (runMotionActive)
+            {
+                distanceFromStartKm = Math.Max(
+                    0.0, _latestRawDistanceMeters - _runStartDistanceBaselineMeters) / 1000.0;
+            }
+        }
+
+        if (runnerTracking != null)
+        {
+            runnerTracking.ReportMetrics(
+                (float)cmd.paceKmH, cmd.heartRate, distanceFromStartKm,
+                cmd.gpsLatitude, cmd.gpsLongitude, cmd.gpsAccuracy,
+                freshLocationSample, validSpeedSample, cmd.gpsAccuracy > 0f);
+        }
+
         // 測位サンプル(§8.1 ロスト自動判定 / §5.2 CSVログのGPS列)。
         // gpsAccuracy > 0 のときのみ有効サンプルとして扱う
         if (gpsMonitor != null && cmd.gpsAccuracy > 0f)
             gpsMonitor.ReportGpsUpdate(cmd.gpsLatitude, cmd.gpsLongitude, cmd.gpsAccuracy);
 
         // 実測ペース(F-07 現在ペース表示用)。0以下は無効サンプルとして無視する
-        if (cmd.paceKmH > 0)
+        if (freshLocationSample && validSpeedSample)
         {
-            _swiftReportedPaceKmH = (float)cmd.paceKmH;
+            _swiftReportedPaceKmH = Mathf.Max(0f, (float)cmd.paceKmH);
             _swiftPaceReceivedTime = Time.time;
         }
 
@@ -214,9 +278,9 @@ public class ARSessionManagerBridge : MonoBehaviour
             heartRateReceiver.OnHeartRateDataReceived(cmd.heartRate.ToString());
 
         // 実機ではSwift(CoreLocation)の距離が正 — スプリット/ゴール判定・記録に供給
-        if (cmd.distanceKm > 0)
+        if (freshLocationSample && runMotionActive)
         {
-            _swiftReportedDistanceMeters = cmd.distanceKm * 1000.0;
+            _swiftReportedDistanceMeters = distanceFromStartKm * 1000.0;
             if (analytics != null)
                 analytics.CheckDistanceIntervalSplits((float)_swiftReportedDistanceMeters);
             if (sessionController != null)
@@ -227,6 +291,9 @@ public class ARSessionManagerBridge : MonoBehaviour
 
     private void HandleEndSession()
     {
+        if (!_goalReached && goalLineController != null)
+            goalLineController.HideImmediately();
+
         if (latencyRunner != null)
             latencyRunner.SetContinuousMeasurement(false);
 
@@ -236,6 +303,9 @@ public class ARSessionManagerBridge : MonoBehaviour
         RunSessionRecord record = sessionController != null
             ? sessionController.FinishRunExternal()
             : null;
+
+        if (runnerTracking != null)
+            runnerTracking.EndSession();
 
         SendAvatarStateIfChanged("Goal");
         SwiftMessageSender.SendSessionResult(record);
@@ -279,12 +349,13 @@ public class ARSessionManagerBridge : MonoBehaviour
         _smoothedFrameMs = Mathf.Lerp(_smoothedFrameMs, Time.deltaTime * 1000f, 0.1f);
 
         ReportGpsTransitions();
+        UpdateRunMotionBoundary();
 
         if (Time.time < _nextReportTime) return;
         _nextReportTime = Time.time + ReportIntervalSeconds;
 
         // 走行中のみレポート(終了後に古いSyncRate/Latencyを送り続けない)
-        if (avatarEngine == null || !avatarEngine.HasStarted || avatarEngine.IsSessionEnded) return;
+        if (avatarEngine == null || !avatarEngine.IsRunMotionActive) return;
 
         if (analytics != null)
             SwiftMessageSender.SendSyncRate(Mathf.RoundToInt(analytics.GetLiveSyncRate()));
@@ -302,16 +373,20 @@ public class ARSessionManagerBridge : MonoBehaviour
     private void CheckGoalReached()
     {
         if (_goalReached || _goalDistanceMeters <= 0) return;
-        if (avatarEngine == null || !avatarEngine.HasStarted || avatarEngine.IsSessionEnded) return;
+        if (avatarEngine == null || !avatarEngine.IsRunMotionActive) return;
 
         // 記録と同じ距離ポリシー(新鮮なGPS優先→Unity計測)を使い、
         // ゴール判定と記録距離の不一致(記録が目標未満になる等)を防ぐ
         double bestDistance = sessionController != null
             ? sessionController.AuthoritativeDistanceMeters
             : Math.Max(hudManager != null ? hudManager.DistanceMeters : 0, _swiftReportedDistanceMeters);
+        if (goalLineController != null)
+            goalLineController.UpdateProgress(bestDistance);
         if (bestDistance < _goalDistanceMeters) return;
 
         _goalReached = true;
+        if (goalLineController != null)
+            goalLineController.MarkReached();
         Debug.Log($"[SWIFT BRIDGE] 目標距離 {_goalDistanceMeters / 1000.0:F2}km 到達 — セッションを自動終了します。");
         HandleEndSession();
     }
@@ -361,6 +436,33 @@ public class ARSessionManagerBridge : MonoBehaviour
         SwiftMessageSender.SendAvatarState(state);
     }
 
+    private void ResolveRunnerTracking()
+    {
+        if (runnerTracking == null)
+            runnerTracking = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
+    }
+
+    private void UpdateRunMotionBoundary()
+    {
+        bool active = avatarEngine != null && avatarEngine.IsRunMotionActive;
+        if (active && !_previousRunMotionActive)
+            CaptureRunDistanceBaseline(_latestRawDistanceMeters);
+        _previousRunMotionActive = active;
+    }
+
+    private void CaptureRunDistanceBaseline(double rawDistanceMeters)
+    {
+        if (_runDistanceBaselineCaptured)
+            return;
+
+        _runStartDistanceBaselineMeters = Math.Max(0.0, rawDistanceMeters);
+        _runDistanceBaselineCaptured = true;
+        _swiftReportedDistanceMeters = 0.0;
+        if (sessionController != null)
+            sessionController.ExternalDistanceMeters = -1.0;
+        Debug.Log($"[SWIFT BRIDGE] START distance baseline captured at {_runStartDistanceBaselineMeters:F2}m.");
+    }
+
     /// <summary>Swift主導セッションかどうか(Unity内UIの抑制判定に使用可)。</summary>
     public bool IsExternallyDriven => _sessionDriven;
 
@@ -380,6 +482,16 @@ public class ARSessionManagerBridge : MonoBehaviour
     [ContextMenu("Simulate UpdateMetrics (HR 150)")]
     private void SimulateUpdateMetrics()
         => OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":11.5,\"heartRate\":150,\"distanceKm\":1.2}");
+
+    [ContextMenu("Simulate Near Goal (5m remaining)")]
+    private void SimulateNearGoal()
+    {
+        if (_goalDistanceMeters <= 0)
+            SimulateStartSession();
+
+        double nearGoalKm = Math.Max(0.0, _goalDistanceMeters - 5.0) / 1000.0;
+        OnSwiftCommand($"{{\"command\":\"UpdateMetrics\",\"paceKmH\":12.0,\"heartRate\":150,\"distanceKm\":{nearGoalKm}}}");
+    }
 
     [ContextMenu("Simulate EndSession")]
     private void SimulateEndSession()

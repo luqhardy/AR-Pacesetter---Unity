@@ -7,7 +7,8 @@ using UnityEngine;
 ///  - 心拍連動の呼吸音（HR/4 ≒ 呼吸レート）
 ///  - システム音（スタートカウントダウン / ゴールファンファーレ）
 ///  - 環境適応音響（周囲45dB超で自動音量調整、上限75dB相当にキャップ）
-/// 全クリップは実行時に手続き生成するため、オーディオアセットは不要。
+/// スタート/ゴール音はResources内の提供音源を優先し、見つからない場合は
+/// 実行時生成クリップへフォールバックする。
 /// </summary>
 public class RunAudioEngine : MonoBehaviour
 {
@@ -21,6 +22,14 @@ public class RunAudioEngine : MonoBehaviour
     [Range(0f, 1f)] [SerializeField] private float footstepLevel = 0.85f;
     [Range(0f, 1f)] [SerializeField] private float breathLevel = 0.55f;
     [Range(0f, 1f)] [SerializeField] private float systemLevel = 0.9f;
+
+    [Header("Start Signal")]
+    [Tooltip("未設定時はResources/Audio/StartSignals/RaceStartBeepsから自動読込")]
+    [SerializeField] private AudioClip startSignalClip;
+
+    [Header("Goal Jingles")]
+    [Tooltip("未設定時はResources/Audio/GoalJinglesから自動読込")]
+    [SerializeField] private AudioClip[] goalJingles;
 
     [Header("Ambient Adaptation (企画書 §3 環境適応音響)")]
     [Tooltip("Normalized master volume in a quiet environment.")]
@@ -50,6 +59,7 @@ public class RunAudioEngine : MonoBehaviour
     private bool _ambientLoud = false;
     private bool _startSignalPlayed = false;
     private bool _goalPlayed = false;
+    private string _lastGoalJingleName = string.Empty;
 
     // Device microphone sampling state
     private AudioClip _micClip;
@@ -57,6 +67,8 @@ public class RunAudioEngine : MonoBehaviour
 
     /// <summary>足音の発生タイミング(VFXの接地サイバーパルスが購読)。</summary>
     public event System.Action FootstepOccurred;
+    public bool HasGoalJingles => goalJingles != null && goalJingles.Length > 0;
+    public string LastGoalJingleName => _lastGoalJingleName;
 
     void Start()
     {
@@ -71,6 +83,8 @@ public class RunAudioEngine : MonoBehaviour
 
         _masterVolume = quietMasterVolume;
 
+        LoadStartSignal();
+        LoadGoalJingles();
         GenerateClips();
         BuildAudioSources();
 
@@ -165,7 +179,7 @@ public class RunAudioEngine : MonoBehaviour
         float speed = delta.magnitude / Mathf.Max(Time.deltaTime, 0.001f);
         _lastAvatarPos = avatarTransform.position;
 
-        if (avatarEngine != null && (!avatarEngine.HasStarted || avatarEngine.IsSessionEnded)) return;
+        if (avatarEngine != null && !avatarEngine.IsRunMotionActive) return;
         if (speed < 0.3f) return; // standing still — no steps
 
         // Cadence rises with speed: walk ~1.8 steps/s, run ~3.0 steps/s
@@ -215,8 +229,7 @@ public class RunAudioEngine : MonoBehaviour
         if (_breathSource == null) return;
 
         // 終了後はアバターが消滅するため呼吸音も止める
-        bool running = avatarEngine == null
-            || (avatarEngine.HasStarted && !avatarEngine.IsSessionEnded);
+        bool running = avatarEngine == null || avatarEngine.IsRunMotionActive;
         if (!running)
         {
             _breathSource.volume = 0f;
@@ -257,10 +270,18 @@ public class RunAudioEngine : MonoBehaviour
 
     private IEnumerator PlayStartSignal()
     {
+        if (startSignalClip != null)
+        {
+            _systemSource.pitch = 1f;
+            _systemSource.PlayOneShot(startSignalClip, systemLevel * _masterVolume);
+            yield break;
+        }
+
+        // 音源を同梱できないビルド向けフォールバック。表示側の1秒間隔と同期する。
         for (int i = 0; i < 3; i++)
         {
             _systemSource.PlayOneShot(_beepShortClip, systemLevel * _masterVolume);
-            yield return new WaitForSeconds(0.6f);
+            yield return new WaitForSeconds(1.0f);
         }
         _systemSource.PlayOneShot(_beepGoClip, systemLevel * _masterVolume);
     }
@@ -270,6 +291,9 @@ public class RunAudioEngine : MonoBehaviour
     {
         _startSignalPlayed = false;
         _goalPlayed = false;
+        _lastGoalJingleName = string.Empty;
+        if (_systemSource != null)
+            _systemSource.Stop();
     }
 
     /// <summary>Called by the run-stop flow when the session finishes.</summary>
@@ -282,6 +306,19 @@ public class RunAudioEngine : MonoBehaviour
 
     private IEnumerator PlayGoalSequence()
     {
+        if (HasGoalJingles)
+        {
+            AudioClip selected = goalJingles[Random.Range(0, goalJingles.Length)];
+            if (selected != null)
+            {
+                _lastGoalJingleName = selected.name;
+                _systemSource.pitch = 1f;
+                _systemSource.PlayOneShot(selected, systemLevel * _masterVolume);
+                yield break;
+            }
+        }
+
+        // インポート音源が無いビルドでも、従来の手続き生成ファンファーレを鳴らす。
         float[] arpeggio = { 660f, 880f, 1100f };
         foreach (float freq in arpeggio)
         {
@@ -289,6 +326,30 @@ public class RunAudioEngine : MonoBehaviour
             yield return new WaitForSeconds(0.18f);
         }
         _systemSource.PlayOneShot(CreateSineClip(1320f, 0.7f), systemLevel * _masterVolume);
+    }
+
+    private void LoadGoalJingles()
+    {
+        if (goalJingles != null && goalJingles.Length > 0)
+            return;
+
+        goalJingles = Resources.LoadAll<AudioClip>("Audio/GoalJingles");
+        if (goalJingles == null || goalJingles.Length == 0)
+            Debug.LogWarning("[AUDIO] Goal jingles were not found; procedural fanfare will be used.");
+        else
+            Debug.Log($"[AUDIO] Loaded {goalJingles.Length} goal jingles.");
+    }
+
+    private void LoadStartSignal()
+    {
+        if (startSignalClip != null)
+            return;
+
+        startSignalClip = Resources.Load<AudioClip>("Audio/StartSignals/RaceStartBeeps");
+        if (startSignalClip == null)
+            Debug.LogWarning("[AUDIO] Race start signal was not found; procedural beeps will be used.");
+        else
+            Debug.Log($"[AUDIO] Loaded race start signal: {startSignalClip.name}.");
     }
 
     // ── AudioSource / クリップ生成 ───────────────────────────────────────────

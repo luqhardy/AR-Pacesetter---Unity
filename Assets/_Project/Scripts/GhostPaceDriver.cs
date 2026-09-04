@@ -73,7 +73,7 @@ public class GhostPaceDriver : MonoBehaviour
     void Update()
     {
         if (!_isActive || avatarEngine == null) return;
-        if (!avatarEngine.HasStarted || avatarEngine.IsSessionEnded) return;
+        if (!avatarEngine.IsRunMotionActive) return;
 
         if (Time.time < _nextPaceUpdate) return;
         _nextPaceUpdate = Time.time + PaceUpdateIntervalSeconds;

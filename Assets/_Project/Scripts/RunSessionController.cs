@@ -108,6 +108,11 @@ public class RunSessionController : MonoBehaviour
 
         if (!_runActive || _finished) return;
 
+        // OnRunStarted arms the UI/audio. Actual timing and sampling begin only
+        // after the shared visual countdown reaches START.
+        if (avatarEngine != null && !avatarEngine.IsRunMotionActive)
+            return;
+
         // ゴースト機能: 走行中のペース推移を5秒毎に記録 (距離はGPS優先)
         if (hudManager != null && hudManager.ElapsedTimeSeconds >= _nextPaceSampleTime)
         {
@@ -207,6 +212,10 @@ public class RunSessionController : MonoBehaviour
         // 再走行でもカウントダウンをやり直す
         var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
         if (countdown != null) countdown.ResetSession();
+        var goalLine = FindFirstObjectByType<GoalLineController>(FindObjectsInactive.Include);
+        if (goalLine != null) goalLine.ResetSession();
+        var runnerTracking = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
+        if (runnerTracking != null) runnerTracking.ResetSession();
 
         Debug.Log("[SESSION] Reset complete — ready for a new run.");
     }

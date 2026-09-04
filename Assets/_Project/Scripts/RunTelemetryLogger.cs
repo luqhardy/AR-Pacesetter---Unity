@@ -125,7 +125,7 @@ public class RunTelemetryLogger : MonoBehaviour
     {
         if (avatarEngine == null) return;
 
-        bool shouldLog = avatarEngine.HasStarted && !avatarEngine.IsSessionEnded;
+        bool shouldLog = avatarEngine.IsRunMotionActive;
 
         if (shouldLog && !_logging) StartLogging();
         else if (!shouldLog && _logging) StopLogging();

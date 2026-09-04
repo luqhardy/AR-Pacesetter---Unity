@@ -65,7 +65,7 @@ public class AvatarVFXController : MonoBehaviour
     {
         if (_engine == null) return;
 
-        bool started = _engine.HasStarted;
+        bool started = _engine.IsRunMotionActive;
         bool ended = _engine.IsSessionEnded;
 
         // 起動演出 (未開始→開始の立ち上がりエッジ。再走行にもそのまま対応)
@@ -171,7 +171,7 @@ public class AvatarVFXController : MonoBehaviour
     {
         if (_ringPool == null || _ringPool.Length == 0) return;
         // 消滅後・待機前は出さない
-        if (_engine != null && (_engine.IsSessionEnded || !_engine.HasStarted)) return;
+        if (_engine != null && !_engine.IsRunMotionActive) return;
 
         LineRenderer ring = _ringPool[_nextRing];
         _nextRing = (_nextRing + 1) % _ringPool.Length;

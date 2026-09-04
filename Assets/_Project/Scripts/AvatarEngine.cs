@@ -18,11 +18,16 @@ public class AvatarEngine : MonoBehaviour
     [Header("Dependencies")]
     [SerializeField] private Transform userCamera;                  // XR Origin Main Camera
     [SerializeField] private GameStateController gameStateController;
+    [SerializeField] private RunnerTrackingState runnerTrackingState;
 
     [Header("Pacing Settings")]
     [Tooltip("Target running pace in minutes per kilometer (e.g. 5.0 = 5:00/km)")]
     [SerializeField] private float targetPaceMinutesPerKm = 5.0f;
     [SerializeField] private float leadDistanceMeters = 3.0f;
+
+    [Header("Start Sequence")]
+    [Tooltip("Safety fallback if the visual countdown is unavailable or interrupted")]
+    [SerializeField] private float countdownFallbackSeconds = 4.25f;
 
     [Header("Speed Maintenance (Feature #3)")]
     [Tooltip("Avatar slows to this fraction of target speed when user is >= maxLeadBeforeSlow ahead")]
@@ -89,6 +94,8 @@ public class AvatarEngine : MonoBehaviour
 
     // Purified world-forward heading — never driven by gaze (Feature #7)
     private Vector3 _currentLinearDirection = Vector3.forward;
+    // True after actual horizontal movement has established the authoritative heading.
+    private bool _hasMovementHeading = false;
 
     // Smoothed rotation target (curved-motion arc)
     private Quaternion _smoothRotation = Quaternion.identity;
@@ -109,6 +116,9 @@ public class AvatarEngine : MonoBehaviour
     private Vector3 _sidestepOffset = Vector3.zero; // lateral shift when yielding
     
     private bool _hasStarted = false; // Start command state
+    private bool _runMotionActive = false;
+    private float _runMotionFallbackAt = -1f;
+    private CountdownDisplay _countdownDisplay;
 
     // ── 離隔待機 (企画書 4.1) ────────────────────────────────────────────────
     private const float WaitForUserEnterMeters = 10.0f; // これ以上離れたら待機
@@ -123,6 +133,9 @@ public class AvatarEngine : MonoBehaviour
     public float TargetPaceMinutesPerKm => targetPaceMinutesPerKm;
     public OvertakeState CurrentOvertakeState => _overtakeState;
     public bool HasStarted => _hasStarted;
+    /// <summary>True only after 3-2-1-START has completed.</summary>
+    public bool IsRunMotionActive => _hasStarted && _runMotionActive && !IsSessionEnded;
+    public bool IsStartCountdownActive => _hasStarted && !_runMotionActive && !IsSessionEnded;
     public bool IsOverriddenByRecovery { get; set; } = false;
     public bool IsWaitingForUser => _isWaitingForUser;
 
@@ -135,12 +148,16 @@ public class AvatarEngine : MonoBehaviour
     {
         if (!_hasStarted)
         {
+            AlignStartHeadingToUserView();
             _hasStarted = true;
-            Debug.Log("[PACER ENGINE] Start pacing command received! Commencing pacer movement.");
-            
-            OvertakeBehaviourController overtake = GetComponent<OvertakeBehaviourController>();
-            Animator anim = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : AvatarRigLocator.FindBestAnimator(transform);
-            if (anim != null) anim.SetTrigger("RunResume");
+            _runMotionActive = false;
+            _countdownDisplay = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
+            _runMotionFallbackAt = Time.time + Mathf.Max(0f, countdownFallbackSeconds);
+            Debug.Log("[PACER ENGINE] Session armed — waiting for 3-2-1-START before movement and metrics begin.");
+
+            // Older scenes without CountdownDisplay must remain usable.
+            if (_countdownDisplay == null || countdownFallbackSeconds <= 0f)
+                ActivateRunMotion();
         }
     }
 
@@ -208,6 +225,32 @@ public class AvatarEngine : MonoBehaviour
             
             // While waiting, look at the user or stay ahead
             RunHaltedFaceUser();
+            return;
+        }
+
+        // Start command arms the experience, but the runner has not crossed the
+        // temporal start line until the complete countdown presentation ends.
+        // Keep the pacer visibly staged ahead without accumulating movement.
+        if (!_runMotionActive)
+        {
+            UpdatePurifiedHeading();
+            Vector3 readyAnchor = userCamera.position
+                                + _currentLinearDirection * leadDistanceMeters;
+            readyAnchor.y = transform.position.y;
+            _targetPacingPosition = readyAnchor;
+            transform.position = readyAnchor;
+            ApplySmoothRotation(_currentLinearDirection);
+
+            bool countdownFinished = _countdownDisplay != null
+                                  && _countdownDisplay.HasCompleted;
+            if (!IsSessionEnded
+                && (countdownFinished || Time.time >= _runMotionFallbackAt))
+            {
+                ActivateRunMotion();
+            }
+
+            _lastFrameUserPosition = userCamera.position;
+            _lastFrameDeltaTime = Time.deltaTime;
             return;
         }
 
@@ -395,6 +438,27 @@ public class AvatarEngine : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     private void UpdatePurifiedHeading()
     {
+        if (runnerTrackingState == null)
+            runnerTrackingState = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
+
+        // 実機ではRunnerTrackingStateがCoreLocation方位とARKit/IMU移動を1.5秒窓で
+        // 融合済み。これを進行方向の一次情報にし、旧シーンでは下のローカル計測へ
+        // フォールバックする。
+        if (runnerTrackingState != null && runnerTrackingState.HasMovementHeading)
+        {
+            Vector3 trackedHeading = runnerTrackingState.CurrentHeading;
+            trackedHeading.y = 0f;
+            if (trackedHeading.sqrMagnitude > 0.0001f)
+            {
+                _currentLinearDirection = trackedHeading.normalized;
+                _hasMovementHeading = true;
+                // Do not advance _lastFrameUserPosition here. Overtake detection
+                // later in this frame needs the same previous-frame sample to
+                // calculate the runner's actual instantaneous speed.
+                return;
+            }
+        }
+
         // Accumulate movement delta (horizontal plane only)
         Vector3 movementDelta = userCamera.position - _lastFrameUserPosition;
         movementDelta.y = 0;
@@ -410,6 +474,7 @@ public class AvatarEngine : MonoBehaviour
         // Never fall back to userCamera.forward (that causes gaze-drift).
         if (integratedGPS.magnitude > 0.02f)
         {
+            _hasMovementHeading = true;
             Vector3 gpsDir = integratedGPS.normalized;
 
             // Feature #6: Weighted angular velocity — recent frames weighted heavier
@@ -619,6 +684,8 @@ public class AvatarEngine : MonoBehaviour
     public void ResetSession()
     {
         _hasStarted = false;
+        _runMotionActive = false;
+        _runMotionFallbackAt = -1f;
         IsSessionEnded = false;
         IsHalted = false;
         IsOverriddenByRecovery = false;
@@ -626,6 +693,7 @@ public class AvatarEngine : MonoBehaviour
 
         _movementHistory.Clear();
         _headingHistory.Clear();
+        _hasMovementHeading = false;
         _overtakeState = OvertakeState.None;
         _overtakenTimer = 0f;
         _sprintTimer = 0f;
@@ -651,6 +719,47 @@ public class AvatarEngine : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     // Private helpers
     // ════════════════════════════════════════════════════════════════════════
+    /// <summary>
+    /// 静止状態ではGPS移動ベクトルがまだ存在せず、既定のworld +Zがユーザーの背後に
+    /// なる場合がある。開始時に限り現在の視線方向を初期アンカーへ使い、移動検出後は
+    /// UpdatePurifiedHeadingだけが方位を更新する。従って走行中の見回しでは横揺れしない。
+    /// </summary>
+    private void AlignStartHeadingToUserView()
+    {
+        if (_hasMovementHeading || userCamera == null)
+            return;
+
+        Vector3 initialForward = userCamera.forward;
+        initialForward.y = 0f;
+        if (initialForward.sqrMagnitude < 0.0001f)
+            return;
+
+        _currentLinearDirection = initialForward.normalized;
+        _targetPacingPosition = userCamera.position
+                              + _currentLinearDirection * leadDistanceMeters;
+        _targetPacingPosition.y = transform.position.y;
+        _smoothRotation = Quaternion.LookRotation(_currentLinearDirection, Vector3.up);
+        transform.SetPositionAndRotation(_targetPacingPosition, _smoothRotation);
+    }
+
+    private void ActivateRunMotion()
+    {
+        if (!_hasStarted || _runMotionActive || IsSessionEnded)
+            return;
+
+        if (runnerTrackingState == null)
+            runnerTrackingState = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
+        if (runnerTrackingState != null)
+            runnerTrackingState.MarkRunMotionStarted();
+
+        _runMotionActive = true;
+        _targetPacingPosition = transform.position;
+        _lastFrameUserPosition = userCamera != null ? userCamera.position : Vector3.zero;
+        _lastFrameDeltaTime = Time.deltaTime;
+        SendSafeAnimatorTrigger("RunResume");
+        Debug.Log("[PACER ENGINE] START complete — runner timing, tracking and pacer motion are active.");
+    }
+
     private void CalculateVelocityMatrix(float pace)
     {
         _calculatedTargetSpeedMetersPerSecond = 1000f / (pace * 60f);

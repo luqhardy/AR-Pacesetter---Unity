@@ -1,12 +1,13 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 public class AnalyticsManager : MonoBehaviour
 {
     [Header("Tracking Parameters")]
     [SerializeField] private Transform userCamera;       // XR Origin Main Camera
-    [SerializeField] private Transform avatarContainer;  // Pacing companion anchor
+    [SerializeField] private Transform avatarContainer;  // Legacy scene link; never used as the runner metric
     [SerializeField] private AvatarEngine avatarEngine;
+    [SerializeField] private RunnerTrackingState runnerTracking;
+    [SerializeField] private ARSessionManagerBridge sessionBridge;
 
     [Header("Environment Configuration")]
     [Range(15f, 40f)]
@@ -20,6 +21,18 @@ public class AnalyticsManager : MonoBehaviour
 
     private float _lastEvaluatedKilometerMarker = 0.0f;
     private float _cumulativeFatigueIndex = 0.0f;
+
+    // Pace-derived synchronicity state. The avatar intentionally remains about
+    // 3m ahead, so its transform must never be treated as runner deviation.
+    private const float InternalSpeedSmoothingSeconds = 1.0f;
+    private const float MaximumHumanSpeedMetersPerSecond = 15.0f;
+    private const float MaximumIntegrationStepSeconds = 0.25f;
+    private Vector3 _lastUserPosition;
+    private bool _hasUserPositionSample;
+    private bool _hasActualSpeedSample;
+    private float _smoothedInternalSpeedMetersPerSecond;
+    private float _paceDistanceDeviationMeters;
+    private float _liveSyncRate;
 
     // Splits Alert Event (Requirement 4.3)
     public delegate void SplitReachedDelegate(float kmMarker, float avgSync);
@@ -41,31 +54,50 @@ public class AnalyticsManager : MonoBehaviour
         {
             avatarEngine = FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
         }
+        if (sessionBridge == null)
+        {
+            sessionBridge = FindFirstObjectByType<ARSessionManagerBridge>(FindObjectsInactive.Include);
+        }
+        if (runnerTracking == null)
+        {
+            runnerTracking = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
+        }
+        ResetPositionSample();
     }
 
     void Update()
     {
-        if (userCamera == null || avatarContainer == null) return;
-        if (avatarEngine == null || !avatarEngine.HasStarted) return;
+        if (userCamera == null) return;
+        if (avatarEngine == null || !avatarEngine.IsRunMotionActive) return;
 
-        // 1. Calculate Real-Time Sync Rate (Requirement 4.3) - horizontal plane only
-        float separationDistance = GetHorizontalSeparationDistance();
-        
-        // Distance deviation of >= 10m drops Synchronicity instantly to 0%
-        float currentSyncRate = 0.0f;
-        if (separationDistance < 10.0f)
-        {
-            currentSyncRate = 100.0f * (1.0f - (separationDistance / 10.0f));
-        }
+        // Requirement 4.3: compare the target pace to the runner's measured
+        // pace. Fresh CoreLocation data wins; editor/standalone runs fall back
+        // to smoothed horizontal XR-camera speed.
+        if (!TryGetActualSpeed(out float actualSpeedMetersPerSecond))
+            return; // Do not grade the sensor warm-up period as a failed run.
+
+        float targetSpeedMetersPerSecond =
+            PaceSynchronicityMath.PaceToMetersPerSecond(avatarEngine.TargetPaceMinutesPerKm);
+        float integrationStep = Mathf.Clamp(Time.deltaTime, 0f, MaximumIntegrationStepSeconds);
+        _paceDistanceDeviationMeters = PaceSynchronicityMath.AccumulateDistanceDeviation(
+            _paceDistanceDeviationMeters,
+            targetSpeedMetersPerSecond,
+            actualSpeedMetersPerSecond,
+            integrationStep);
+
+        _liveSyncRate = PaceSynchronicityMath.CalculateSyncPercent(
+            targetSpeedMetersPerSecond,
+            actualSpeedMetersPerSecond,
+            _paceDistanceDeviationMeters);
 
         // Update aggregates instead of adding to a list (Fix: Memory Bloat)
-        _totalSyncSum += currentSyncRate;
+        _totalSyncSum += _liveSyncRate;
         _totalSyncCount++;
-        _currentKmSyncSum += currentSyncRate;
+        _currentKmSyncSum += _liveSyncRate;
         _currentKmSyncCount++;
 
         // 2. Compute Temperature-Compensated Fatigue Index (Requirement 4.3)
-        CalculateDynamicFatigue(currentSyncRate);
+        CalculateDynamicFatigue(_liveSyncRate);
     }
 
     private void CalculateDynamicFatigue(float syncRate)
@@ -120,6 +152,11 @@ public class AnalyticsManager : MonoBehaviour
         _currentKmSyncCount = 0;
         _lastEvaluatedKilometerMarker = 0.0f;
         _cumulativeFatigueIndex = 0.0f;
+        _paceDistanceDeviationMeters = 0.0f;
+        _liveSyncRate = 0.0f;
+        _smoothedInternalSpeedMetersPerSecond = 0.0f;
+        _hasActualSpeedSample = false;
+        ResetPositionSample();
     }
 
     public float GetSessionAverageSync()
@@ -144,20 +181,112 @@ public class AnalyticsManager : MonoBehaviour
         return "D"; // Low compliance bounds
     }
 
-    private float GetHorizontalSeparationDistance()
+    private bool TryGetActualSpeed(out float actualSpeedMetersPerSecond)
     {
-        if (userCamera == null || avatarContainer == null) return 0f;
-        Vector3 userPosHorizontal = new Vector3(userCamera.position.x, 0f, userCamera.position.z);
-        Vector3 avatarPosHorizontal = new Vector3(avatarContainer.position.x, 0f, avatarContainer.position.z);
-        return Vector3.Distance(userPosHorizontal, avatarPosHorizontal);
+        // The invisible RunnerTrackingState is the preferred shared source for
+        // GPS and ARKit/IMU motion. This keeps scoring, avatar heading and future
+        // demo simulation on the same representation of the physical runner.
+        if (runnerTracking != null)
+        {
+            if (runnerTracking.HasValidSpeedMeasurement)
+            {
+                // A genuinely fresh CoreLocation sample with 0km/h is a valid
+                // stopped-runner reading, not "missing". Cached timer messages do
+                // not refresh HasValidSpeedMeasurement in RunnerTrackingState.
+                actualSpeedMetersPerSecond =
+                    Mathf.Max(0f, runnerTracking.ExternalSpeedKmH) / 3.6f;
+                _hasActualSpeedSample = true;
+                return true;
+            }
+
+            actualSpeedMetersPerSecond = runnerTracking.CurrentSpeedKmH / 3.6f;
+            if (actualSpeedMetersPerSecond >= 0.2f)
+                _hasActualSpeedSample = true;
+            return _hasActualSpeedSample;
+        }
+
+        // Backward-compatible fallback for scenes that predate
+        // RunnerTrackingState.
+        float externalPaceKilometersPerHour = sessionBridge != null
+            ? sessionBridge.MeasuredPaceKmH
+            : 0f;
+
+        // Keep the XR baseline current even while external pace is authoritative,
+        // preventing a large fallback delta if CoreLocation temporarily expires.
+        float internalSpeed = SampleInternalSpeed();
+
+        if (externalPaceKilometersPerHour > 0f
+            && !float.IsNaN(externalPaceKilometersPerHour)
+            && !float.IsInfinity(externalPaceKilometersPerHour))
+        {
+            actualSpeedMetersPerSecond = externalPaceKilometersPerHour / 3.6f;
+            _hasActualSpeedSample = true;
+            return true;
+        }
+
+        // Before the first credible movement sample, zero means "not measured"
+        // rather than "runner stopped". Once movement has been seen, zero is a
+        // legitimate stopped-runner sample and should produce 0% sync.
+        if (!_hasActualSpeedSample && internalSpeed >= 0.2f)
+            _hasActualSpeedSample = true;
+
+        actualSpeedMetersPerSecond = internalSpeed;
+        return _hasActualSpeedSample;
     }
 
     public float GetLiveSyncRate()
     {
-        if (userCamera == null || avatarContainer == null) return 0.0f;
-        float separationDistance = GetHorizontalSeparationDistance();
-        if (separationDistance >= 10.0f) return 0.0f;
-        return Mathf.Max(0.0f, 100.0f * (1.0f - (separationDistance / 10.0f)));
+        return _liveSyncRate;
+    }
+
+    /// <summary>
+    /// Signed pace-derived gap: negative is behind target, positive is ahead.
+    /// Exposed for diagnostics/demo telemetry; it is unrelated to avatar lead.
+    /// </summary>
+    public float PaceDistanceDeviationMeters => _paceDistanceDeviationMeters;
+
+    private float SampleInternalSpeed()
+    {
+        if (userCamera == null)
+            return 0f;
+
+        Vector3 current = userCamera.position;
+        current.y = 0f;
+        if (!_hasUserPositionSample)
+        {
+            _lastUserPosition = current;
+            _hasUserPositionSample = true;
+            return _smoothedInternalSpeedMetersPerSecond;
+        }
+
+        float dt = Mathf.Max(Time.deltaTime, 0.0001f);
+        float distance = Vector3.Distance(current, _lastUserPosition);
+        _lastUserPosition = current;
+
+        float instantaneousSpeed = distance / dt;
+        // Tracking relocalisation can teleport the XR origin. Ignore that sample
+        // instead of interpreting it as impossible running speed.
+        if (instantaneousSpeed > MaximumHumanSpeedMetersPerSecond
+            || float.IsNaN(instantaneousSpeed)
+            || float.IsInfinity(instantaneousSpeed))
+        {
+            instantaneousSpeed = _smoothedInternalSpeedMetersPerSecond;
+        }
+
+        float smoothing = 1f - Mathf.Exp(-dt / InternalSpeedSmoothingSeconds);
+        _smoothedInternalSpeedMetersPerSecond +=
+            (instantaneousSpeed - _smoothedInternalSpeedMetersPerSecond) * smoothing;
+        return Mathf.Max(0f, _smoothedInternalSpeedMetersPerSecond);
+    }
+
+    private void ResetPositionSample()
+    {
+        _hasUserPositionSample = userCamera != null;
+        if (userCamera != null)
+        {
+            _lastUserPosition = userCamera.position;
+            _lastUserPosition.y = 0f;
+        }
     }
 
     public float GetCumulativeFatigue()

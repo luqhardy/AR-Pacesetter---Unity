@@ -84,7 +84,7 @@ public class AvatarAuraEffect : MonoBehaviour
         if (_streaks == null || avatarEngine == null || userCamera == null) return;
 
         // 走行中のみ(準備画面・終了後は消灯)
-        bool running = avatarEngine.HasStarted && !avatarEngine.IsSessionEnded;
+        bool running = avatarEngine.IsRunMotionActive;
         if (!running)
         {
             SetActiveStreaks(0);
