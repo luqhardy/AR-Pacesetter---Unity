@@ -57,6 +57,7 @@ public class PeripheralHUDManager : MonoBehaviour
     private float _smoothedSpeedMps;
     private const float SpeedSmoothingTauSeconds = 3.0f;
     private ARSessionManagerBridge _sessionBridge;
+    private bool _wasRunInProgress;
 
     // F-07/F-10 ペース色と警告色
     private static readonly Color PaceMaintainingGreen = new Color(0.30f, 0.92f, 0.45f);
@@ -93,6 +94,8 @@ public class PeripheralHUDManager : MonoBehaviour
         _elapsedTimeSeconds = 0.0f;
         _cumulativeDistanceMeters = 0.0f;
         _runStartUtc = System.DateTime.MinValue;
+        _wasRunInProgress = false;
+        _smoothedSpeedMps = 0f;
         if (userCamera != null)
             _lastUserPosition = userCamera.position;
     }
@@ -158,7 +161,15 @@ public class PeripheralHUDManager : MonoBehaviour
 
         // Clock and distance only accumulate once the run has started,
         // so the session result reflects the actual run (企画書 §4)
-        bool runInProgress = avatarEngine == null || avatarEngine.HasStarted;
+        bool runInProgress = avatarEngine == null || avatarEngine.IsRunMotionActive;
+        if (runInProgress && !_wasRunInProgress)
+        {
+            // Exclude all motion used to settle/calibrate GPS during 3-2-1.
+            _lastUserPosition = userCamera.position;
+            _smoothedSpeedMps = 0f;
+            _runStartUtc = System.DateTime.UtcNow;
+        }
+        _wasRunInProgress = runInProgress;
 
         // 1. Calculate Runtime Clock (Format: MM:SS)
         // 壁時計ベース: 画面ロック等でUnityが一時停止しても実経過時間が欠落しない

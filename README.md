@@ -556,6 +556,63 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-05 — kyainna/AR-pace-setter-unity との合体
+
+分岐点 `d515120b` から並行開発されていた2本の履歴をマージ。共通の祖先を持つため
+`--allow-unrelated-histories` は不要で、衝突は5ファイルのみだった。
+
+**取り込んだもの(kyainna側)**
+- POVランナー追跡基盤(`RunnerTrackingState` / `RunnerTrackingMath` / `PaceSynchronicityMath`)。
+  GPS方位とARKitのVisual-Inertial移動を1.5秒窓で融合し、シンクロ率を
+  「アバターの3m先行」から切り離して目標ペース対実測で算出する
+- ARゴールライン・ゴール演出(`GoalLineController` / `GoalLineMath`)
+- `Tools → AR Pacesetter → POV Demo` の自動60m走デモ(`PovRunnerDemoMenu`)
+- 開始演出の音源と`3 → 2 → 1 → START!`の同期
+- **`AR_Runner_UI.xcodeproj` への UnityFramework リンクのcommit化**。
+  これまでXcodeで毎回手作業していた Embed & Sign が不要になる
+
+**衝突の解消方針**
+- `ARVisionSystemsBootstrap` / `ARSessionManagerBridge` / `ARVision.UnitTests.csproj` — 双方とも追加のみ。両方採用
+- `E2EScenarioBehaviour` — 相手が前倒しした開始カウントダウン検証と、
+  こちらの実測身長チェックを併存させ、**重複したカウントダウン検証1件のみ削除**
+- `README.md` — 双方が `(3)` から独立採番したため `2026-09-02 (4)` が衝突。
+  相手側を `(4-b)` へ改番して時系列順に統合
+
+**検証**: フルコンパイル0エラー(Assembly-CSharp 53本 + Editor 7本) /
+ユニット**102件**全PASS(GoalLineMath・PaceSynchronicityMath・RunnerTrackingMath の22件が加わった) /
+**E2E 99項目 全PASS**(pass=99 fail=0、終了コード0)。
+Swiftの `swiftc -parse` はWindowsでは実行できないため未検証 — CIのmacOSランナーで担保する
+
+### 2026-09-04 — UaaLワークスペーススキームの復旧
+
+- `ios/ARRunner.xcworkspace` に共有の `AR_Runner_UI` スキームを配置。SwiftUIホストと `UnityFramework` を同一スキームでビルド・実機起動できるようにした
+
+### 2026-09-04 — POVランナー追跡基盤・自動デモ
+
+- ユーザーの3Dモデルは描画せず、`RunnerTrackingState`へXR Camera位置、CoreLocation距離/速度/精度、GPS方位、心拍を集約
+- GPS緯度経度の進行方向をARワールドへ較正し、ARKitのVisual-Inertial移動と1.5秒窓で融合。`AvatarEngine`は融合済み方位を一次情報として使用
+- シンクロ率を意図的な「アバター3m先行距離」から切り離し、目標ペース対実測ペースと累積距離偏差(10mで0%)で算出
+- CoreLocationの新規fix/速度有効性を明示し、キャッシュ再送・精度20m超のfix・GPS未取得時の設定ペースが実測として扱われる問題を修正
+- `StartSession`は走行を即時加算せず、`3 → 2 → 1 → START!`完了を正式な計測開始境界に変更。カウント中の移動をGPS距離ベースラインから除外し、時計・シンクロ率・CSV・VFXもSTART後に開始
+- `Tools → AR Pacesetter → POV Demo → Start Automatic 60m Run`で、ユーザーモデル無しの60m走行を自動再現可能
+- 自動デモの`StartSession` JSON生成で末尾の数値書式が文字列`F2`になるUnityランタイム互換問題を修正し、Play開始直後でも設定パネルを再生成せず確実にカウントダウンへ進むよう改善
+- 現在のXREAL連携は外部ディスプレイ出力まで。XREAL固有head-pose/IMU入力は未統合であり、現段階の追跡姿勢はiPhone ARKit/XR Camera由来
+- 検証: Unity C#コンパイル0エラー、純C#ロジック15チェック、Swift全ファイル構文解析、Play Mode E2E **86/86 PASS**
+
+### 2026-09-04 — スタート演出の視認性・音源更新
+
+- 提供されたレース開始音源へ差し替え、`3 → 2 → 1 → START!`を音と同じ1秒間隔へ同期
+- カウント文字へフィット制御、影、アクセントリング、ポップアニメーションを追加し、短い開始演出中は常にユーザー正面へ表示
+- 移動方位が未確定の開始時だけカメラ正面を初期アンカーに使い、アバターが背後へ出る問題を修正。移動開始後は従来どおり1.5秒の移動ベクトルのみで方位更新
+- ゴールゲートへ出現アニメーション、シアンの輪郭・ポールキャップ、色変化する紙吹雪を追加し、暗いAR背景でも判別しやすく改善
+
+### 2026-09-03 — ゴール演出（ゲームスタイル）
+
+- 参考画像に合わせ、上下の黒白チェック柄と円柱ポールを持つフィニッシュゲートへ変更
+- ゴール時にワールド空間の「CONGRATULATIONS!」バウンス表示と紙吹雪VFXを再生
+- 提供された2種類のMP3をResourcesから読み込み、ゴールごとにランダム再生（読込失敗時は従来音へフォールバック）
+- TMP文字の実寸をゲート幅へ正規化し、祝い文字が視界全体を覆う問題を修正。エディタ用に「残り5m」再現メニューも追加
+
 ### 2026-09-02 (8) — アバターが実物より大きい問題の修正(実測ベースの身長スケール)
 
 実機で「アバターが実寸より大きい」報告への対応。**計測して確認できた**:
@@ -654,6 +711,12 @@ XREALのSDKはAndroid専用でiOSからは頭部姿勢を取得できないた�
 
 **検証**: フルコンパイル0エラー / Swift構文PASS / **E2E 77項目 全PASS**
 (所有権の3項目を追加: 未送信時はUnityが所有 / 非表示に切り替わる / 復帰する)
+### 2026-09-02 (4-b) — ARゴールライン (kyainnaブランチで並行開発)
+
+- 目標距離の残り25mで、白×シアンのチェック柄ゴールラインとゲートをAR空間へ表示
+- 純化済み進行方向と正規距離から終点を推定し、残り8mでワールド座標へ固定して視線揺れを抑制
+- ゴール到達時は2.5秒間表示を残し、自動終了・再走行・手動終了と同期
+- Prefabやシーン配線は不要（`GoalLineController`をBootstrapが実行時生成）
 
 ### 2026-09-02 (3) — 二重HUDの解消とiPhoneの操作面化(監査M1)
 

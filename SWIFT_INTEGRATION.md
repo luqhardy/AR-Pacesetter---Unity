@@ -146,8 +146,8 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 
 | ターゲットGameObject | command | フィールド | Unity側の動作 |
 |---|---|---|---|
-| `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → `StartPacing()`。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
-| `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm`, `gpsLatitude`, `gpsLongitude`, `gpsAccuracy` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定。測位3値は`GpsSignalMonitor`(F-09 §8.1のロスト判定)とF-11 CSVログのGPS列へ供給される。**`gpsAccuracy > 0` が有効サンプルの目印**(未送信/負値は無効として完全に無視され、エディタ単体走行を阻害しない)<br>**測位3値は「前回と異なる新しいfixのとき」だけ添付すること。** 同じfixを毎秒再送するとUnity側の更新途絶タイマーが際限なくリセットされ、F-09の「1.5秒途絶」判定が永久に成立しなくなる。`distanceKm` は**実測のみ**を送る(推定距離を送るとゴール判定とHealthKitへ混入する) |
+| `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → 走行をarmed状態にする。`3-2-1-START`完了後に時計・距離・同期・CSV・アバター走行を開始。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
+| `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm`, `gpsLatitude`, `gpsLongitude`, `gpsAccuracy`, `locationSampleFresh`, `speedSampleValid` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定。測位は`RunnerTrackingState`のGPS+ARKit方位融合、`GpsSignalMonitor`のロスト判定、F-11 CSVへ供給。`locationSampleFresh=true`はCoreLocationの**新しく、かつ精度ゲート(20m以下)を通ったfixだけ**、`speedSampleValid=true`は同じ採用fixで`CLLocation.speed >= 0`のときだけ設定する。精度不良の生fixは`gpsAccuracy`としてロスト判定には届くが、距離/速度の鮮度は更新しない。これによりキャッシュ再送や不良fixを実測扱いせず、有効な速度0(静止)と未計測を区別する。`distanceKm`は実測のみで、設定ペースを実測値として送らない |
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
 | `ARSessionManager` | `ResumeSession` | — | §8.3: グラス再接続後、**準備画面からの再スタート操作**でスタンバイ中の表示のみ復帰(新規セッションは開始せず記録は継続) |
@@ -156,6 +156,8 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 
 `StartSession`は前セッションが終了済みの場合、全コンポーネント(エンジン・集計・HUD・
 セーフティログ・音響)を自動リセットしてから開始する — **同一起動内での再走行に対応**。
+CoreLocationはカウント中にも測位を安定させるが、その間の累積距離をSTART時の
+ベースラインとして差し引くため、開始前の歩行は走行記録・ゴール判定へ入らない。
 
 ### Unity → Swift (NSNotification `UnityToSwiftMessage` → `onUnityMessage`)
 
@@ -239,6 +241,7 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 
 - 初回のみ UnityFramework の Embed & Sign と Data フォルダの Target Membership 変更が手動(上記②)
 - `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)。DeviceConnectViewのARグラス行タップで送信される
+- 外部ディスプレイへのUnity描画は実装済みだが、XREAL固有のhead-pose/IMU入力は未接続。現在の空間姿勢はiPhone ARKit/XR Camera由来であり、グラスでのworld-lock完成にはpose bridgeが別途必要
 - バックグラウンド中はUnity(AR描画)は停止する — 計測のみ継続し、復帰時にHUD/アバターが追いつく
 
 ## 走行画面の配線(実装済み)

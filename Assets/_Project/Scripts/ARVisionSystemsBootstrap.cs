@@ -57,6 +57,8 @@ public static class ARVisionSystemsBootstrap
             Debug.Log("[BOOTSTRAP] SilentRouteRecoverer auto-attached to avatar.");
         }
 
+        // 画面には描画しない実ランナー状態。Avatar/Analytics/Goalが同じ入力を参照する。
+        Ensure<RunnerTrackingState>();
         Ensure<SafetyEventLogger>();
         Ensure<RunAudioEngine>();
         Ensure<RunSessionController>();
@@ -65,6 +67,7 @@ public static class ARVisionSystemsBootstrap
         Ensure<GpsSignalMonitor>(); // F-09 GPSロスト自動判定(§8.1)
         Ensure<CountdownDisplay>(); // 走行開始カウントダウンのAR表示(音のカウントと同期)
         Ensure<ARPassthroughController>(); // 光学シースルー時のカメラ映像抑止
+        Ensure<GoalLineController>(); // 目標距離接近時のARゴールライン(実行時生成)
 
         // F-11: 100Hz テレメトリCSVロガー(基本設計書§5.2 — PoCの核)。
         // アバターtransformを読むためエンジンと同居させる

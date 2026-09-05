@@ -80,7 +80,7 @@ public class SafetyEventLogger : MonoBehaviour
         _lastPos = userCamera.position;
 
         // Only log while a run is in progress
-        if (avatarEngine != null && !avatarEngine.HasStarted) return;
+        if (avatarEngine != null && !avatarEngine.IsRunMotionActive) return;
 
         TrackSpeedHistory(speed);
         DetectSuddenStop(speed);

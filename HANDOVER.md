@@ -33,7 +33,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 | 要件 | 実装 | 検証 |
 |---|---|---|
-| 3.0m先行追従・Vector Forward純化(1.5s移動平均) | `AvatarEngine.cs` | E2E(直線・コーナー) |
+| 3.0m先行追従・Vector Forward純化(GPS+ARKit/IMU、1.5s移動平均) | `RunnerTrackingState.cs` + `AvatarEngine.cs` | Unit(GPS換算)+E2E(直線・コーナー) |
 | 速度連動 Walk/Jog/Run ブレンド | `OvertakeBehaviourController.cs` + Animator | エディタ目視 |
 | 自動接地(±15cm/0.3sイージング・断崖判定) | `GroundSnap.cs` + `GroundFloorTracker.cs` | **E2E自動**(障害物停止/再開・**床の固定**) |
 | 離隔待機(10mで座標固定+手招き、7mで再開) | `AvatarEngine.cs` | **E2E自動** |
@@ -66,7 +66,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 | 要件 | 実装 | 検証 |
 |---|---|---|
-| シンクロ率(S=100×(1−d/10))・1km/5kmスプリット | `AnalyticsManager.cs` | **E2E自動** |
+| シンクロ率(目標対実測ペース+累積距離偏差、絶対偏差10m以上で0%)・1km/5kmスプリット | `PaceSynchronicityMath.cs` + `AnalyticsManager.cs` | **Unit + E2E自動** |
 | リザルト4段階ランク+アバターコメント生成 | `RunSessionController.cs` | **E2E自動** |
 | 疲労推定(28℃×1.5/31℃×2.0) | `AnalyticsManager.cs` | **E2E自動**(3閾値の係数) |
 | セーフティ・ロギング(急停止/速度超過/逸脱) | `SafetyEventLogger.cs` | **E2E自動**(逸脱ログ) |
@@ -86,9 +86,10 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 ## 3. 検証手段(再現手順)
 
 1. **コンパイル検証(Unity起動不要)**: README「更新履歴」参照のdotnetビルド手法
-2. **E2E自動検証(40項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
+2. **E2E自動検証(現在86項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
    — 開始→走行→バイタル警告→追い抜き→障害物停止→ルート逸脱復帰→離隔待機→**コーナー追従(半径36.5m)**→ゴール(お辞儀)→記録→ゴースト再走→GPS喪失/復帰→履歴→HUD抑制→ジェスチャー3種→フェイクシャドウ→60fps設定を自動判定(終了コード0=全PASS)
 3. **エディタ手動検証**: README「エディタ検証用ショートカットキー一覧」
+   - POV一括デモ: `Tools → AR Pacesetter → POV Demo → Start Automatic 60m Run`
 4. **統合ビルド(Mac)**: SWIFT_INTEGRATION.md の手順②(UaaL)
 
 ## 4. 企画書§6 成功基準との対応
@@ -98,14 +99,14 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | ① コーナー追従の安定性(400mトラック曲線部) | ロジックはE2Eで自動検証(実地検証は未) |
 | ① 低遅延描画 ≤20ms 95% | 計測基盤あり(`LatencyBenchmarkRunner`・実測は実機要) |
 | ① 接地精度(LiDAR/空間認識) | エディタRaycast実装済(実機LiDAR検証は未) |
-| ② 1.5s移動平均・視覚的安定性 | 実装済(`AvatarEngine` Vector Forward純化) |
+| ② 1.5s移動平均・視覚的安定性 | 実装済(`RunnerTrackingState` GPS+ARKit融合 → `AvatarEngine`) |
 | ② 直感的ペーシング | 実装済(シンクロ率・E2E検証) |
 | ③ 実証実験の完遂 | **未**(陸上競技場での実走が必要) |
 | ③ 技術資産の譲渡(再現・拡張可能な状態) | 本ドキュメント+各種ドキュメントで整備 |
 
 ## 5. 未完了事項(引き継ぎ時の注意)
 
-- **XREAL SDK統合**: グラス表示は外部ディスプレイ経由で実装済み(`ExternalDisplayManager.swift`・SDK不要)。SDK固有機能(6DoF・空間メッシュ等)が必要になった場合のみNRSDK導入を検討
+- **XREAL head-pose/IMU入力は未統合**: `ExternalDisplayManager.swift`はUnity画面をUSB-C外部ディスプレイへ移すところまで。`ConnectXREAL`もReady状態更新であり、グラス固有の姿勢/IMU値はUnityへ届かない。現状の`RunnerTrackingState`はiPhoneのARKit/XR Camera+CoreLocationを使うためiPhone POVデモは可能だが、グラスを自由に装着した状態の真のworld-lockにはXREAL SDKまたは対応するpose bridgeが必要
 - **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
   - **未実施であることの確認方法と症状(重要)**: `ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj` に
     `UnityFramework` の文字列が1つも無い場合、リンクは未実施。このとき Swift 側は

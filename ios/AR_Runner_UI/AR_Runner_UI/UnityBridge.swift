@@ -125,12 +125,16 @@ final class UnityBridge: NSObject, ObservableObject {
     /// GPSロスト自動判定(§8.1)と走行ログCSVのGPS列(§5.2)に使用する。
     func updateRunnerMetrics(paceKmH: Double, heartRate: Int, distanceKm: Double,
                              gpsLatitude: Double = 0, gpsLongitude: Double = 0,
-                             gpsAccuracy: Double = -1) {
+                             gpsAccuracy: Double = -1,
+                             locationSampleFresh: Bool = false,
+                             speedSampleValid: Bool = false) {
         var payload: [String: Any] = [
             "command": "UpdateMetrics",
             "paceKmH": paceKmH,
             "heartRate": heartRate,
-            "distanceKm": distanceKm
+            "distanceKm": distanceKm,
+            "locationSampleFresh": locationSampleFresh,
+            "speedSampleValid": speedSampleValid
         ]
         if gpsAccuracy >= 0 {
             payload["gpsLatitude"] = gpsLatitude
@@ -371,9 +375,11 @@ final class ARSessionManager: ObservableObject {
             isDistanceEstimated = true
         }
 
-        // ペース: GPS実測速度(0.5km/h以上で有効)、なければ設定値
+        // ペース: GPS実測だけをUnityへ送る。設定ペースは「目標」であって実測ではない。
+        // GPS未取得時に設定値を送ると、静止中でもSync 100%と誤判定される。
         let gpsSpeed = tracker.currentSpeedKmH
-        let effectivePace = gpsSpeed > 0.5 ? gpsSpeed : configuredPaceKmH
+        let speedIsMeasured = tracker.hasValidSpeedMeasurement
+        let measuredPace = speedIsMeasured ? gpsSpeed : 0
 
         // 心拍: HealthKit実測(Watch装着時)のみ。未取得は0=不明として送る(H2)
         let bpm = HeartRateMonitor.shared.latestBpm
@@ -386,19 +392,22 @@ final class ARSessionManager: ObservableObject {
 
         if isNewFix {
             lastSentFixDate = fixDate
+            let acceptedForMetrics = tracker.latestFixAcceptedForMetrics
             bridge.updateRunnerMetrics(
-                paceKmH: effectivePace,
+                paceKmH: acceptedForMetrics ? measuredPace : 0,
                 heartRate: bpm,
                 distanceKm: measuredDistanceKm,
                 gpsLatitude: tracker.latestLatitude,
                 gpsLongitude: tracker.latestLongitude,
-                gpsAccuracy: tracker.latestAccuracyMeters
+                gpsAccuracy: tracker.latestAccuracyMeters,
+                locationSampleFresh: acceptedForMetrics,
+                speedSampleValid: acceptedForMetrics && speedIsMeasured
             )
         } else {
-            // 測位は添付しない(gpsAccuracy既定 -1 = 無効)。Unityは測位時刻を更新せず、
-            // 実際にGPSが途絶えていれば正しくロストと判定できる
+            // 測位は添付せず、実測ペースも0(不明)にする。キャッシュ距離は画面の
+            // 連続性用に送るが locationSampleFresh=false のためUnityの鮮度は更新しない。
             bridge.updateRunnerMetrics(
-                paceKmH: effectivePace,
+                paceKmH: 0,
                 heartRate: bpm,
                 distanceKm: measuredDistanceKm
             )

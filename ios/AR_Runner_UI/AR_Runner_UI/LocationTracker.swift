@@ -11,6 +11,10 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
 
     @Published private(set) var totalDistanceKm: Double = 0
     @Published private(set) var currentSpeedKmH: Double = 0
+    @Published private(set) var hasValidSpeedMeasurement = false
+    /// Whether the newest raw fix passed the accuracy gate and is allowed to
+    /// refresh distance/speed freshness in Unity.
+    @Published private(set) var latestFixAcceptedForMetrics = false
 
     // 生の測位サンプル(精度不良でも記録)。UnityのGPSロスト判定(§8.1)と
     // 走行ログCSVのGPS列(§5.2)へ供給する。accuracyは負値=無効(CoreLocation準拠)
@@ -47,6 +51,8 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     func start() {
         totalDistanceKm = 0
         currentSpeedKmH = 0
+        hasValidSpeedMeasurement = false
+        latestFixAcceptedForMetrics = false
         lastLocation = nil
         latestFixDate = nil
         isTracking = true
@@ -92,10 +98,15 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
             latestLongitude = location.coordinate.longitude
             latestAccuracyMeters = location.horizontalAccuracy
             latestFixDate = location.timestamp
+            // Each raw fix gets an atomic validity result. A poor-accuracy fix
+            // must not inherit the previous good fix's speed-valid state.
+            latestFixAcceptedForMetrics = false
+            hasValidSpeedMeasurement = false
 
             // 距離積算には精度不良・無効サンプルを使わない (要件定義 6.2: 精度半径ゲート)
             guard location.horizontalAccuracy >= 0,
                   location.horizontalAccuracy <= maxAcceptableAccuracyMeters else { continue }
+            latestFixAcceptedForMetrics = true
 
             if let last = lastLocation {
                 let delta = location.distance(from: last)
@@ -108,6 +119,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
 
             if location.speed >= 0 {
                 currentSpeedKmH = location.speed * 3.6
+                hasValidSpeedMeasurement = true
             }
         }
 

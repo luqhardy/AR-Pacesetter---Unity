@@ -50,11 +50,15 @@ public class E2EScenarioBehaviour : MonoBehaviour
         var ghost = FindFirstObjectByType<GhostPaceDriver>(FindObjectsInactive.Include);
         var analytics = FindFirstObjectByType<AnalyticsManager>(FindObjectsInactive.Include);
         var stateController = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
+        var goalLine = FindFirstObjectByType<GoalLineController>(FindObjectsInactive.Include);
+        var runnerTracking = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
 
         Check(bridge != null, "bootstrap: ARSessionManagerBridge exists");
         Check(engine != null, "bootstrap: AvatarEngine exists");
         Check(session != null, "bootstrap: RunSessionController exists");
         Check(ghost != null, "bootstrap: GhostPaceDriver exists");
+        Check(goalLine != null, "bootstrap: GoalLineController exists");
+        Check(runnerTracking != null, "bootstrap: invisible RunnerTrackingState exists");
 
         Camera cam = Camera.main;
         Check(cam != null, "scene: main camera exists");
@@ -125,6 +129,24 @@ public class E2EScenarioBehaviour : MonoBehaviour
         if (avatarHeight > 0.01f)
             Check(Mathf.Abs(avatarHeight - 1.75f) < 0.15f,
                 $"scale: avatar renders at real-world height for 175cm (measured {avatarHeight:F2}m)");
+        // StartSession first arms the 3-2-1-START presentation. Movement,
+        // analytics, telemetry, clock and distance must still be paused here.
+        var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
+        Check(countdown != null, "countdown: CountdownDisplay auto-created by bootstrap");
+        if (countdown != null)
+            Check(countdown.IsShowing, $"countdown: visible right after start (showing '{countdown.CurrentText}')");
+        Check(!engine.IsRunMotionActive, "countdown: runner motion remains paused before START");
+
+        float startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 6f)
+        {
+            startWait += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.IsRunMotionActive, "countdown: START activates runner motion");
+        if (countdown != null)
+            Check(countdown.HasCompleted, "countdown: full 3-2-1-START sequence completed");
+        yield return null; // allow telemetry/VFX listeners to observe the transition
 
         var fakeShadow = FindFirstObjectByType<FakeShadowRenderer>(FindObjectsInactive.Include);
         Check(fakeShadow != null && fakeShadow.IsVisible,
@@ -198,12 +220,6 @@ public class E2EScenarioBehaviour : MonoBehaviour
             yield return null;
         }
 
-        // 開始カウントダウンのAR表示(音のカウントと同じ0.6秒刻み)
-        var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
-        Check(countdown != null, "countdown: CountdownDisplay auto-created by bootstrap");
-        if (countdown != null)
-            Check(countdown.IsShowing, $"countdown: visible right after start (showing '{countdown.CurrentText}')");
-
         var visualsForColor = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
 
         // ── Step 2: 走行シミュレーション(カメラを前進させる) ────────────────
@@ -212,6 +228,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         bool justColorObserved = false;
         bool livePaceObserved = false;   // F-07: 実際の数値が出ること
         bool paceGreenObserved = false;  // F-07: 目標を保っている間は緑
+        bool goalLineObserved = false;
         Vector3 runDirection = Vector3.forward;
         while (!engine.IsSessionEnded && elapsed < StepTimeoutSeconds)
         {
@@ -236,6 +253,9 @@ public class E2EScenarioBehaviour : MonoBehaviour
                     paceGreenObserved = true;
             }
 
+            if (!goalLineObserved && goalLine != null && goalLine.IsVisible)
+                goalLineObserved = true;
+
             // 途中でSwiftメトリクスも1回注入(実機経路の確認)
             if (!_metricsSent && elapsed > 3f)
             {
@@ -246,6 +266,18 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
 
         Check(engine.IsSessionEnded, "goal: session auto-finished by goal distance");
+        Check(goalLineObserved, "goal: AR goal line appeared before target distance");
+        Check(goalLine != null && goalLine.IsReached,
+            "goal: AR goal line remains visible briefly after crossing");
+        Check(goalLine != null && goalLine.IsCelebrationVisible,
+            "goal: CONGRATULATIONS text animation is visible");
+        Check(goalLine != null && goalLine.IsConfettiPlaying,
+            "goal: confetti VFX is playing");
+        var goalAudio = FindFirstObjectByType<RunAudioEngine>(FindObjectsInactive.Include);
+        Check(goalAudio != null && goalAudio.HasGoalJingles,
+            "goal: imported win jingle is available");
+        Check(goalAudio != null && !string.IsNullOrEmpty(goalAudio.LastGoalJingleName),
+            "goal: imported win jingle started playing");
         Check(syncObserved, "run: live sync rate exceeded 30% during run");
         Check(justColorObserved, "color: pace-sync GREEN (just) while on target pace (§7.1)");
         Check(livePaceObserved, "hud: live pace value rendered during run (not '--')");
@@ -316,6 +348,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         Check(engine.HasStarted && !engine.IsSessionEnded, "restart: second run started after reset");
         Check(ghost != null && ghost.IsActive, "ghost: GhostPaceDriver active");
+
+        startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 6f)
+        {
+            startWait += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.IsRunMotionActive, "restart: second countdown reaches START");
 
         // 少し走ってゴーストペース追従を確認
         for (float t = 0; t < 3f; t += Time.deltaTime)
