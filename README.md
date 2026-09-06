@@ -556,6 +556,44 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-06 — 合体で混入したローカル署名設定の除去と再発防止
+
+コードベース精査で検出。`f67c4886` に `tools/prepare-free-signing.sh` の
+**実行結果がそのままコミットされていた**。引数にはドキュメントの例文
+`com.yourname.pacesetter` がそのまま使われていた。
+
+**何が壊れていたか**(いずれも `d515120b` の値へ復元済み)
+
+| 設定 | 混入後 | 復元 |
+|---|---|---|
+| `PRODUCT_BUNDLE_IDENTIFIER` | `com.yourname.pacesetter` | `com.pacesetterUI` |
+| `DEVELOPMENT_TEAM`(プロジェクト) | `""` | `2A8ULHF589` |
+| HealthKit entitlement | 削除済み | 復元 |
+
+**なぜ重大か**: Bundle IDが変わるとiOSは別アプリとして扱う。それまでの実機ビルドが
+`Documents/RunLogs/` に貯めた **CSVログ(PoCの成果物)へ新しいアプリからアクセスできない**。
+加えてHealthKitのentitlementが無いため、`HeartRateMonitor` /
+`HealthKitWorkoutSaver` のコードが残ったまま**黙って機能しない**状態になっていた。
+entitlementsファイル内の復旧手順コメント(`git checkout -- ios/AR_Runner_UI`)も、
+コミットされた時点で「削除済みの版を復元する」誤った案内に変わっていた。
+
+**再発防止**(事故の直接原因は「ドキュメントの例をそのまま貼れたこと」)
+
+1. `prepare-free-signing.sh` が `yourname` / `example` / `<>` / 既定値 `com.pacesetterUI` を
+   **プレースホルダとして拒否**する
+2. 同スクリプトが、対象ファイルに未コミット変更(staged含む)があれば**多重実行を拒否**する
+   — 重ねて実行すると元の値が失われ `git checkout` で戻せなくなるため
+3. 完了時に「**コミットしないこと**」を枠付きで警告し、戻すコマンドを提示する
+4. **CIに混入検知を追加**。Bundle IDのプレースホルダ・空の`DEVELOPMENT_TEAM`・
+   HealthKit欠落のいずれかで、高価なビルドの前に数秒で落ちる
+5. `Docs/BUILD_ON_BORROWED_MAC.md` の例を `com.<あなたのID>.pacesetter` へ変更し、
+   コミット禁止とCSVログを失う理由を明記
+
+**検証**: 復元後の署名設定が `d515120b` と完全一致することを差分で確認 /
+UnityFrameworkのリンク設定(合体の成果)が無傷であることを確認 /
+新ガードを事故当時の状態に対して実行し3項目すべて検知することを確認 /
+スクリプトの3つの拒否経路を実行確認。C#変更なしのためE2Eは再実行していない。
+
 ### 2026-09-05 — kyainna/AR-pace-setter-unity との合体
 
 分岐点 `d515120b` から並行開発されていた2本の履歴をマージ。共通の祖先を持つため

@@ -68,8 +68,16 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 
       ```bash
       chmod +x tools/prepare-free-signing.sh
-      ./tools/prepare-free-signing.sh com.yourname.pacesetter
+      ./tools/prepare-free-signing.sh com.<あなたのID>.pacesetter
       ```
+
+      **⚠ この変更は絶対にコミットしないこと。** ローカルの署名事情に合わせた
+      一時的な改変であり、リポジトリの正の設定ではない。実際に一度、実行結果が
+      そのままコミットされ、Bundle IDが `com.yourname.pacesetter` のまま共有される
+      事故が起きている(2026-09-05 の合体で検出・修正済み)。
+      **Bundle IDが変わるとiOS上は別アプリになり、それまでの実機ビルドが貯めた
+      `RunLogs/*.csv`(PoCの成果物)へ新しいアプリからアクセスできなくなる。**
+      現在はスクリプト側がプレースホルダを拒否し、CIも混入を検知して落とす。
 
       HealthKitケイパビリティの除去・チームIDの空化・Bundle IDの差し替えを行う。
       **なぜHealthKitを外すのか**: 無料のPersonal TeamではHealthKitをプロビジョニングできず

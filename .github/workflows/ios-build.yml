@@ -38,6 +38,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ローカル署名設定の混入検知。
+      # tools/prepare-free-signing.sh はローカル専用の一時改変を行うが、
+      # 一度その実行結果がそのままコミットされ、Bundle ID がプレースホルダのまま
+      # 共有される事故が起きた (2026-09-05 の合体で検出)。
+      # Bundle ID が変わると iOS 上は別アプリになり、過去の実機ビルドが貯めた
+      # RunLogs/*.csv (PoCの成果物) へ新しいアプリからアクセスできなくなる。
+      # 高価なビルドの前に、数秒で弾く。
+      - name: Guard against committed local signing overrides
+        run: |
+          PBX=ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj
+          ENT=ios/AR_Runner_UI/AR_Runner_UI/AR_Runner_UI.entitlements
+          fail=0
+
+          if grep -qiE 'PRODUCT_BUNDLE_IDENTIFIER = [^;]*(yourname|example)' "$PBX"; then
+            echo "::error file=$PBX::Bundle ID がプレースホルダのままです。tools/prepare-free-signing.sh の実行結果をコミットしていませんか (戻す: git checkout -- ios/AR_Runner_UI)"
+            fail=1
+          fi
+
+          if grep -q 'DEVELOPMENT_TEAM = "";' "$PBX"; then
+            echo "::error file=$PBX::DEVELOPMENT_TEAM が空です。無料署名用のローカル改変が混入しています"
+            fail=1
+          fi
+
+          if ! grep -q 'com.apple.developer.healthkit' "$ENT"; then
+            echo "::error file=$ENT::HealthKit ケイパビリティが失われています。無料署名用のローカル改変が混入しています"
+            fail=1
+          fi
+
+          if [ "$fail" -eq 0 ]; then
+            echo "署名設定は正常です"
+            grep -o 'PRODUCT_BUNDLE_IDENTIFIER = [^;]*;' "$PBX" | sort -u
+          fi
+          exit $fail
+
       - name: Select Xcode
         run: |
           echo "--- 利用可能なXcode ---"
