@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - Navigation State
 enum AppScreen {
     case onboarding
+    case home
     case deviceConnect
     case runningSettings
     case mapRoute
@@ -12,7 +13,19 @@ enum AppScreen {
 }
 
 struct ContentView: View {
-    @State private var screen: AppScreen = .onboarding
+    private static let onboardingCompletionKey = "hasCompletedOnboarding"
+    @State private var screen: AppScreen
+    
+    init() {
+        _screen = State(
+            initialValue: UserDefaults.standard.bool(forKey: Self.onboardingCompletionKey)
+            ? .deviceConnect
+            : .onboarding
+        )
+    }
+    
+//struct ContentView: View {
+    //@State private var screen: AppScreen = .onboarding
 
     var body: some View {
         ZStack {
@@ -23,15 +36,22 @@ struct ContentView: View {
             // 1. Three-page tutorial
             case .onboarding:
                 OnboardingView(
+                    onNext: { screen = .home },
+                    onBack: { }
+                )
+            // add on
+            case .home:
+                HomeView(
                     onNext: { screen = .deviceConnect },
                     onBack: { }
                 )
-
+                
+                
             // 2. Connect AR glasses + Apple Watch + AirPods
             case .deviceConnect:
                 DeviceConnectView(
                     onNext: { screen = .runningSettings },
-                    onBack: { screen = .onboarding }
+                    onBack: { screen = .home }
                 )
 
             // 3. Set time, distance, pace
@@ -54,13 +74,13 @@ struct ContentView: View {
             case .stats:
                 StatsView(
                     onHistory: { screen = .history },
-                    onBack: { screen = .mapRoute }
+                    onBack: { screen = .lockScreen }
                 )
 
             // 8. History
             case .history:
                 HistoryView(
-                    onBack: { screen = .stats }
+                    onBack: { screen = .home }
                 )
             case .lockScreen:
                         LockScreenView(
