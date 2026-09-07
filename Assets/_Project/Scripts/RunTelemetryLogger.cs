@@ -36,6 +36,15 @@ public class RunTelemetryLogger : MonoBehaviour
     private int _bufferedRows;
     private float _sampleAccumulator;
 
+    // 書き込みハンドルは走行中つけっぱなしにする。File.AppendAllText は
+    // フラッシュのたびに open→write→close を行い、さらに _buffer.ToString() で
+    // 毎回24KB前後の一時文字列を確保していた。60分走(§10)では約1,800回の
+    // 開閉と数十MBのGCになり、M2P 20ms(§10)のフレーム予算を脅かす
+    private StreamWriter _writer;
+
+    /// <summary>書き出せなかった行数。0以外ならこのCSVは不完全。</summary>
+    public int DroppedRowCount { get; private set; }
+
     // タイムスタンプはサンプル時刻(開始epoch + 連番×10ms)で採番する。
     // 書き込み時刻を使うと1フレームで複数行を書いた際に同一msが重複し、
     // 100Hzサンプルとして解析(§11.2 CSV解析による遅延評価)できなくなる
@@ -201,9 +210,20 @@ public class RunTelemetryLogger : MonoBehaviour
         Directory.CreateDirectory(dir);
         _filePath = Path.Combine(dir, $"Log_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv");
 
+        try
+        {
+            _writer = new StreamWriter(_filePath, append: false, encoding: new UTF8Encoding(false));
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[TELEMETRY] CSVを開けませんでした ({_filePath}): {e.Message}");
+            _writer = null;
+        }
+
         _buffer.Clear();
         _buffer.Append(Header).Append('\n');
         _bufferedRows = 0;
+        DroppedRowCount = 0;
         _sampleAccumulator = 0f;
         _logStartEpochMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         _sampleIndex = 0;
@@ -216,29 +236,56 @@ public class RunTelemetryLogger : MonoBehaviour
     private void StopLogging()
     {
         Flush();
+        CloseWriter();
         _logging = false;
-        Debug.Log($"[TELEMETRY] CSVログ終了: {_filePath}");
+        if (DroppedRowCount > 0)
+            Debug.LogError($"[TELEMETRY] CSVログ終了 — 不完全 ({DroppedRowCount} 行欠落): {_filePath}");
+        else
+            Debug.Log($"[TELEMETRY] CSVログ終了: {_filePath}");
     }
 
     private void Flush()
     {
         if (_buffer.Length == 0) return;
+
+        if (_writer == null)
+        {
+            // 開けていない = このセッションのCSVは残らない。黙って捨てず件数を残す
+            DroppedRowCount += _bufferedRows;
+            _buffer.Clear();
+            _bufferedRows = 0;
+            return;
+        }
+
         try
         {
-            File.AppendAllText(_filePath, _buffer.ToString());
+            // StringBuilderを直接渡す(ToString()の大きな一時文字列を作らない)
+            _writer.Write(_buffer);
+            _writer.Flush(); // 従来と同じ耐久性: 200行毎にOSへ確実に渡す
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"[TELEMETRY] CSV書き出し失敗: {e.Message}");
+            // PoCの成果物であるCSVが欠けたことを、件数として必ず残す
+            DroppedRowCount += _bufferedRows;
+            Debug.LogError($"[TELEMETRY] CSV書き出し失敗 (累計欠落 {DroppedRowCount} 行): {e.Message}");
         }
         _buffer.Clear();
         _bufferedRows = 0;
+    }
+
+    private void CloseWriter()
+    {
+        if (_writer == null) return;
+        try { _writer.Dispose(); }
+        catch (System.Exception e) { Debug.LogError($"[TELEMETRY] CSVクローズ失敗: {e.Message}"); }
+        _writer = null;
     }
 
     /// <summary>再走行対応: ログ状態を破棄する(保存済みCSVはそのまま残る)。</summary>
     public void ResetSession()
     {
         if (_logging) StopLogging();
+        CloseWriter();
         _filePath = null;
         _buffer.Clear();
         _bufferedRows = 0;
@@ -249,5 +296,6 @@ public class RunTelemetryLogger : MonoBehaviour
     void OnDestroy()
     {
         if (_logging) Flush();
+        CloseWriter();
     }
 }

@@ -38,3 +38,7 @@ ios/**/*.xcuserstate
 # Unit test build artifacts (dotnet test)
 /Tests/**/bin/
 /Tests/**/obj/
+
+# 検証時の生成物 (E2E/エクスポートのログ)
+/e2e.log
+/export.log
