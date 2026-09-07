@@ -556,6 +556,28 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-07 (2) — エクスポート後の再リンクを自動化
+
+`ios/UnityExport/` はエクスポートのたびに丸ごと作り直される生成物のため、
+Xcode上で手作業した設定は毎回消える。中でも `Data` フォルダの Target Membership は
+既定で **Unity-iPhone**(Unity単体アプリのターゲット)に付いており、UaaLでは
+**UnityFramework** へ付け替えないとホストアプリのリンクが undefined symbols で落ちる。
+毎回クリックし直す運用は忘れやすく、症状(リンクエラー)からは原因が分かりにくい。
+
+- [`tools/relink-unity-export.sh`](tools/relink-unity-export.sh) を追加。
+  pbxproj上で `Data` を UnityFramework の Resources フェーズへ移す
+- UUIDはハードコードせず**ターゲット名から解決**する。同名のPBXGroupが同じコメントを
+  持つため、`isa = PBXNativeTarget` を確認するまで確定しない
+- **冪等**: 両フェーズから一旦外してから付け直すので、何度実行しても結果は同じ
+
+なお、もう一方の手作業だった **UnityFramework の Embed & Sign** は、
+kyainna との合体で pbxproj にcommit済みとなったため不要になった(2026-09-05 のエントリ)。
+残る手作業はこのスクリプトが処理する Target Membership のみ。
+
+**検証**: 現行エクスポートに対して実行し、`Data in Resources` が Unity-iPhone の
+Resources フェーズから UnityFramework のフェーズへ1件だけ移動することを差分で確認 /
+2回目の実行が無変更(冪等)であることを確認
+
 ### 2026-09-07 — CSVロガーの書き込み経路を是正(コードベース精査の中優先分)
 
 **問題**: `Flush()` が200行ごとに `File.AppendAllText` を呼んでいた。これは毎回
