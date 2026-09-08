@@ -117,8 +117,32 @@ public class LatencyBenchmarkRunner : MonoBehaviour
             ClearQueues();
     }
 
-    /// <summary>ローリング平均のMotion-to-Photon合計 (ms)。未計測なら -1。</summary>
-    public double AverageTotalMs
+    /// <summary>
+    /// このランナーが<b>本物のMotion-to-Photonを測っているか</b>。現状は常に false。
+    ///
+    /// <para>4段のうち Motion-to-Photon の実測はひとつも含まれていない:
+    /// ①IMU取得は <c>userCamera.position</c> に乱数ノイズを足すだけ、
+    /// ②カルマンは3回ループの浮動小数演算(コメントの「~4ms相当」は実体と異なる)、
+    /// ③フレーム生成は <c>AvatarEngine.Update</c> を再実行せず代数演算のコストのみ、
+    /// ④送出は <c>Time.deltaTime</c> の代用。合計は実質「フレーム時間」に等しい。</para>
+    ///
+    /// <para><b>真のM2Pには光子の射出時刻が要るのでソフトだけでは取れない。</b>
+    /// ただし「センサー時刻 → 提示時刻」なら iOS で実測できる
+    /// (ARKitフレームのタイムスタンプ + <c>CADisplayLink.targetTimestamp</c>)。
+    /// それを実装したらここを true にし、CSVの <c>latency_m2p</c> 列が実測で埋まる。</para>
+    ///
+    /// <para>なぜフラグにするか: この合成値を実測として記録すると、
+    /// 基本設計書 §11.2 の「CSV解析で20msを評価する」が
+    /// <b>測定ではなく構造によって合格</b>してしまう(§10 の要求は20ms以内)。</para>
+    /// </summary>
+    public const bool ProvidesRealMotionToPhoton = false;
+
+    /// <summary>
+    /// ローリング平均の<b>合成</b>パイプライン所要時間 (ms)。未計測なら -1。
+    /// M2Pの実測ではない — HUD表示と相対比較のためだけに使うこと。
+    /// CSVや外部への報告に使う場合は <see cref="ProvidesRealMotionToPhoton"/> を必ず見る。
+    /// </summary>
+    public double AverageSyntheticTotalMs
     {
         get
         {
@@ -165,8 +189,9 @@ public class LatencyBenchmarkRunner : MonoBehaviour
         // which is the closest proxy available without hardware access.
         double submitStart = GetHighResMs();
         _t_submit = Time.deltaTime * 1000.0; // convert seconds → ms
-        // Clamp to budget range so it reads as "what was left of the budget"
-        _t_submit = System.Math.Min(_t_submit, BudgetSubmitMs * 2.0);
+        // クランプは外した。上限 (BudgetSubmitMs * 2 = 16ms) を掛けると、
+        // この段が支配項であるがゆえに**合計が構造的に16msを超えられなくなり**、
+        // どれだけ遅延しても「予算内」に見えてしまう。異常はそのまま見せる
 
         _t_total = GetHighResMs() - totalStart + _t_submit;
 

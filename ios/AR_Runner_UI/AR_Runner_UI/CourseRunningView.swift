@@ -240,9 +240,12 @@ struct RunningView: View {
                             .frame(maxWidth: .infinity)
 
                             VStack(spacing: 3) {
-                                Text("\(bridge.avatarSyncRate)%")
+                                // 負値は「未計測」(Unity未リンク等)。0%と区別できるよう
+                                // 数字ではなくダッシュで示す — 見えている数字は必ず実測
+                                Text(bridge.avatarSyncRate < 0 ? "—" : "\(bridge.avatarSyncRate)%")
                                     .font(.system(size: 24, weight: .bold, design: .monospaced))
-                                    .foregroundColor(bridge.avatarSyncRate >= 80 ? .arYellow : .orange)
+                                    .foregroundColor(bridge.avatarSyncRate < 0 ? .arGrayText
+                                                     : (bridge.avatarSyncRate >= 80 ? .arYellow : .orange))
                                 Text("シンクロ率")
                                     .font(.system(size: 11))
                                     .foregroundColor(.arGrayText)

@@ -269,8 +269,14 @@ final class UnityBridge: NSObject, ObservableObject {
                 self.avatarState = .run
                 self.gpsStatus = .active
             case "UpdateMetrics":
-                self.avatarSyncRate = Int.random(in: 78...96)
-                self.motionToPhotonMs = Double.random(in: 14...19)
+                // **もっともらしい値を返さないこと。**
+                // 以前はここで同期率78〜96%、M2P 14〜19msという乱数を返していた。
+                // どちらも「要求を満たしているように見える」範囲に収まるため、
+                // UnityFramework が未リンクなことに気づかないまま、
+                // 画面の数字を実測として読んでしまう。
+                // -1 は「値が無い」の意味で、UI側は未計測として扱う
+                self.avatarSyncRate = -1
+                self.motionToPhotonMs = -1
             case "EndSession":
                 self.avatarState = .goal
             case "ConnectXREAL":

@@ -62,7 +62,6 @@ public class ARSessionManagerBridge : MonoBehaviour
     private const float BaselineAvatarHeightCm = 175f; // 企画書 §4.1
 
     private float _nextReportTime;
-    private float _smoothedFrameMs = 16.6f;
     private string _lastSentAvatarState = "";
     private bool _gpsWasLost = false;
     private bool _sessionDriven = false; // true once Swift has issued StartSession
@@ -356,8 +355,6 @@ public class ARSessionManagerBridge : MonoBehaviour
     // ── Unity → Swift 定期レポート (1Hz) ─────────────────────────────────────
     void Update()
     {
-        _smoothedFrameMs = Mathf.Lerp(_smoothedFrameMs, Time.deltaTime * 1000f, 0.1f);
-
         ReportGpsTransitions();
         UpdateRunMotionBoundary();
 
@@ -370,10 +367,16 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (analytics != null)
             SwiftMessageSender.SendSyncRate(Mathf.RoundToInt(analytics.GetLiveSyncRate()));
 
-        // 実測M2P(LatencyBenchmarkRunnerのローリング平均)を優先、
-        // 未計測時は平滑化フレーム時間にフォールバック
-        double measuredM2p = latencyRunner != null ? latencyRunner.AverageTotalMs : -1.0;
-        SwiftMessageSender.SendLatency(measuredM2p > 0 ? measuredM2p : _smoothedFrameMs);
+        // M2Pは実測できたときだけ送る。-1 = 未計測。
+        //
+        // 以前は LatencyBenchmarkRunner の合成値を「実測M2P」として送り、
+        // 無ければ平滑化フレーム時間で埋めていた。どちらもM2Pではないのに、
+        // 受け手(Swiftの motionToPhotonMs)には実測として届いていた。
+        // 合成値の中身と、実測経路の作り方は LatencyBenchmarkRunner を参照
+        double measuredM2p = LatencyBenchmarkRunner.ProvidesRealMotionToPhoton && latencyRunner != null
+            ? latencyRunner.AverageSyntheticTotalMs
+            : -1.0;
+        SwiftMessageSender.SendLatency(measuredM2p);
         SendAvatarStateIfChanged(DeriveAvatarState());
 
         // エディタ/スタンドアロン走行ではUnity自身の距離計測でもゴール判定する

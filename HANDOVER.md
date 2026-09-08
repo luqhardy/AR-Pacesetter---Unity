@@ -97,7 +97,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | 成功基準 | 状態 |
 |---|---|
 | ① コーナー追従の安定性(400mトラック曲線部) | ロジックはE2Eで自動検証(実地検証は未) |
-| ① 低遅延描画 ≤20ms 95% | 計測基盤あり(`LatencyBenchmarkRunner`・実測は実機要) |
+| ① 低遅延描画 ≤20ms 95% | **未計測**。`LatencyBenchmarkRunner` は合成ベンチマークであり実機でもM2Pを測らない(下記) |
 | ① 接地精度(LiDAR/空間認識) | エディタRaycast実装済(実機LiDAR検証は未) |
 | ② 1.5s移動平均・視覚的安定性 | 実装済(`RunnerTrackingState` GPS+ARKit融合 → `AvatarEngine`) |
 | ② 直感的ペーシング | 実装済(シンクロ率・E2E検証) |
@@ -105,6 +105,24 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | ③ 技術資産の譲渡(再現・拡張可能な状態) | 本ドキュメント+各種ドキュメントで整備 |
 
 ## 5. 未完了事項(引き継ぎ時の注意)
+
+- **M2P(Motion-to-Photon)は未計測。CSVの `latency_m2p` 列は `-1` が入る**
+
+  `LatencyBenchmarkRunner` は名前に反して M2P を測っていない。4段のうち実測はひとつも無い:
+  ①IMU取得は `userCamera.position` に乱数ノイズを足すだけ、②カルマンは3回ループの浮動小数演算
+  (コメントの「~4ms相当」は実体と異なる)、③フレーム生成は `AvatarEngine.Update` を再実行せず
+  代数演算のコストのみ、④送出は `Time.deltaTime` の代用。合計は実質フレーム時間に等しい。
+  さらに④には `BudgetSubmitMs × 2 = 16ms` のクランプが掛かっていたため、
+  **合計は構造的に16msを超えられず、どれだけ遅延しても「20ms要求を満たす」ように見えた**。
+
+  2026-09-08 に是正済み: クランプを撤去し、`ProvidesRealMotionToPhoton` が false の間は
+  CSVにも Swift にも `-1`(未計測)を送る。E2Eで「捏造値が入らないこと」を検証している。
+
+  **実測の作り方**: 真のM2Pは光子の射出時刻が要るのでソフトだけでは取れないが、
+  「センサー時刻 → 提示時刻」なら iOS で実測できる(ARKitフレームのタイムスタンプ +
+  `CADisplayLink.targetTimestamp`)。欠けるのはディスプレイのスキャンアウトのみで、
+  これはグラスの仕様値で補える定数。実装したら `ProvidesRealMotionToPhoton` を true にすれば
+  CSVが実測で埋まり、§11.2 の評価が成立する。**それまで §10 の20ms達成は主張できない。**
 
 - **XREAL head-pose/IMU入力は未統合**: `ExternalDisplayManager.swift`はUnity画面をUSB-C外部ディスプレイへ移すところまで。`ConnectXREAL`もReady状態更新であり、グラス固有の姿勢/IMU値はUnityへ届かない。現状の`RunnerTrackingState`はiPhoneのARKit/XR Camera+CoreLocationを使うためiPhone POVデモは可能だが、グラスを自由に装着した状態の真のworld-lockにはXREAL SDKまたは対応するpose bridgeが必要
 - **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)

@@ -556,6 +556,46 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-08 (3) — `latency_m2p` が測っていないものを測っていると主張しないようにした
+
+**発見**: F-11のCSVに100Hzで書かれる `latency_m2p` は、M2Pの実測を一切含んでいなかった。
+`LatencyBenchmarkRunner` の4段はすべて合成:
+
+| 段 | 実体 | 実際のコスト |
+|---|---|---|
+| ①IMU取得 | `userCamera.position` に `Random.Range` でノイズを足す | 数μs |
+| ②カルマン | コメントは「~4ms相当」だが実体は**3回ループ**の浮動小数演算 | 数μs |
+| ③フレーム生成 | 「`AvatarEngine.Update` は再実行しない」と明記。代数演算のみ | 数μs |
+| ④送出 | `Time.deltaTime` の代用を `min(x, 16.0)` で**クランプ** | ~16ms |
+
+合計は実質 `min(フレーム時間, 16.0)` の定数。**決定的なのは④のクランプで、
+この指標は構造的に大きな違反を報告できない** — 実際のM2Pが45msでもCSVは約16msと書く。
+§10の要求は20ms以内、§11.2 は「CSV解析で20msを評価する」としているので、
+**測定ではなく構造によって合格する**状態だった。
+
+コード自体のコメントは正直(`Simulate` / `would be` / `closest proxy available`)で、
+足場が差し替えられないまま残っていたのが実態。問題は上の層 — 列名・HANDOVER・評価計画が
+これを実測として扱っていた。
+
+**対応**
+- ④のクランプを撤去。上限があると異常が見えない
+- `LatencyBenchmarkRunner.ProvidesRealMotionToPhoton`(現状 false)を追加。
+  false の間は **CSVにも Swift にも `-1`(未計測)を書く**。フレーム時間での穴埋めを廃止
+- `AverageTotalMs` → `AverageSyntheticTotalMs` へ改名。呼び出し側が名前で誤解しないように
+- 列名 `latency_m2p` は基本設計書 §5.2 の規定なので**変更していない**。
+  値を `-1` にすれば「無い」と伝わり、実測経路ができれば同じ列がそのまま埋まる
+- `ARSessionManagerBridge` が合成値を「実測M2P」としてSwiftへ送っていたのを停止。
+  フォールバック専用だった `_smoothedFrameMs` は死にコードになったため削除
+- **Swift側の未リンク時フォールバックも是正**: 同期率78〜96%、M2P 14〜19msという
+  「要求を満たしているように見える」乱数を返していた(UaaLガイド§6が warning していた当の罠が
+  そのまま残っていた)。`-1` に変更し、HUDは数値ではなくダッシュを出す
+- `HANDOVER.md` §4「計測基盤あり・実測は実機要」→「**未計測**」へ訂正し、
+  §5に実測経路の作り方(ARKitフレーム時刻 + `CADisplayLink.targetTimestamp`)を追記
+
+**検証**: フルコンパイル0エラー / 実機ビルド構成でも0エラー /
+**E2E 103項目 全PASS** — CSVの9列目が全行 `-1` であることを検証する項目を追加(300行確認)。
+Swiftは `swiftc -parse` がWindowsで動かないため未検証、CIのmacOSランナーで担保する
+
 ### 2026-09-08 (2) — コードベース精査の低優先分の後片付け
 
 - **`ProjectSettings/ShaderGraphSettings 2〜5.asset` を削除**。4つとも正準版と内容が同一

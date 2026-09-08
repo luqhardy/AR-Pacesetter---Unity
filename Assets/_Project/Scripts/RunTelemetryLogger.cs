@@ -183,8 +183,17 @@ public class RunTelemetryLogger : MonoBehaviour
 
         Vector3 avatarPos = avatarEngine != null ? avatarEngine.transform.position : Vector3.zero;
 
-        double latency = latencyRunner != null ? latencyRunner.AverageTotalMs : -1.0;
-        if (latency <= 0) latency = Time.deltaTime * 1000.0; // フォールバック
+        // latency_m2p は「実測できたときだけ」書く。-1 = 未計測。
+        //
+        // 以前はここで LatencyBenchmarkRunner の合成値を使い、それも無ければ
+        // フレーム時間で埋めていた。どちらもM2Pの実測ではないのに、60fpsでは
+        // 約16msという「20ms要求を満たしているように見える」値が全行に並ぶ。
+        // 基本設計書 §11.2 はこのCSVでM2Pを評価するとしているため、
+        // 測定ではなく構造によって合格してしまう状態だった。
+        // 実測経路ができるまでは -1 を書き、解析側に「無い」と分からせる
+        double latency = LatencyBenchmarkRunner.ProvidesRealMotionToPhoton && latencyRunner != null
+            ? latencyRunner.AverageSyntheticTotalMs
+            : -1.0;
 
         _buffer.Append(tsMs).Append(',')
             .Append(_gpsLat.ToString("F7", ci)).Append(',')

@@ -339,6 +339,27 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(headerOk, "telemetry: CSV header matches §5.2 spec");
             Check(dataRows > 100, $"telemetry: ~100Hz rows written ({dataRows} rows)");
 
+            // latency_m2p (9列目) に捏造値が入っていないこと。
+            // 合成ベンチマークやフレーム時間で埋めると、60fpsでは約16msという
+            // 「§10の20ms要求を満たしているように見える」値が全行に並び、
+            // §11.2「CSV解析で20msを評価する」が測定ではなく構造によって合格する。
+            // 実測経路ができるまでは -1 (未計測) でなければならない
+            bool latencyHonest = true;
+            int latencyChecked = 0;
+            for (int i = 1; i < lines.Length && latencyChecked < 300; i++)
+            {
+                string[] cols = lines[i].Split(',');
+                if (cols.Length < 9) { latencyHonest = false; break; }
+                if (!double.TryParse(cols[8], System.Globalization.NumberStyles.Float,
+                                     System.Globalization.CultureInfo.InvariantCulture,
+                                     out double m2p)) { latencyHonest = false; break; }
+                if (m2p >= 0) { latencyHonest = false; break; } // 実測が無いのに値が入っている
+                latencyChecked++;
+            }
+            Check(latencyHonest && latencyChecked > 0,
+                $"telemetry: latency_m2p reports -1 while no real M2P measurement exists " +
+                $"(checked {latencyChecked} rows)");
+
             // タイムスタンプが単調増加かつ10ms刻み(100Hz)であること。
             // 書込時刻を使うと1フレーム内の複数行が同一msになり解析不能になる
             bool monotonic10ms = true;
