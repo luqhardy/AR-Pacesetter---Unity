@@ -227,10 +227,22 @@ It fetches the exported project from a GitHub Release, then builds two things:
    in a Unity project surfaces these: not C# compilation, not unit tests, not editor Play Mode.
 2. **The host app** — catches Swift compile errors.
 
-One caveat worth understanding: while the framework's link settings (Embed & Sign, `Data` target
-membership) are done by hand in Xcode rather than committed to the `pbxproj`, CI compiles the host with
-`canImport(UnityFramework)` **false** — so the framework-linked branch of your code isn't covered. Commit
-those settings and the gap closes.
+**Commit the host's link settings, or CI is quietly testing the wrong thing.** While Embed & Sign lives
+only in a developer's local Xcode session, CI compiles the host with `canImport(UnityFramework)` **false**
+— it builds, it goes green, and the framework-linked branch of your code is never touched. That is how a
+link error like `__mh_execute_header` reaches a device despite a passing pipeline. Once the framework
+reference and the Embed Frameworks phase are in the committed `pbxproj`, the link line carries
+`-framework UnityFramework` and the real branch is covered. Check the build log for that flag rather than
+assuming.
+
+The `Data` target membership can't be committed the same way — it lives in the *exported* project, which
+is regenerated every time. Script it as a post-export step instead.
+
+**Also check that the export matches the source.** CI links your Swift against whatever Unity artifact it
+downloaded, which may predate your C# changes — it will happily go green against a stale framework while
+the fix you are chasing isn't in it. Compare the export's commit against `HEAD` and warn when
+`Assets/`, `ProjectSettings/` or `Packages/` moved since; a shallow `git fetch --depth=1 <sha>` is enough,
+because `git diff` only needs the two trees, not the history between them.
 
 ---
 

@@ -104,6 +104,38 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "::notice::使用するエクスポート: $TAG (対象コミット: ${GITHUB_SHA:0:8})"
 
+          # エクスポートの鮮度を検査する。
+          #
+          # このジョブが検証するのは「Swift/pbxproj が、あるUnity成果物とリンクできるか」。
+          # だがタグは常に最新のReleaseを拾うだけなので、Unity側のC#を変更してから
+          # 再エクスポートを公開し忘れると、**古いフレームワークに対して緑になる**。
+          # 実機で「直したはずの不具合が直っていない」となる典型経路がこれ。
+          #
+          # 失敗にはしない: Swiftだけの変更なら古いエクスポートでもリンク検証は有効。
+          # ただし何に対して緑なのかは必ず見えるようにする。
+          # checkout は浅いclone(depth=1)なので、比較対象のコミットだけを取り寄せる。
+          # 履歴全体(約1.3GB)を引く fetch-depth: 0 は高くつくうえ不要 —
+          # git diff は2つのツリーさえあれば計算できる(繋がった履歴は要らない)
+          EXPORT_SHA="${TAG#unity-export-}"
+          git fetch --no-tags --depth=1 origin "$EXPORT_SHA" 2>/dev/null || true
+
+          if git cat-file -e "${EXPORT_SHA}^{commit}" 2>/dev/null; then
+            # Assets / ProjectSettings / Packages はすべてエクスポート成果物に焼き込まれる。
+            # .cs に限らずシーン・プレハブ・設定の変更も再エクスポートが要る
+            CHANGED=$(git diff --name-only "$EXPORT_SHA" "$GITHUB_SHA" -- \
+                      Assets ProjectSettings Packages | wc -l | tr -d ' ')
+            if [ "$CHANGED" != "0" ]; then
+              echo "::warning::このエクスポートは古いです — $EXPORT_SHA 以降に Unity 側で ${CHANGED} ファイルが変更されています。Swift/リンクの検証としては有効ですが、実機の挙動はこのジョブでは保証されません。再エクスポートして公開してください"
+              echo "── 未反映の変更 (先頭20件) ──"
+              git diff --name-only "$EXPORT_SHA" "$GITHUB_SHA" -- \
+                Assets ProjectSettings Packages | head -20
+            else
+              echo "::notice::エクスポートは最新です (Unity側に差分なし)"
+            fi
+          else
+            echo "::notice::エクスポート元コミット $EXPORT_SHA を取得できないため鮮度を判定できません"
+          fi
+
       - name: Download Unity export
         env:
           GH_TOKEN: ${{ github.token }}

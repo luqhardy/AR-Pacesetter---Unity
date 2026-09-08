@@ -556,6 +556,40 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-08 — エクスポート鮮度のCI検査と、合体で陳腐化したドキュメントの是正
+
+**CIが「古いエクスポートに対して緑になる」穴を塞いだ**
+
+このジョブが検証しているのは「Swift/pbxproj が、あるUnity成果物とリンクできるか」。
+だがタグは常に最新のReleaseを拾うだけなので、**Unity側のC#を変更してから再エクスポートを
+公開し忘れると、古いフレームワークに対して緑になる**。実機で「直したはずの不具合が
+直っていない」となる典型経路がこれで、実際に本リポジトリでも2世代前のエクスポートに対して
+CIが緑を出し続けていた。
+
+- `Resolve export tag` にエクスポート鮮度の検査を追加。タグのコミットと `HEAD` の間で
+  `Assets/` `ProjectSettings/` `Packages/` に差分があれば警告し、未反映のファイルを列挙する
+- **失敗にはしない** — Swiftだけの変更なら古いエクスポートでもリンク検証は有効。
+  ただし「何に対して緑なのか」は必ず見えるようにする
+- 浅いclone(depth=1)のままでも判定できるよう、比較対象のコミットだけを
+  `git fetch --no-tags --depth=1` で取り寄せる。`git diff` は2つのツリーさえあれば
+  計算できるので、履歴全体(約1.3GB)を引く `fetch-depth: 0` は不要
+
+**合体で事実と食い違ったドキュメントの是正**
+
+- `Docs/BUILD_ON_BORROWED_MAC.md` 手順3 — **UnityFramework の Embed & Sign は不要になった**
+  (`AR_Runner_UI.xcodeproj` にリンク設定と Embed Frameworks フェーズが commit 済み)。
+  残る手作業だった `Data` の Target Membership も `tools/relink-unity-export.sh` に置換。
+  「直したはずの不具合が実機で直っていない」を失敗表へ追加
+- `Docs/UNITY_AS_A_LIBRARY.md` / `.ja.md` §9 — 「CIでは `canImport(UnityFramework)` が
+  false なので未検証」という記述は**もう事実ではない**。ビルドログでリンク行に
+  `-framework UnityFramework` が立っていることを確認済みなので、記述を実態へ合わせ、
+  あわせてエクスポート鮮度検査の知見を追記した
+- `tools/relink-unity-export.sh` の完了メッセージから、不要になった Embed & Sign の案内を削除
+
+**再エクスポートを公開**: `unity-export-d924b889`(天井修正・CSVロガー・合体分すべてを含む)。
+公開前に `preloadedAssets` が空になる既知の罠が**再発したので復元済み**。
+`relink-unity-export.sh` も適用済みなので、展開後のXcode手作業は不要
+
 ### 2026-09-07 (3) — 天井を床と誤認する不具合の修正 (F-05)
 
 **実機で報告された症状**: 室内でアバターが浮遊し、視界から消える。壁でも同様。

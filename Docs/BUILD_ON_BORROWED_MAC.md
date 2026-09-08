@@ -94,11 +94,25 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
       - [ ] Team: 自分のApple ID(Personal Team)を選択
       - [ ] "Automatically manage signing" がON
       - [ ] エラーが出る場合はBundle IDを更にユニークなものへ変更
-- [ ] `AR_Runner_UI` ターゲット → **General** → *Frameworks, Libraries, and Embedded Content*
-      - [ ] `Unity-iPhone` プロジェクト内の **UnityFramework.framework** を `+` で追加
-      - [ ] 追加後、右の選択を **Embed & Sign** にする ← ここを忘れると起動時にクラッシュする
-- [ ] `Unity-iPhone` プロジェクト → `Data` フォルダを選択 → 右ペインの **Target Membership** を
-      **UnityFramework** に変更(既定は Unity-iPhone のためリンクが通らない)
+- [ ] **`Data` フォルダの Target Membership を付け替える**(エクスポートのたびに必要)
+
+      ```bash
+      ./tools/relink-unity-export.sh
+      ```
+
+      `ios/UnityExport/` は生成物なので、エクスポートのたびに作り直されて設定が消える。
+      `Data` は既定で **Unity-iPhone**(Unity単体アプリ)に付いており、UaaLでは
+      **UnityFramework** へ移さないとリンクが undefined symbols で落ちる。
+      Xcodeで手作業するなら `Unity-iPhone` プロジェクト → `Data` を選択 →
+      右ペインの **Target Membership** を UnityFramework に変更。
+      **スクリプトは冪等**なので、迷ったら実行しておけばよい
+
+> **UnityFramework の Embed & Sign はもう不要**(2026-09-05 の合体以降)。
+> `AR_Runner_UI.xcodeproj` にリンク設定と Embed Frameworks フェーズが
+> commit 済みのため、`+` での追加も Embed & Sign の指定も要らない。
+> それでも起動時に `dyld: Library not loaded` が出る場合だけ、
+> **General → Frameworks, Libraries, and Embedded Content** を開いて
+> `UnityFramework.framework` が **Embed & Sign** になっているか確認する。
 
 ## 4. Mac側: ビルドと実行
 
@@ -131,8 +145,9 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 | 症状 | 原因と対処 |
 |---|---|
 | 起動直後にクラッシュ(dyld: Library not loaded) | UnityFrameworkが **Embed & Sign** になっていない(手順3) |
-| リンクエラー(undefined symbols) | `Data` フォルダの Target Membership が未変更(手順3) |
+| リンクエラー(undefined symbols) | `Data` の Target Membership が未変更。`./tools/relink-unity-export.sh` を実行(手順3) |
 | 走行画面が暗く「未リンク」と出る | 同上。Unityが実際には繋がっていない状態 |
+| 直したはずの不具合が実機で直っていない | **エクスポートが古い**。Unity側のC#を変えたら再エクスポートが必要。CIも古いエクスポートに対して緑になるため気づきにくい(警告は出る) |
 | 署名エラー(HealthKit) | 手順2のスクリプトを実行していない |
 | 署名エラー(Bundle IDが使用中) | Bundle IDを更にユニークなものへ |
 | `Unity-iPhone` がworkspaceで赤い | `ios/UnityExport/` のコピー漏れ(手順2) |

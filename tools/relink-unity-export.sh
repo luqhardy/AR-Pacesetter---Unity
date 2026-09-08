@@ -76,4 +76,4 @@ if [ "$VERIFY" != "1" ]; then
 fi
 
 echo "OK: Data フォルダを UnityFramework ($UF_RES) の Resources へ移しました"
-echo "    残りの手作業は AR_Runner_UI 側の UnityFramework.framework → Embed & Sign のみです"
+echo "    UnityFramework の Embed & Sign は AR_Runner_UI.xcodeproj に commit 済みのため不要です"
