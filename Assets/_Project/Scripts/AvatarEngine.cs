@@ -433,8 +433,14 @@ public class AvatarEngine : MonoBehaviour
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    // Feature #6 — Purified heading: GPS-only, weighted MA (1.5s window)
+    // Feature #6 — Purified heading: weighted MA (1.5s window)
+    //   一次情報は RunnerTrackingState の**融合済み**方位 (GPS 0.65 : AR移動 0.35)。
+    //   「GPS-only」だったのは合体前の実装で、現在は当てはまらない。
+    //   RunnerTrackingState が居ない旧シーンでは、下のローカル計測へフォールバックする。
     // Feature #7 — Gaze lock: never use userCamera.forward as heading fallback
+    //   融合側も、移動履歴がゼロの開始直後だけカメラ正面を初期アンカーに使い、
+    //   実際の進行方向が出るまで HasMovementHeading を立てない。
+    //   したがって「視線を進行方向に使わない」という不変条件はここでも保たれる。
     // ════════════════════════════════════════════════════════════════════════
     private void UpdatePurifiedHeading()
     {

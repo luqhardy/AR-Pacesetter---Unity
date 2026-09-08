@@ -3,6 +3,11 @@ using System.Collections;
 using System.Globalization;
 using UnityEngine;
 
+// エディタ専用。実行時アセンブリに置いているのは Play Mode で AddComponent する
+// ためだが、ガードが無いと iOS の実機ビルドにも同梱されてしまう。
+// (エディタアセンブリへは移せない — MonoBehaviour を実行時に載せる必要がある)
+#if UNITY_EDITOR
+
 /// <summary>
 /// Editor/development-only end-to-end demonstration of the invisible POV runner.
 ///
@@ -254,3 +259,4 @@ public sealed class PovRunnerDemoController : MonoBehaviour
         _isRunning = false;
     }
 }
+#endif // UNITY_EDITOR

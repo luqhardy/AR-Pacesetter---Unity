@@ -556,6 +556,26 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-08 (2) — コードベース精査の低優先分の後片付け
+
+- **`ProjectSettings/ShaderGraphSettings 2〜5.asset` を削除**。4つとも正準版と内容が同一
+  (差は改行コードのみ)で、Unityが読むのは `ShaderGraphSettings.asset` だけ。
+  参照していたのは生成キャッシュ(`Library/PlayerDataCache/`)のみ。
+  インポート衝突でUnityが作る番号付きコピーで、放置すると増え続ける
+- **`PovRunnerDemoController` を `#if UNITY_EDITOR` で囲った**。
+  「エディタ専用」と明記されているのに実行時アセンブリに置かれており、
+  256行が iOS の実機ビルドへそのまま同梱されていた。Play Mode で AddComponent する
+  都合上エディタアセンブリへは移せないため、条件コンパイルで落とす
+- **`AvatarEngine.UpdatePurifiedHeading` の見出しコメントを実態へ修正**。
+  「Feature #6 — GPS-only」は合体前の実装の説明で、現在の一次情報は
+  `RunnerTrackingState` の**融合済み**方位 (GPS 0.65 : AR移動 0.35)。
+  あわせて、融合側でも Gaze lock の不変条件が保たれる理由を明記した
+
+**検証**: フルコンパイル0エラー / **実機ビルド構成(`UNITY_EDITOR` 未定義)でも0エラー**
+— こちらでしか `#if UNITY_EDITOR` の掛け違いは検出できない。従来のコンパイル検証は
+エディタ構成なので、ガードを追加しても参照切れに気づけなかった /
+E2E **102項目 全PASS** (`fail=0`・終了コード0)
+
 ### 2026-09-08 — エクスポート鮮度のCI検査と、合体で陳腐化したドキュメントの是正
 
 **CIが「古いエクスポートに対して緑になる」穴を塞いだ**
