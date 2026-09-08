@@ -32,6 +32,15 @@ public class GroundSnap : MonoBehaviour
              "「同じ床の続き」として採用する(m)。机など別の高さの面を誤って床にしないための上限")]
     [SerializeField] private float extendedFloorToleranceMeters = 0.5f;
 
+    [Tooltip("床候補はカメラから最低これだけ下にあること(m)。ARKitは床も天井も" +
+             "「水平・法線上向き」で返すため、この高さ帯でしか天井・机を弾けない")]
+    [SerializeField]
+    private float minCameraToFloorMeters = GroundFloorTracker.DefaultMinCameraToFloorMeters;
+
+    [Tooltip("床候補はカメラからこれ以内の下にあること(m)。吹き抜け・階下の平面を拾わない")]
+    [SerializeField]
+    private float maxCameraToFloorMeters = GroundFloorTracker.DefaultMaxCameraToFloorMeters;
+
     [Tooltip("前方の壁・断崖でアバターを足踏み停止させる(基本設計書 §4.2)。" +
              "陸上トラックのように壁が単なる背景の環境ではOFFにすると素直に走り続ける")]
     [SerializeField] private bool haltOnObstacles = true;
@@ -257,6 +266,15 @@ public class GroundSnap : MonoBehaviour
     /// </summary>
     private float GetCurrentGroundLevel(out Vector3 normal)
     {
+        // 天井を掴んでしまった床は物理的にありえないので破棄して掴み直す。
+        // これが無いと、一度天井にラッチした時点でアバターは天井高に貼り付いたまま
+        // 二度と戻らず、アプリ再起動しか復帰手段が無くなる
+        if (userCamera != null && _floor.InvalidateIfAboveCamera(userCamera.position.y))
+        {
+            Debug.LogWarning("[GroundSnap] 確定済みの床がカメラより上にあったため破棄しました" +
+                             " — 天井をフロアとして掴んでいた可能性。再取得します");
+        }
+
         bool measured = TryMeasureGroundLevel(out float measuredY, out normal);
 
         // 実測を一度も得ていない時だけ使う暫定値(1回だけ採用され固定される)
@@ -285,7 +303,17 @@ public class GroundSnap : MonoBehaviour
         // Use a safe height (at least camera height) to prevent falling through the floor forever
         float safeY = Mathf.Max(transform.position.y, userCamera != null ? userCamera.position.y : 0f) + 10.0f;
         Vector3 rayOrigin = new Vector3(transform.position.x, safeY, transform.position.z);
-        
+
+        // 「床はユーザーの下にある」— この幾何的事実だけが床と天井を確実に分ける。
+        // ARKitの水平平面は床も天井も法線が上向きで返るため、向きでは区別できない
+        // (区別は classification にしか無い)。高さ帯を外れた候補は全経路で捨てる
+        bool hasCamera = userCamera != null;
+        float cameraY = hasCamera ? userCamera.position.y : 0f;
+        bool Plausible(float y) => !hasCamera
+            || GroundFloorTracker.IsPlausibleFloorCandidate(
+                   y, cameraY, minCameraToFloorMeters, maxCameraToFloorMeters);
+
+
         int hitCount = Physics.RaycastNonAlloc(rayOrigin, Vector3.down, s_RaycastHits, 20.0f, environmentLayerMask, QueryTriggerInteraction.Ignore);
         float highestGround = -1000f;
         bool found = false;
@@ -303,6 +331,10 @@ public class GroundSnap : MonoBehaviour
             // 面の向きを見ないと壁の上端を「最も高い地面」として拾ってしまい、
             // アバターが壁の高さへ跳ね上がって視界から消える
             if (Vector3.Dot(h.normal, Vector3.up) < GroundNormalMinDot) continue;
+
+            // 天井は「上向きの水平面」として法線チェックを通ってしまう。
+            // 高さ帯を外れた候補(カメラより上・遠すぎる下)はここで確実に落とす
+            if (!Plausible(h.point.y)) continue;
 
             if (h.point.y > highestGround)
             {
@@ -331,6 +363,10 @@ public class GroundSnap : MonoBehaviour
                 {
                     // 垂直平面(壁)は地面にしない
                     if (Vector3.Dot(hit.pose.up, Vector3.up) < GroundNormalMinDot) continue;
+
+                    // 天井もここを通る(ARKitは床と同じ「上向き水平面」で返す)。
+                    // 高さ帯で落とさないと、室内では常に天井が「最も高い面」として勝つ
+                    if (!Plausible(hit.pose.position.y)) continue;
 
                     if (hit.pose.position.y > highestGround)
                     {
@@ -365,6 +401,9 @@ public class GroundSnap : MonoBehaviour
                 foreach (var hit in s_Hits)
                 {
                     if (Vector3.Dot(hit.pose.up, Vector3.up) < GroundNormalMinDot) continue;
+
+                    // 無限延長は天井を床一面に広げてしまうため、高さ帯の適用は必須
+                    if (!Plausible(hit.pose.position.y)) continue;
 
                     float y = hit.pose.position.y;
                     // 床が確定していれば「それに近い面」、未確定なら「低い面」を優先する

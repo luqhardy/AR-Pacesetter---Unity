@@ -124,4 +124,111 @@ public class GroundFloorTrackerTests
         t.Resolve(false, 0f, Provisional(1.6f), out float y);
         Assert.AreEqual(0.1f, y, 0.0001f, "リセット後は新しい暫定値を採用できる");
     }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // 床候補の高さ帯 — 天井を床と誤認する不具合(実機で報告)への回帰テスト
+    //
+    // ARKitの水平平面は床も天井も「法線上向き」で返るため、法線チェックだけでは
+    // 天井を弾けない。室内で「上向きの面のうち最も高いもの」を床に選ぶと
+    // 天井が必ず勝ち、アバターが天井高へ跳ね上がって視界から消える。
+    // ════════════════════════════════════════════════════════════════════════
+
+    [Test]
+    public void 天井は床候補として弾かれる()
+    {
+        // カメラ1.2m、天井2.6m — 上向き水平面だが床ではありえない
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(2.6f, 1.2f));
+    }
+
+    [Test]
+    public void カメラと同じ高さや直上の面も弾かれる()
+    {
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(1.2f, 1.2f));
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(1.3f, 1.2f));
+    }
+
+    [Test]
+    public void 足元の床は採用される()
+    {
+        // 胸マウント想定: カメラ1.2m、床0.0m → 落差1.2m
+        Assert.IsTrue(GroundFloorTracker.IsPlausibleFloorCandidate(0f, 1.2f));
+        // 目線高で持った場合: カメラ1.6m、床0.0m
+        Assert.IsTrue(GroundFloorTracker.IsPlausibleFloorCandidate(0f, 1.6f));
+    }
+
+    [Test]
+    public void 段差や縁石は床として通る()
+    {
+        // カメラ1.2m、15cmの段差の上面 → まだ十分下にある
+        Assert.IsTrue(GroundFloorTracker.IsPlausibleFloorCandidate(0.15f, 1.2f));
+    }
+
+    [Test]
+    public void 机の高さは床にしない()
+    {
+        // カメラ1.2m、机0.75m → 落差0.45m は下限0.5m未満
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(0.75f, 1.2f));
+    }
+
+    [Test]
+    public void 遠すぎる下の面は拾わない_吹き抜けや階下()
+    {
+        // カメラ1.2m、階下-2.5m → 落差3.7m は上限3.0m超
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(-2.5f, 1.2f));
+    }
+
+    [Test]
+    public void 高さ帯は呼び出し側で調整できる()
+    {
+        // 下限0.2mまで許すなら机も通る(実機チューニング用の逃げ道)
+        Assert.IsTrue(GroundFloorTracker.IsPlausibleFloorCandidate(0.75f, 1.2f, 0.2f, 3.0f));
+    }
+
+    [Test]
+    public void 不正な入力や範囲は弾く()
+    {
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(float.NaN, 1.2f));
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(0f, float.NaN));
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(0f, float.PositiveInfinity));
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(0f, 1.2f, -1f, 3f), "負の下限は不正");
+        Assert.IsFalse(GroundFloorTracker.IsPlausibleFloorCandidate(0f, 1.2f, 3f, 0.5f), "上下限の逆転は不正");
+    }
+
+    // ── 天井をラッチしてしまった場合の自己回復 ──────────────────────────────
+
+    [Test]
+    public void 天井を掴んだ床は破棄して掴み直す()
+    {
+        var t = new GroundFloorTracker();
+        t.Resolve(true, 2.6f, 0f, out _);          // 天井を床として確定してしまった
+        Assert.IsTrue(t.HasFloor);
+
+        Assert.IsTrue(t.InvalidateIfAboveCamera(1.2f), "カメラより上の床は破棄される");
+        Assert.AreEqual(GroundFloorTracker.FloorSource.None, t.Source);
+        Assert.IsFalse(t.HasFloor);
+    }
+
+    [Test]
+    public void 正常な床は端末を頭上へ掲げても破棄されない()
+    {
+        var t = new GroundFloorTracker();
+        t.Resolve(true, 0f, 0f, out _);            // 足元の床
+
+        Assert.IsFalse(t.InvalidateIfAboveCamera(1.2f), "通常の保持高");
+        Assert.IsFalse(t.InvalidateIfAboveCamera(2.2f), "頭上へ掲げても床は下のまま");
+        Assert.IsFalse(t.InvalidateIfAboveCamera(0.05f), "端末を床すれすれに下ろしても破棄しない");
+        Assert.IsTrue(t.HasFloor);
+        Assert.AreEqual(GroundFloorTracker.FloorSource.Measured, t.Source);
+    }
+
+    [Test]
+    public void 未確定や不正なカメラ高では破棄しない()
+    {
+        var t = new GroundFloorTracker();
+        Assert.IsFalse(t.InvalidateIfAboveCamera(1.2f), "そもそも床が未確定");
+
+        t.Resolve(true, 2.6f, 0f, out _);
+        Assert.IsFalse(t.InvalidateIfAboveCamera(float.NaN), "カメラ高が不正なら判断しない");
+        Assert.IsTrue(t.HasFloor);
+    }
 }

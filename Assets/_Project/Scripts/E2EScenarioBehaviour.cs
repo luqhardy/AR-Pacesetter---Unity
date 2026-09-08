@@ -112,6 +112,37 @@ public class E2EScenarioBehaviour : MonoBehaviour
             _cameraMover.position = new Vector3(_cameraMover.position.x, camYBefore,
                                                 _cameraMover.position.z);
             yield return WaitScaled(0.3f);
+
+            // 天井を床と誤認する不具合(実機で報告)の回帰。
+            // ARKitは床も天井も「法線が上向きの水平面」で返すため、向きでは弾けない。
+            // 床が常にカメラより下にあることが、唯一プラットフォームに依存しない不変条件。
+            // 比較対象は _cameraMover(XR Originのroot)ではなく**実カメラ** —
+            // rig内でカメラには高さオフセットがあり、rootで測ると判定がずれる
+            Transform camT = Camera.main != null ? Camera.main.transform : _cameraMover;
+            Check(groundSnap.ResolvedFloorY < camT.position.y,
+                $"ground: floor stays below the camera (floor {groundSnap.ResolvedFloorY:F2} " +
+                $"< camera {camT.position.y:F2})");
+
+            // 天井にラッチしてしまった状態からの自己回復。実カメラが確定済みの床より
+            // 下へ来ると「床がカメラより上」= ありえない状態になるので破棄される。
+            // これが無いと、一度天井を掴んだアバターは再起動するまで戻らない
+            float floorLatched = groundSnap.ResolvedFloorY;
+            float dropNeeded   = (camT.position.y - floorLatched) + 2.0f;
+            _cameraMover.position -= Vector3.up * dropNeeded;
+            yield return WaitScaled(0.6f);
+
+            Check(groundSnap.ResolvedFloorY < camT.position.y,
+                $"ground: floor above the camera is discarded and re-acquired below it " +
+                $"(floor {groundSnap.ResolvedFloorY:F2} < camera {camT.position.y:F2})");
+
+            // 後続シナリオのため元の高さで掴み直させる
+            _cameraMover.position = new Vector3(_cameraMover.position.x, camYBefore,
+                                                _cameraMover.position.z);
+            groundSnap.ResetFloor();
+            yield return WaitScaled(0.6f);
+            Check(groundSnap.ResolvedFloorY < camT.position.y,
+                $"ground: floor re-latched below the camera after reset " +
+                $"(floor {groundSnap.ResolvedFloorY:F2} < camera {camT.position.y:F2})");
         }
 
         // ── Step 1: StartSession (目標60m — ゴール自動終了を早く踏むため) ──

@@ -74,5 +74,78 @@ public class GroundFloorTracker
         FloorY = 0f;
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    // 床候補の妥当性 — 天井・机・壁上端を床と誤認しないための高さ帯
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>床はカメラからこれ以上下にある(m)。これ未満の候補は机・天井とみなす。</summary>
+    public const float DefaultMinCameraToFloorMeters = 0.5f;
+
+    /// <summary>床はカメラからこれ以内の下にある(m)。これを超える候補は階下・吹き抜け。</summary>
+    public const float DefaultMaxCameraToFloorMeters = 3.0f;
+
+    /// <summary>
+    /// 床候補がカメラとの高低差として妥当かを判定する。
+    ///
+    /// <para><b>なぜ法線チェックだけでは足りないのか</b>:
+    /// ARKitの <c>ARPlaneAnchor.alignment</c> は <c>.horizontal</c> / <c>.vertical</c> しか
+    /// 区別せず、<b>床と天井はどちらも「水平」で、法線は上向きに揃えて返される</b>。
+    /// 上下の区別は <c>classification</c>(.floor / .ceiling / .table)にしか無い。
+    /// そのため「上向きの面のうち最も高いもの」を床に選ぶと、部屋の中では
+    /// <b>天井が常に勝つ</b> — アバターが天井高へ跳ね上がり、視界から消える。
+    /// 壁も、平面メッシュの縁を拾うと同じ経路で高い位置の候補になりうる。</para>
+    ///
+    /// <para>幾何的な事実(床はユーザーの下にある)を制約として課すのが、
+    /// プラットフォームの分類に依存しない確実な弾き方になる。</para>
+    /// </summary>
+    /// <param name="candidateY">床候補のワールドY</param>
+    /// <param name="cameraY">カメラ(端末)のワールドY</param>
+    /// <param name="minDropMeters">カメラから下へ最低これだけ離れていること</param>
+    /// <param name="maxDropMeters">カメラから下へこれ以内であること</param>
+    public static bool IsPlausibleFloorCandidate(float candidateY, float cameraY,
+                                                 float minDropMeters, float maxDropMeters)
+    {
+        if (!IsUsable(candidateY) || !IsUsable(cameraY)
+            || !IsUsable(minDropMeters) || !IsUsable(maxDropMeters))
+            return false;
+
+        if (minDropMeters < 0f || maxDropMeters < minDropMeters)
+            return false;
+
+        float drop = cameraY - candidateY;
+        return drop >= minDropMeters && drop <= maxDropMeters;
+    }
+
+    /// <summary>既定の高さ帯での判定。</summary>
+    public static bool IsPlausibleFloorCandidate(float candidateY, float cameraY)
+        => IsPlausibleFloorCandidate(candidateY, cameraY,
+                                     DefaultMinCameraToFloorMeters,
+                                     DefaultMaxCameraToFloorMeters);
+
+    /// <summary>
+    /// 確定済みの床が<b>カメラより上</b>にあるなら破棄して確定をやり直す。
+    ///
+    /// <para>ラッチは「実測が途切れてもカメラに追従させない」ためのものなので、
+    /// 原則として解除しない。だが天井を床として掴んでしまった場合(このクラスの
+    /// 利用側が高さ帯で弾く前のビルド、あるいは一瞬の誤検出)、アバターは天井高に
+    /// 貼り付いたまま二度と戻らず、アプリ再起動しか復帰手段が無くなる。</para>
+    ///
+    /// <para>そこで<b>「床がカメラより上にある」という物理的にありえない条件だけ</b>を
+    /// 解除トリガーにする。端末を頭上へ掲げても床は下のままなので誤発火しない。
+    /// 高さ帯の下限(机など)では解除しない — 曖昧な条件で解除するとラッチの意味が消える。</para>
+    /// </summary>
+    /// <returns>破棄したか(ログを1回だけ出す用)</returns>
+    public bool InvalidateIfAboveCamera(float cameraY)
+    {
+        if (!HasFloor || !IsUsable(cameraY) || !IsUsable(FloorY))
+            return false;
+
+        if (FloorY <= cameraY)
+            return false;
+
+        Reset();
+        return true;
+    }
+
     private static bool IsUsable(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
 }
