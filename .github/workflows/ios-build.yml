@@ -115,11 +115,19 @@ jobs:
           # ただし何に対して緑なのかは必ず見えるようにする。
           # checkout は浅いclone(depth=1)なので、比較対象のコミットだけを取り寄せる。
           # 履歴全体(約1.3GB)を引く fetch-depth: 0 は高くつくうえ不要 —
-          # git diff は2つのツリーさえあれば計算できる(繋がった履歴は要らない)
-          EXPORT_SHA="${TAG#unity-export-}"
-          git fetch --no-tags --depth=1 origin "$EXPORT_SHA" 2>/dev/null || true
+          # git diff は2つのツリーさえあれば計算できる(繋がった履歴は要らない)。
+          #
+          # タグに埋まっているのは短縮SHA(8桁)だが、**git fetch は短縮SHAを受け付けない**
+          # (プロトコルのwant-lineは完全な40桁を要求する)。先にAPIで解決しておく
+          SHORT_SHA="${TAG#unity-export-}"
+          EXPORT_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHORT_SHA}" \
+                       --jq .sha 2>/dev/null || echo "")
 
-          if git cat-file -e "${EXPORT_SHA}^{commit}" 2>/dev/null; then
+          if [ -n "$EXPORT_SHA" ]; then
+            git fetch --no-tags --depth=1 origin "$EXPORT_SHA" 2>/dev/null || true
+          fi
+
+          if [ -n "$EXPORT_SHA" ] && git cat-file -e "${EXPORT_SHA}^{commit}" 2>/dev/null; then
             # Assets / ProjectSettings / Packages はすべてエクスポート成果物に焼き込まれる。
             # .cs に限らずシーン・プレハブ・設定の変更も再エクスポートが要る
             CHANGED=$(git diff --name-only "$EXPORT_SHA" "$GITHUB_SHA" -- \
@@ -133,7 +141,7 @@ jobs:
               echo "::notice::エクスポートは最新です (Unity側に差分なし)"
             fi
           else
-            echo "::notice::エクスポート元コミット $EXPORT_SHA を取得できないため鮮度を判定できません"
+            echo "::notice::エクスポート元コミット $SHORT_SHA を取得できないため鮮度を判定できません"
           fi
 
       - name: Download Unity export
@@ -178,12 +186,14 @@ jobs:
       # ── 2. ホストアプリ ────────────────────────────────────────────────────
       # SwiftUI側のコンパイルエラー(Combineの未import等)を検出する。
       #
-      # 既知の限界: UnityFramework のリンク設定 (Embed & Sign / Data の
-      # Target Membership) は Xcode で手作業する運用のため、コミット済みの
-      # pbxproj には入っていない。よってここでは `#if canImport(UnityFramework)`
-      # が false 側でコンパイルされ、**フレームワーク有りの分岐は検証されない**。
-      # (例: _mh_execute_header の不具合はこのジョブでは捕まらなかった)
-      # リンク設定をpbxprojへコミットすれば、この限界は解消できる。
+      # かつての限界は解消済み: リンク設定 (フレームワーク参照 + Embed Frameworks
+      # フェーズ) が pbxproj にコミットされたため、`#if canImport(UnityFramework)`
+      # は **true 側でコンパイル・リンクされる**。2026-09-06 のビルドログで
+      # リンク行に `-framework UnityFramework` が立っていることを確認済み。
+      # かつてはここが false 側で、_mh_execute_header の不具合を取り逃していた。
+      #
+      # 退行の見分け方: ログに `-framework UnityFramework` が出ているか。
+      # 消えていたら pbxproj のリンク設定が失われている。
       - name: Build host app (AR_Runner_UI)
         run: |
           set -o pipefail
