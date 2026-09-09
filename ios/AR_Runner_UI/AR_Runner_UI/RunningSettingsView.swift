@@ -204,6 +204,10 @@ struct RunningSettingsView: View {
                 focusedField = nil
             }
         }
+        // 初回起動の待ち時間を、ユーザーが数値を入力しているこの画面へ前倒しする。
+        // 既定では何もしない（UnityLauncher.prewarmEnabled = false）。
+        // 有効化の判断材料と確認事項は UnityLauncher.prewarmEnabled のコメントに記載
+        .onAppear { UnityLauncher.shared.prewarm() }
     }
 
     private func applyTimeInput() {

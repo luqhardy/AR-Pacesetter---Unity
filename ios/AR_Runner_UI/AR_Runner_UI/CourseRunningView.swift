@@ -174,6 +174,31 @@ struct RunningView: View {
                     mockBackground
                 }
 
+                // AR準備中のオーバーレイ。
+                //
+                // この区間はメインスレッドが Unity の初期化で塞がっているため、
+                // **アニメーションは一切動かない**。だからスピナーもプログレスバーも
+                // 置いていない — 止まったスピナーは「読み込み中」ではなく
+                // 「アプリがハングした」に見えるので、静止画のほうが誠実で安心感がある。
+                // 初回のみ数秒かかる旨も文言で伝え、別途アラートを出す必要をなくす
+                if unity.isPreparing {
+                    ZStack {
+                        Color.black.opacity(0.92).ignoresSafeArea()
+                        VStack(spacing: 14) {
+                            Image(systemName: "arkit")
+                                .font(.system(size: 44, weight: .light))
+                                .foregroundColor(.arYellow)
+                            Text("AR環境を準備しています")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("初回起動は数秒かかります")
+                                .font(.system(size: 13))
+                                .foregroundColor(.arGrayText)
+                        }
+                    }
+                    .transition(.opacity)
+                }
+
                 // HUD
                 VStack(spacing: 0) {
                     if showsSwiftStatsHud {
@@ -365,7 +390,11 @@ struct RunningView: View {
             .ignoresSafeArea()
             .onAppear {
                 // Unityランタイム起動 → 走行セッション開始（設定値をUnityへ引き渡す）
-                UnityLauncher.shared.launch()
+                //
+                // prepare() を使う理由: Unityの初期化は同期でメインスレッドを塞ぐため、
+                // launch() を直接呼ぶと SwiftUI に描く隙が無く、準備画面が一度も
+                // 表示されないまま固まる。prepare() は表示を1フレーム描かせてから入る
+                UnityLauncher.shared.prepare()
                 if !session.isSessionActive {
                     session.start(
                         paceKmH: RunSettings.shared.paceKmH,

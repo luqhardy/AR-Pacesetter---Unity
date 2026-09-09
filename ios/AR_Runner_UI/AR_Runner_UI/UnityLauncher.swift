@@ -20,6 +20,56 @@ final class UnityLauncher: ObservableObject {
 
     @Published private(set) var isRunning = false
 
+    /// Unityの初期化中（メインスレッドが塞がる区間）。
+    ///
+    /// **重要**: この区間はメインスレッドがブロックされるため、UI は一切更新されない。
+    /// ローディング表示を出すなら `prepare(then:)` を使い、**表示を1フレーム描かせてから**
+    /// 初期化に入ること。同期的に `launch()` を呼ぶと SwiftUI が描く隙が無く、
+    /// ローディング画面は一度も画面に出ないまま終わる。
+    /// またこの区間はアニメーションが止まるので、**スピナーは使わない**
+    /// （止まったスピナーは「読み込み中」ではなく「ハングした」に見える）。
+    @Published private(set) var isPreparing = false
+
+    /// 初回起動の実測値（ms）。0 は未計測。内訳は起動ログに出る。
+    @Published private(set) var lastLaunchMs: Double = 0
+
+    /// 一度でも Unity を起動したか。2回目以降は初期化コストが掛からない。
+    private(set) var hasLaunchedOnce = false
+
+    /// 走行画面より前で Unity を先に温めるか。**既定 OFF（実機未検証のため）**。
+    ///
+    /// ON にすると初回の待ち時間が走行設定画面へ前倒しされ、走行開始時の待ちは消える。
+    /// 初期化そのものは速くならないが、ユーザーが既に操作している画面へ移るので
+    /// 体感の待ち時間は無くなる — 準備画面を綺麗にするより効果が大きい。
+    ///
+    /// **有効化する前に実機で確認すること**: 構成によっては `runEmbedded` が
+    /// Unityのウィンドウを前面に出し、SwiftUIの画面に一瞬ちらつきが出る可能性がある。
+    /// 発表前に入れるなら、必ず実機で設定画面→走行画面の遷移を通しで見ること。
+    static var prewarmEnabled = false
+
+    /// ローディング表示を確実に描かせてから Unity を初期化する。
+    ///
+    /// 初期化は同期でメインスレッドを塞ぐので、先に `isPreparing = true` を publish し、
+    /// **RunLoop を1回まわして SwiftUI に描かせてから**ブロックする処理へ入る。
+    /// - Parameter completion: 初期化完了後にメインスレッドで呼ばれる
+    func prepare(then completion: (() -> Void)? = nil) {
+        if isRunning && hasLaunchedOnce {
+            launch()                 // 2回目以降は再開のみ（速い）
+            completion?()
+            return
+        }
+
+        isPreparing = true
+        // async にすることで、ここで一度 SwiftUI に描画の機会を渡す。
+        // これが無いとローディング画面は表示されないまま初期化が始まる
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.launch()
+            self.isPreparing = false
+            completion?()
+        }
+    }
+
 #if canImport(UnityFramework)
     private var ufw: UnityFramework?
 
@@ -33,21 +83,52 @@ final class UnityLauncher: ObservableObject {
             return
         }
 
+        // 初回起動が遅い件の切り分け用。どこに時間が消えているかを内訳で残す。
+        // 「初回だけ遅い」の主因は通常この2つで、対処法が違う:
+        //   bundle.load()  — iOSによる巨大フレームワークの署名検証とページイン。
+        //                    インストール後1回だけ。アプリ側で減らす余地は小さい
+        //   runEmbedded()  — IL2CPPメタデータ初期化 + 最初のシーンロード。
+        //                    シェーダのウォームアップやシーン軽量化で減らせる
+        let tBundle = CFAbsoluteTimeGetCurrent()
         guard let framework = Self.loadUnityFramework() else {
             print("[UnityLauncher] UnityFramework.framework が見つかりません。" +
                   "Unityエクスポート産物がアプリターゲットに Embed されているか確認してください。")
             return
         }
+        let bundleMs = (CFAbsoluteTimeGetCurrent() - tBundle) * 1000
 
         framework.setDataBundleId("com.unity3d.framework")
+
+        let tRun = CFAbsoluteTimeGetCurrent()
         framework.runEmbedded(
             withArgc: CommandLine.argc,
             argv: CommandLine.unsafeArgv,
             appLaunchOpts: nil
         )
+        let runMs = (CFAbsoluteTimeGetCurrent() - tRun) * 1000
+
+        lastLaunchMs = bundleMs + runMs
+        hasLaunchedOnce = true
+        print(String(format: "[UnityLauncher] 起動 %.0fms (bundle.load %.0fms / runEmbedded %.0fms)",
+                     lastLaunchMs, bundleMs, runMs))
 
         ufw = framework
         isRunning = true
+    }
+
+    /// 走行画面より前の画面で Unity を先に温めておく（初回のコストを前倒しする）。
+    ///
+    /// 初期化そのものを速くはできないが、**ユーザーが既に何かしている画面**へ
+    /// 移せば体感の待ち時間は消える。呼んだ直後に休止させるので、
+    /// 走行開始までの間 Unity は描画もARKitも回さない。
+    ///
+    /// - Note: 実機未検証。`runEmbedded` がUnityのウィンドウを前面に出す構成では
+    ///   一瞬ちらつく可能性があるため、有効化する前に実機で確認すること。
+    func prewarm() {
+        guard Self.prewarmEnabled, !hasLaunchedOnce else { return }
+        prepare { [weak self] in
+            self?.pause()
+        }
     }
 
     /// Unityの描画ビュー。UnityContainerView から参照される。
@@ -99,7 +180,8 @@ final class UnityLauncher: ObservableObject {
     }
 #else
     // UnityFramework未リンク時のダミー実装（シミュレータ・UI単体開発用）
-    func launch() { isRunning = true }
+    func launch() { isRunning = true; hasLaunchedOnce = true }
+    func prewarm() {}
     var unityRootView: UIView? { nil }
     func pause() {}
     func resume() {}
