@@ -143,6 +143,70 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(groundSnap.ResolvedFloorY < camT.position.y,
                 $"ground: floor re-latched below the camera after reset " +
                 $"(floor {groundSnap.ResolvedFloorY:F2} < camera {camT.position.y:F2})");
+
+            // ── 実際に天井と床を置いて「選ばれる方」を確かめる ──────────────
+            // ここまでの検証は暫定床(カメラ高からの推定)しか通っていない。
+            // エディタのシーンにはコライダーもARプレーンも無いので、
+            // **候補が複数あるときにどちらを床に選ぶか**という肝心の分岐が
+            // 一度も実行されていなかった。実物を置いて選択そのものを試す。
+            //
+            // ARKitは床も天井も「水平・法線上向き」で返すため、天井コライダーの
+            // 法線も上向きにする — 法線チェックだけでは弾けない条件を再現する
+            float camNow      = camT.position.y;
+            float realFloorY  = camNow - 1.2f;
+            float ceilingY    = camNow + 1.3f;
+
+            GameObject floorGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            floorGo.name = "E2E_TestFloor";
+            floorGo.transform.position   = new Vector3(camT.position.x, realFloorY - 0.05f, camT.position.z);
+            floorGo.transform.localScale = new Vector3(20f, 0.1f, 20f);
+            Destroy(floorGo.GetComponent<MeshRenderer>());
+
+            GameObject ceilGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            ceilGo.name = "E2E_TestCeiling";
+            ceilGo.transform.position   = new Vector3(camT.position.x, ceilingY + 0.05f, camT.position.z);
+            ceilGo.transform.localScale = new Vector3(20f, 0.1f, 20f);
+            Destroy(ceilGo.GetComponent<MeshRenderer>());
+
+            groundSnap.ResetFloor();
+            yield return WaitScaled(0.8f);
+
+            Check(groundSnap.HasMeasuredFloor,
+                "ground: a real collider is picked up as a measured floor");
+            Check(Mathf.Abs(groundSnap.ResolvedFloorY - realFloorY) < 0.12f,
+                $"ground: the floor is chosen, not the ceiling " +
+                $"(picked {groundSnap.ResolvedFloorY:F2}, floor {realFloorY:F2}, ceiling {ceilingY:F2})");
+            Check(groundSnap.ResolvedFloorY < camT.position.y,
+                $"ground: the ceiling above the camera is never chosen " +
+                $"(picked {groundSnap.ResolvedFloorY:F2} < camera {camT.position.y:F2})");
+
+            // 壁: 垂直面は法線が水平なので床候補にならない。
+            // カメラより下に置いても選ばれないこと(高さ帯だけに頼っていない証明)
+            GameObject wallGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            wallGo.name = "E2E_TestWall";
+            wallGo.transform.position   = new Vector3(camT.position.x, camNow - 0.6f, camT.position.z);
+            wallGo.transform.localScale = new Vector3(0.1f, 3f, 20f); // 薄い縦板 = 壁
+            Destroy(wallGo.GetComponent<MeshRenderer>());
+
+            groundSnap.ResetFloor();
+            yield return WaitScaled(0.8f);
+            Check(Mathf.Abs(groundSnap.ResolvedFloorY - realFloorY) < 0.12f,
+                $"ground: a wall between camera and floor is not mistaken for the floor " +
+                $"(picked {groundSnap.ResolvedFloorY:F2}, floor {realFloorY:F2})");
+
+            // 後片付けは順序が重要。Destroy は当該フレーム末に効くため、
+            // 先に ResetFloor を呼ぶと「まだ生きているコライダー」を掴み直してしまい、
+            // ラッチ(実測床は保持される設計)が残って後続の検証が落ちる。
+            // コライダーが消えたのを待ってから確定をやり直す
+            Destroy(floorGo);
+            Destroy(ceilGo);
+            Destroy(wallGo);
+            yield return null;              // Destroy の反映を待つ
+            yield return WaitScaled(0.1f);
+            groundSnap.ResetFloor();
+            yield return WaitScaled(0.6f);
+            Check(!groundSnap.HasMeasuredFloor,
+                "ground: measured-floor latch is released once the test colliders are gone");
         }
 
         // ── Step 1: StartSession (目標60m — ゴール自動終了を早く踏むため) ──
