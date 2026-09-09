@@ -157,6 +157,21 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 実物より大きく表示されていた(実機で報告された不具合)
         float avatarHeight = engine.MeasuredAvatarHeightMeters;
         Check(avatarHeight > 0.01f, $"scale: avatar height is measurable ({avatarHeight:F2}m)");
+
+        // 接地誤差 (§10: 上下5cm以内)。GroundSnap が床に合わせるのは「原点」なので、
+        // 原点が足裏に無いと床の推定が完璧でも足は浮く/沈む。見えるのは足裏なので、
+        // **足裏の実際の高さと床の差**を測る — これが「浮遊感」の正体かを切り分ける
+        var gs = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
+        if (gs != null)
+        {
+            float footOffset  = engine.FootOffsetMeters;
+            float soleY       = gs.transform.position.y + footOffset;
+            float contactErr  = soleY - gs.ResolvedFloorY;
+
+            Check(Mathf.Abs(contactErr) < 0.05f,
+                $"ground: soles meet the floor within ±5cm (§10) — error {contactErr:+0.000;-0.000}m " +
+                $"(pivot→sole {footOffset:F3}m, root {gs.transform.position.y:F3}, floor {gs.ResolvedFloorY:F3})");
+        }
         if (avatarHeight > 0.01f)
             Check(Mathf.Abs(avatarHeight - 1.75f) < 0.15f,
                 $"scale: avatar renders at real-world height for 175cm (measured {avatarHeight:F2}m)");

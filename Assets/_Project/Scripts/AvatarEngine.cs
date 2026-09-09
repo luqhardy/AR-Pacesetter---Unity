@@ -679,6 +679,62 @@ public class AvatarEngine : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// アバターのルート原点から、描画される<b>最下点(足裏)</b>までの高さ(m)。
+    ///
+    /// <para><c>GroundSnap</c> は <c>transform.position.y = 床の高さ</c> を代入する。
+    /// つまり床に合わせているのは<b>原点</b>であって足裏ではない。
+    /// この値が 0 でなければ、床の推定が完璧でも足はその分だけ浮く(正)か沈む(負)。
+    /// 数値上は接地しているのに「浮遊感」が残る原因になりうるため、実測できるようにした。</para>
+    ///
+    /// <para>ポーズ非依存の <c>localBounds</c> をルート空間へ変換して測るので、
+    /// 走行アニメーションで脚が上がっても値は動かない(接地の基準として使える)。</para>
+    /// </summary>
+    /// <remarks>
+    /// <b>localBounds では測れない。</b> SkinnedMeshRenderer の <c>localBounds</c> は
+    /// ルートボーン空間の値で、<c>renderer.transform</c> 空間ではない。
+    /// 高さ(max−min)は平行移動の誤差が相殺されるので正しく出るが、
+    /// 絶対位置(足裏がどこか)は基準系ごとずれる — 実測で0.8mの食い違いを確認した。
+    /// そのため足裏はヒューマノイドの足ボーンから直接求める。
+    /// </remarks>
+    public float FootOffsetMeters
+    {
+        get
+        {
+            // ① ヒューマノイドの足ボーンが最も正確(ポーズを含めた実際の足の位置)
+            var animator = GetComponentInChildren<Animator>(true);
+            if (animator != null && animator.isHuman)
+            {
+                Transform lf = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+                Transform rf = animator.GetBoneTransform(HumanBodyBones.RightFoot);
+                if (lf != null || rf != null)
+                {
+                    float y = float.MaxValue;
+                    if (lf != null) y = Mathf.Min(y, transform.InverseTransformPoint(lf.position).y);
+                    if (rf != null) y = Mathf.Min(y, transform.InverseTransformPoint(rf.position).y);
+                    // 足ボーンは足首にあるので、くるぶし→足裏の分を引く
+                    return y - AnkleToSoleMeters;
+                }
+            }
+
+            // ② ボーンが取れなければ描画AABBの最下点で代用する(ポーズ依存・やや緩い)
+            var renderers = GetComponentsInChildren<Renderer>(true);
+            bool any = false;
+            float minY = 0f;
+            foreach (var r in renderers)
+            {
+                if (r is ParticleSystemRenderer || r is LineRenderer) continue;
+                float y = transform.InverseTransformPoint(r.bounds.min).y;
+                if (!any) { minY = y; any = true; }
+                else if (y < minY) minY = y;
+            }
+            return any ? minY : 0f;
+        }
+    }
+
+    /// <summary>足首ボーンから足裏までの概算(m)。成人男性の実寸に基づく。</summary>
+    private const float AnkleToSoleMeters = 0.09f;
+
     /// <summary>直近に指定された身長(cm)。モデル差し替え後の再適用に使う。</summary>
     public float RequestedHeightCm { get; private set; } = AvatarScale.BaselineHeightCm;
 
