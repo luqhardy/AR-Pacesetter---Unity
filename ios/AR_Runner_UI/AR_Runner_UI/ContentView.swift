@@ -41,7 +41,9 @@ struct ContentView: View {
 
             switch screen {
 
-            // 0. ホーム — 走行フローの起点。終了後も必ずここへ戻る
+            // 0. ホーム — 走行フローの起点。終了後も必ずここへ戻る。
+            //    デザインは hsuyaminmyat625/AR_project の HomeView を採用(2026-09-11 合体)。
+            //    ハンバーガー(履歴/AR設定/使い方/安全上の注意)とスライド開始を持つ
             case .home:
                 HomeView(
                     onStartRun:   { screen = .deviceConnect },
