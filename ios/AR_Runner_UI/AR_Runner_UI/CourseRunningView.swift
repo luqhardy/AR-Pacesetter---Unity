@@ -140,6 +140,11 @@ struct RunningView: View {
     @State private var showEndAlert = false
     @State private var showGoalOverlay = false
 
+    /// 画面ロック(誤タップ防止)。**画面遷移ではなくオーバーレイ**にしている —
+    /// 別画面へ遷移すると UnityContainerView がヒエラルキーから外れ、ARビューの
+    /// 貼り直しが起きる。走行はそのまま続けたいので、上から覆うだけにする
+    @State private var isLocked = false
+
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var elapsedStr: String {
@@ -310,13 +315,39 @@ struct RunningView: View {
                             .background(Color(red: 0.85, green: 0.25, blue: 0.2), in: RoundedRectangle(cornerRadius: 18))
                         }
                         .padding(.horizontal, 28)
+
+                        // グラス出力中は端末を見ずに走るので、ポケットでの誤タップを防ぐ
+                        Button { isLocked = true } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 15, weight: .bold))
+                                Text("画面をロック")
+                                    .font(.system(size: 15, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, minHeight: 54)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .strokeBorder(Color.arBorder, lineWidth: 1)
+                            )
+                        }
+                        .padding(.horizontal, 28)
                         .padding(.bottom, 48)
                     }
                 } else {
-                    // Stop button
+                    // Stop / Lock buttons
                     VStack {
-                        HStack {
+                        HStack(spacing: 10) {
                             Spacer()
+                            Button { isLocked = true } label: {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 42, height: 42)
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .overlay(Circle().strokeBorder(Color.arBorder, lineWidth: 1))
+                            }
                             Button { showEndAlert = true } label: {
                                 Image(systemName: "stop.fill")
                                     .font(.system(size: 15, weight: .bold))
@@ -326,8 +357,8 @@ struct RunningView: View {
                                     .overlay(Circle().strokeBorder(Color.arBorder, lineWidth: 1))
                             }
                             .padding(.trailing, 20)
-                            .padding(.top, 60)
                         }
+                        .padding(.top, 60)
                         Spacer()
                     }
                 }
@@ -385,7 +416,15 @@ struct RunningView: View {
                     }
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
+
+                // 画面ロック — 最前面。走行・Unityの描画は裏で続いており、
+                // 上へスワイプすると元の走行画面へそのまま戻る
+                if isLocked {
+                    LockScreenView(onUnlock: { isLocked = false })
+                        .transition(.opacity)
+                }
             }
+            .animation(.easeInOut(duration: 0.2), value: isLocked)
             .animation(.easeInOut(duration: 0.25), value: bridge.gpsStatus == .lost)
             .ignoresSafeArea()
             .onAppear {

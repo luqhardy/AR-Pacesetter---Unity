@@ -60,6 +60,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(goalLine != null, "bootstrap: GoalLineController exists");
         Check(runnerTracking != null, "bootstrap: invisible RunnerTrackingState exists");
 
+        // 検出平面がアバターを隠さないこと(第1期の既定)。プレーンの材質は深度だけ書く
+        // ため、ONだと壁・机の向こうのアバターが描画されず「壁で消える」ことになる
+        var planeOcclusion = FindFirstObjectByType<ARPlaneOcclusionController>(FindObjectsInactive.Include);
+        Check(planeOcclusion != null, "bootstrap: ARPlaneOcclusionController exists");
+        Check(planeOcclusion != null && !planeOcclusion.OccludeAvatarBehindPlanes,
+            "occlusion: detected planes do not occlude the avatar by default");
+
         Camera cam = Camera.main;
         Check(cam != null, "scene: main camera exists");
         if (bridge == null || engine == null || session == null || cam == null)
@@ -209,6 +216,85 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 "ground: measured-floor latch is released once the test colliders are gone");
         }
 
+        // ── Step 0d: 天井の下で「断崖」と誤判定しないこと (壁・天井でアバターが消える件) ──
+        // 断崖判定は「ユーザー真下の地面」と「3m先の地面」の落差で行うが、
+        // ユーザー真下は Physics.Raycast の**最初の1ヒット**を採るため、
+        // 頭上に天井コライダー(ARKitは天井も水平面としてコライダー付きで返す)が
+        // あると天井の高さが「地面」になる。3m先の天井がまだ未検出なら
+        // 「天井 − 床 ≒ 2m 以上の落差」= 断崖として停止し、ユーザーが追い越して
+        // アバターが視界から消える。天井は**ユーザーの上だけ**に置いて再現する
+        if (groundSnap != null && _cameraMover != null)
+        {
+            Transform camT2 = Camera.main != null ? Camera.main.transform : _cameraMover;
+            float camY2 = camT2.position.y;
+
+            GameObject floor2 = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            floor2.name = "E2E_CliffTestFloor";
+            floor2.transform.position   = new Vector3(camT2.position.x, camY2 - 1.2f - 0.05f, camT2.position.z);
+            floor2.transform.localScale = new Vector3(20f, 0.1f, 20f);
+            Destroy(floor2.GetComponent<MeshRenderer>());
+
+            // 天井パッチ: ユーザー頭上 1.3m、4m四方 = 3m先の判定点には届かない
+            GameObject ceil2 = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            ceil2.name = "E2E_CliffTestCeilingPatch";
+            ceil2.transform.position   = new Vector3(camT2.position.x, camY2 + 1.3f + 0.05f, camT2.position.z);
+            ceil2.transform.localScale = new Vector3(4f, 0.1f, 4f);
+            Destroy(ceil2.GetComponent<MeshRenderer>());
+
+            groundSnap.ResetFloor();
+            yield return WaitScaled(0.6f);
+
+            Check(groundSnap.HasMeasuredFloor,
+                "cliff: the floor collider is measured under the ceiling patch");
+            Check(!engine.IsHalted,
+                "cliff: a ceiling above the user is not mistaken for a cliff drop ahead (no halt)");
+
+            Destroy(floor2);
+            Destroy(ceil2);
+            yield return null;
+            yield return WaitScaled(0.1f);
+            groundSnap.ResetFloor();
+            yield return WaitScaled(0.6f);
+            Check(!groundSnap.HasMeasuredFloor && !engine.IsHalted,
+                "cliff: test colliders removed, latch released, not halted");
+        }
+
+        // ── Step 0e: 前方の壁 — §4.2の足踏み停止と第1期の既定(OFF) ──────────
+        // 室内では前方3m以内に必ず壁があり、停止するとユーザーが追い越して
+        // アバターが視界から消える。第1期(トラック検証)の既定はOFF。
+        // 仕様どおりの挙動(ON)も壊れていないことを同じ壁で確かめる
+        if (groundSnap != null && _cameraMover != null)
+        {
+            Transform camT3 = Camera.main != null ? Camera.main.transform : _cameraMover;
+            Vector3 flatForward = camT3.forward;
+            flatForward.y = 0f;
+            flatForward = flatForward.sqrMagnitude > 0.0001f ? flatForward.normalized : Vector3.forward;
+
+            GameObject wallAhead = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            wallAhead.name = "E2E_WallAhead";
+            wallAhead.transform.position = camT3.position + flatForward * 2.0f;
+            wallAhead.transform.rotation = Quaternion.LookRotation(flatForward);
+            wallAhead.transform.localScale = new Vector3(4f, 3f, 0.1f); // 進路を塞ぐ縦板
+            Destroy(wallAhead.GetComponent<MeshRenderer>());
+
+            bool defaultHalt = groundSnap.HaltOnObstacles;
+            yield return WaitScaled(0.3f);
+            Check(!defaultHalt && !engine.IsHalted,
+                "obstacle: a wall ahead does not halt the avatar by default (第1期トラック設定)");
+
+            // §4.2 の挙動自体は生きていること
+            groundSnap.HaltOnObstacles = true;
+            yield return WaitScaled(0.3f);
+            Check(engine.IsHalted,
+                "obstacle: the wall does halt the avatar when §4.2 halting is enabled");
+
+            groundSnap.HaltOnObstacles = defaultHalt;
+            Destroy(wallAhead);
+            yield return null;
+            yield return WaitScaled(0.3f);
+            Check(!engine.IsHalted, "obstacle: halting clears once the wall is gone");
+        }
+
         // ── Step 1: StartSession (目標60m — ゴール自動終了を早く踏むため) ──
         bridge.OnSwiftCommand(
             "{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":0.06," +
@@ -280,6 +366,23 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 実機では "device"(CoreMotion)、Swift供給時は "external" になる
         Check(telemetry != null && telemetry.ImuSource == "approximated",
             "telemetry: IMU source falls back to approximation in editor (device/external on hardware)");
+
+        // ── M2P実測(§10)の窓口。エディタにはネイティブが無いので「未計測」を貫くこと ──
+        // ここが緩むと、合成値が実測として記録され §11.2 の評価が意味を失う
+        var timing = FindFirstObjectByType<SensorTimingBridge>(FindObjectsInactive.Include);
+        Check(timing != null, "bootstrap: SensorTimingBridge exists");
+        Check(!SensorTimingBridge.NativeAvailable,
+            "m2p: native timing is reported unavailable in the editor");
+        Check(timing != null && timing.IsMeasuring,
+            "m2p: measurement is started together with the run");
+        Check(timing != null && !timing.TryGetLatencyMs(out double _),
+            "m2p: no latency is reported while there is no real measurement");
+        Check(timing != null && timing.Stats.SampleCount == 0,
+            "m2p: nothing synthetic leaks into the run statistics");
+        Check(timing != null && !timing.IsImuStreaming,
+            "m2p: native 100Hz IMU is not claimed in the editor");
+        Check(telemetry != null && telemetry.NativeImuRowCount == 0,
+            "telemetry: editor rows come from the frame-synced fallback, not native samples");
         string telemetryPath = telemetry != null ? telemetry.CurrentFilePath : null;
 
         // ── F-07 現在ペース表示 / F-10 安全警告 ────────────────────────────
@@ -405,6 +508,27 @@ public class E2EScenarioBehaviour : MonoBehaviour
         var goalGestures = FindFirstObjectByType<ProceduralGestureDriver>(FindObjectsInactive.Include);
         Check(goalGestures != null && goalGestures.ActiveGesture == "Goodbye",
             "goal: procedural goodbye gesture playing");
+
+        // ── §10 非機能要件の実測 (位置誤差1.0m / 60分連続稼働) ────────────────
+        // 実証(§11.2)でCSVを解析するまで分からない、という状態を避けるための計測。
+        // 位置誤差は「目標リード距離(3.0m)と実際の水平距離の差」で定義している
+        var nonFunctional = FindFirstObjectByType<NonFunctionalRequirementsMonitor>(FindObjectsInactive.Include);
+        Check(nonFunctional != null, "bootstrap: NonFunctionalRequirementsMonitor exists");
+        if (nonFunctional != null)
+        {
+            Check(nonFunctional.Position.SampleCount > 0,
+                $"§10: position error was actually sampled during the run ({nonFunctional.Position.SampleCount} samples)");
+            Check(nonFunctional.Position.MeetsRequirement,
+                $"§10: average lead error stays within 1.0m — {nonFunctional.Position.Summarize()}");
+
+            // 短い走行から「60分もつ」と断定しないこと。
+            // (バッテリー残量が取れるかは環境次第 — ノートPCのエディタでは取れる。
+            //  取れる/取れないに関わらず、外挿に足りない計測で達成を名乗らないのが不変条件)
+            Check(nonFunctional.SummarizeEndurance().Contains("判定不能"),
+                $"§10: endurance is reported as undecidable rather than passing ({nonFunctional.SummarizeEndurance()})");
+            Check(!nonFunctional.SummarizeEndurance().Contains("§10達成"),
+                "§10: a short run never claims the 60-minute endurance requirement is met");
+        }
 
         // F-11 テレメトリCSV: 終了後にファイルが生成され、正しいヘッダーと
         // 100Hz相当の行数を持つこと(§5.2)
@@ -574,6 +698,33 @@ public class E2EScenarioBehaviour : MonoBehaviour
             bool inFront = Vector3.Dot(toAvatar.normalized, _cameraMover.forward) > 0f;
             Check(inFront && leadAfterClear < 6.0f,
                 $"obstacle: avatar returns in front after the wall clears (lead {leadAfterClear:F1}m, inFront={inFront})");
+        }
+
+        // ── Step 3c2: 走行中にアプリを終了(スワイプ)されても記録が消えないこと ──
+        // 記録は FinishRun でしか保存されないため、走行中に殺されるとその走行は
+        // まるごと消えていた。背面移行のたびにスナップショットを書き、次回起動で昇格する
+        {
+            int historyBefore = SessionDataStore.LoadAllSessions().Count;
+
+            session.PersistInterruptedSnapshot(); // = OnApplicationPause(true) と同じ経路
+            Check(SessionDataStore.HasInterruptedSnapshot(),
+                "interrupt: a snapshot is written when the app backgrounds mid-run");
+            Check(SessionDataStore.LoadAllSessions().Count == historyBefore,
+                "interrupt: the snapshot stays out of the history until promoted");
+
+            RunSessionRecord restored = SessionDataStore.TryPromoteInterruptedSnapshot(out string promotedPath);
+            Check(restored != null && restored.wasInterrupted,
+                "interrupt: the snapshot is promoted into the history on the next launch");
+            Check(restored != null && restored.distanceMeters > 0f,
+                $"interrupt: the restored run keeps its distance ({(restored != null ? restored.distanceMeters : 0f):F0}m)");
+            Check(!SessionDataStore.HasInterruptedSnapshot(),
+                "interrupt: the snapshot is consumed by the promotion");
+            Check(SessionDataStore.LoadAllSessions().Count == historyBefore + 1,
+                "interrupt: the interrupted run now appears in the history");
+
+            // 検証で作った履歴を残さない
+            if (!string.IsNullOrEmpty(promotedPath) && System.IO.File.Exists(promotedPath))
+                System.IO.File.Delete(promotedPath);
         }
 
         // 地面判定は上向きの面のみを採用する(壁を床と誤認するとアバターが跳ね上がる)。

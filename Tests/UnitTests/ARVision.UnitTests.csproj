@@ -26,6 +26,10 @@
     <Compile Include="..\..\Assets\_Project\Scripts\AvatarPaceColor.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\AuraFeedback.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GroundFloorTracker.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\CliffMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\MotionToPhotonMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\NonFunctionalStats.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\TrackingLagMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\PaceHudDisplay.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\AvatarScale.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GoalLineMath.cs" />

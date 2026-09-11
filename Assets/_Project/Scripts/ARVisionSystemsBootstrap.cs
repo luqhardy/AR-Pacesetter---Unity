@@ -67,7 +67,13 @@ public static class ARVisionSystemsBootstrap
         Ensure<GpsSignalMonitor>(); // F-09 GPSロスト自動判定(§8.1)
         Ensure<CountdownDisplay>(); // 走行開始カウントダウンのAR表示(音のカウントと同期)
         Ensure<ARPassthroughController>(); // 光学シースルー時のカメラ映像抑止
+        Ensure<ARPlaneOcclusionController>(); // 検出平面がアバターを隠さないようにする(既定OFF)
         Ensure<GoalLineController>(); // 目標距離接近時のARゴールライン(実行時生成)
+
+        // M2P実測(§10)と100Hz IMU(§5.2)のネイティブ窓口。
+        // RunTelemetryLogger より先に用意する(Awakeで参照を取りにいくため)
+        Ensure<SensorTimingBridge>();
+        Ensure<NonFunctionalRequirementsMonitor>(); // §10 位置誤差・連続稼働の実測
 
         // F-11: 100Hz テレメトリCSVロガー(基本設計書§5.2 — PoCの核)。
         // アバターtransformを読むためエンジンと同居させる

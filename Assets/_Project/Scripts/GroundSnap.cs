@@ -42,8 +42,10 @@ public class GroundSnap : MonoBehaviour
     private float maxCameraToFloorMeters = GroundFloorTracker.DefaultMaxCameraToFloorMeters;
 
     [Tooltip("前方の壁・断崖でアバターを足踏み停止させる(基本設計書 §4.2)。" +
-             "陸上トラックのように壁が単なる背景の環境ではOFFにすると素直に走り続ける")]
-    [SerializeField] private bool haltOnObstacles = true;
+             "陸上トラックのように壁が単なる背景の環境ではOFFにすると素直に走り続ける。" +
+             "第1期(トラック検証)の既定はOFF — 室内では前方3m以内の壁で必ず停止し、" +
+             "ユーザーが追い越してアバターが視界から消えるため")]
+    [SerializeField] private bool haltOnObstacles = false;
 
     // 床面高さの確定・保持(純ロジック)。実測が途切れてもカメラに追従させないための要
     private readonly GroundFloorTracker _floor = new GroundFloorTracker();
@@ -62,6 +64,16 @@ public class GroundSnap : MonoBehaviour
     /// <summary>再走行時などに床の確定をやり直す。</summary>
     public void ResetFloor() => _floor.Reset();
 
+    /// <summary>
+    /// 前方の壁・断崖での足踏み停止(§4.2)を行うか。**第1期の既定はOFF**。
+    /// 屋内デモや仕様どおりの挙動を確認したいときは実行時にtrueへ戻せる。
+    /// </summary>
+    public bool HaltOnObstacles
+    {
+        get => haltOnObstacles;
+        set => haltOnObstacles = value;
+    }
+
     /// <summary>E2E/エディタ検証用: 障害物検知の強制ON/OFF(Cキーと同じ)。</summary>
     public bool SimulateObstacle
     {
@@ -75,7 +87,7 @@ public class GroundSnap : MonoBehaviour
     
     /// <summary>これ以上「上向き」の面のみ地面として採用する(cos45°≒0.7)。
     /// 壁・天井を床と誤認するとアバターが壁の高さへ跳ね上がり視界から消える。</summary>
-    private const float GroundNormalMinDot = 0.7f;
+    private const float GroundNormalMinDot = CliffMath.GroundNormalMinDot;
 
     /// <summary>これ以下の「上向き成分」なら壁とみなす。床や緩斜面を障害物にしない。</summary>
     private const float WallNormalMaxDot = 0.5f;
@@ -477,50 +489,59 @@ public class GroundSnap : MonoBehaviour
         }
 
         // 3. Under-foot Cliff Drop checking
-        // Perform a vertical raycast down exactly 3.0 meters ahead along user path of progression.
-        // If the ground drops dramatically (cliff edge) or is missing, halt progression.
+        // 「ユーザー真下の地面」と「進行方向3m先の地面」の落差で断崖を判定する。
+        //
+        // 地面の選び方は CliffMath に委譲する。以前は真下のレイの**最初のヒット**を
+        // 地面にしていたため、頭上に天井コライダー(ARKitは天井も「水平・法線上向き」で
+        // コライダー付きに返す)があると「ユーザーの地面 = 天井高」になり、3m先の天井が
+        // 未検出の室内では「天井 − 床 ≒ 2m 以上」が断崖として成立していた。アバターは
+        // 足踏み停止し、ユーザーが追い越して視界から消える(=「壁・天井でアバターが消える」)。
+        // 地面は「上向きの面」かつ「カメラより下」— この幾何的事実だけで天井・壁・机を弾く
+        float cameraY = userCamera.position.y;
+
         Vector3 checkAheadPoint = userCamera.position + (rayDirection * obstacleDetectionDistance);
-        int cliffHitCount = Physics.RaycastNonAlloc(checkAheadPoint + (Vector3.up * 2.0f), Vector3.down, s_RaycastHits, 10.0f, environmentLayerMask, QueryTriggerInteraction.Ignore);
-        
-        bool foundGroundAhead = false;
-        float groundLevelAhead = -1000f;
-        for (int i = 0; i < cliffHitCount; i++)
+        bool foundGroundAhead = TryFindGroundBelow(checkAheadPoint + (Vector3.up * 2.0f), 10.0f, cameraY,
+                                                   out float groundLevelAhead);
+
+        // 前方に地面が「見つからない」ことは断崖の証拠にならない。
+        // ARKitの平面検出はまばらで、平坦な床でも3m先が未検出のことが普通にある。
+        // ここで停止させていたため屋内では未検出域のたびにアバターが足踏みを始め、
+        // ユーザーが追い越して視界から消えていた。断崖は**実測された落差**でのみ判定する
+        if (!foundGroundAhead) return false;
+
+        // ユーザー真下の地面。実測できなければ確定済みの床(=アバターが立っている高さ)を使う
+        if (!TryFindGroundBelow(userCamera.position + (Vector3.up * 2.0f), 20.0f, cameraY,
+                                out float userGroundLevel))
+        {
+            userGroundLevel = _floor.HasFloor ? _floor.FloorY : transform.position.y;
+        }
+
+        return CliffMath.IsCliffDrop(userGroundLevel, groundLevelAhead, minObstacleHeight);
+    }
+
+    // CliffMath へ渡すヒット候補。毎フレームの確保を避けるため使い回す
+    private static readonly List<CliffMath.GroundCandidate> s_GroundCandidates = new List<CliffMath.GroundCandidate>(32);
+
+    /// <summary>
+    /// <paramref name="origin"/> から真下へレイを撃ち、全ヒットの中から「地面」を選ぶ。
+    /// 自分自身・ユーザー(カメラのrig)のコライダーは除外し、選択は <see cref="CliffMath.TrySelectGround"/> に委譲する。
+    /// </summary>
+    private bool TryFindGroundBelow(Vector3 origin, float maxDistance, float cameraY, out float groundY)
+    {
+        int hitCount = Physics.RaycastNonAlloc(origin, Vector3.down, s_RaycastHits, maxDistance,
+                                               environmentLayerMask, QueryTriggerInteraction.Ignore);
+        s_GroundCandidates.Clear();
+        for (int i = 0; i < hitCount; i++)
         {
             var h = s_RaycastHits[i];
             if (h.transform.root == transform.root) continue;
-            if (h.point.y > groundLevelAhead)
-            {
-                groundLevelAhead = h.point.y;
-                foundGroundAhead = true;
-            }
+            if (userCamera != null && h.transform.root == userCamera.root) continue;
+
+            s_GroundCandidates.Add(new CliffMath.GroundCandidate(h.point.y, Vector3.Dot(h.normal, Vector3.up)));
         }
 
-        float userGroundLevel = transform.position.y;
-        RaycastHit userGroundHit;
-        bool groundUnderUser = Physics.Raycast(userCamera.position + Vector3.up * 2.0f, Vector3.down, out userGroundHit, 20.0f, environmentLayerMask, QueryTriggerInteraction.Ignore);
-        if (groundUnderUser)
-        {
-            userGroundLevel = userGroundHit.point.y;
-        }
-        
-        if (foundGroundAhead)
-        {
-            // Compare ground level ahead with the user's ground level to prevent snapping feedback loop issues
-            if (userGroundLevel - groundLevelAhead >= minObstacleHeight)
-            {
-                return true;
-            }
-        }
-        else
-        {
-            // 前方に地面が「見つからない」ことは断崖の証拠にならない。
-            // ARKitの平面検出はまばらで、平坦な床でも3m先が未検出のことが普通にある。
-            // ここで停止させていたため屋内では未検出域のたびにアバターが足踏みを始め、
-            // ユーザーが追い越して視界から消えていた(=「壁でアバターが消える」の実体)。
-            // 断崖は**実測された落差**でのみ判定する(上の foundGroundAhead 分岐)。
-        }
-
-        return false;
+        return CliffMath.TrySelectGround(s_GroundCandidates, cameraY, minCameraToFloorMeters,
+                                         GroundNormalMinDot, out groundY);
     }
 
     private void UpdateAnimatorState(bool isHalted)

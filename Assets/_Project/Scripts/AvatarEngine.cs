@@ -114,6 +114,12 @@ public class AvatarEngine : MonoBehaviour
     private float _overtakenTimer   = 0f;  // how long user has been faster
     private float _sprintTimer      = 0f;  // how long sprint has been held
     private Vector3 _sidestepOffset = Vector3.zero; // lateral shift when yielding
+
+    // 追従の定常遅れ補正用。アンカーの移動速度を平滑して先回り量を出す
+    private Vector3 _lastAnchorPosition;
+    private Vector3 _smoothedAnchorVelocity;
+    private bool _hasLastAnchor;
+    private const float AnchorVelocitySmoothing = 3.0f; // 時定数≒0.33秒
     
     private bool _hasStarted = false; // Start command state
     private bool _runMotionActive = false;
@@ -330,7 +336,15 @@ public class AvatarEngine : MonoBehaviour
 
         // Blend position with elastic catchup speed (Feature #3)
         float posLerpSpeed = GetEffectivePositionLerpSpeed();
-        _targetPacingPosition = Vector3.Lerp(_targetPacingPosition, filtered,
+
+        // ── 追従の定常遅れを打ち消す (§10 位置誤差1.0m / F-03 3.0m前方維持) ──
+        // 指数平滑は動き続ける目標を必ず v/k だけ取り残す。k=2.5・3.6m/s なら1.44mで、
+        // アバターは3.0m前方ではなく実質1.6m前方に居続ける(E2E実測でも平均1.51m)。
+        // 遅れる量は分かっているので、その分だけ目標を先回りさせる。
+        // 平滑の強さ(k)は変えないため手ブレ除去性能は落ちず、定常成分だけが消える
+        Vector3 feedForward = ComputeTrackingLagFeedForward(filtered, posLerpSpeed);
+
+        _targetPacingPosition = Vector3.Lerp(_targetPacingPosition, filtered + feedForward,
                                              Time.deltaTime * posLerpSpeed);
         
         // Align our internal tracking position with GroundSnap's actual height to avoid Y drift fighting
@@ -847,6 +861,10 @@ public class AvatarEngine : MonoBehaviour
     {
         _targetPacingPosition  = avatarWorldPosition;
         _lastFrameUserPosition = userWorldPosition;
+
+        // 位置を外部が飛ばした直後は差分が速度ではないので、遅れ補正を取り直す
+        _hasLastAnchor = false;
+        _smoothedAnchorVelocity = Vector3.zero;
     }
 
     /// <summary>
@@ -872,6 +890,8 @@ public class AvatarEngine : MonoBehaviour
         _sidestepOffset = Vector3.zero;
         _effectiveSpeedMultiplier = 1.0f;
         _lastCleanKalmanVelocity = Vector3.zero;
+        _hasLastAnchor = false;
+        _smoothedAnchorVelocity = Vector3.zero;
 
         if (userCamera != null)
         {
@@ -936,6 +956,38 @@ public class AvatarEngine : MonoBehaviour
     {
         _calculatedTargetSpeedMetersPerSecond = 1000f / (pace * 60f);
         Debug.Log($"[SPEED CALCULATOR] Pace {pace:F2}/km → {_calculatedTargetSpeedMetersPerSecond:F2} m/s");
+    }
+
+    /// <summary>
+    /// アンカーの移動速度から、追従の定常遅れを打ち消す先回りベクトルを作る。
+    /// 速度は平滑してから使う — 生の1フレーム差分は手ブレそのもので、
+    /// それを先回り量にすると平滑で消したはずのジッタを位置へ戻してしまう。
+    /// </summary>
+    private Vector3 ComputeTrackingLagFeedForward(Vector3 anchor, float lerpSpeed)
+    {
+        float dt = Mathf.Max(Time.deltaTime, 0.0001f);
+
+        if (!_hasLastAnchor)
+        {
+            // 初回・再同期直後は速度が測れない(差分が飛ぶ)ので補正しない
+            _lastAnchorPosition = anchor;
+            _hasLastAnchor = true;
+            _smoothedAnchorVelocity = Vector3.zero;
+            return Vector3.zero;
+        }
+
+        Vector3 instantVelocity = (anchor - _lastAnchorPosition) / dt;
+        instantVelocity.y = 0f;
+        _lastAnchorPosition = anchor;
+
+        _smoothedAnchorVelocity = Vector3.Lerp(_smoothedAnchorVelocity, instantVelocity,
+                                               Mathf.Clamp01(dt * AnchorVelocitySmoothing));
+
+        float speed = _smoothedAnchorVelocity.magnitude;
+        if (speed < 0.05f) return Vector3.zero; // ほぼ静止。補正しても意味が無い
+
+        float meters = TrackingLagMath.FeedForwardMeters(speed, lerpSpeed);
+        return (_smoothedAnchorVelocity / speed) * meters;
     }
 
     private float GetEffectivePositionLerpSpeed()

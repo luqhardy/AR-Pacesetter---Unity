@@ -6,17 +6,14 @@ struct DeviceConnectView: View {
     let onBack: () -> Void
 
     @State private var arConnected = false
-    @State private var watchConnected = false
-    @State private var airPodsConnected = false
     @State private var arScanning = false
-    @State private var watchScanning = false
-    @State private var airPodsScanning = false
     @State private var pulse = false
 
     // 実グラス接続(USB-C外部ディスプレイ)を検知したら表示に反映
     @ObservedObject private var external = ExternalDisplayManager.shared
 
-    var allConnected: Bool { arConnected && watchConnected && airPodsConnected }
+    /// 走行に必要なのはARグラスだけ。Watch/AirPodsは第1期のスコープ外(基本設計書 §1.2)
+    var allConnected: Bool { arConnected }
 
     var body: some View {
         ARScreen {
@@ -63,33 +60,19 @@ struct DeviceConnectView: View {
                             }
                         }
                     )
-                    DeviceConnectRow(
+                    // Watch / AirPods は第1期のスコープ外(基本設計書 §1.2 —
+                    // 通信ボトルネックを排除しM2P 20msを死守するため、iPhone+グラスの
+                    // 2デバイスに特化する)。以前はタップから1秒後に「接続済み」と
+                    // 表示するだけの**見せかけ**だったので、実態どおりの表示に改めた
+                    DeviceUnavailableRow(
                         icon: "applewatch",
                         name: "Apple Watch",
-                        subtitle: "Series / Ultra",
-                        isConnected: $watchConnected,
-                        isScanning: $watchScanning,
-                        onConnect: {
-                            watchScanning = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                                watchScanning = false
-                                watchConnected = true
-                            }
-                        }
+                        note: "第1期のスコープ外"
                     )
-                    DeviceConnectRow(
+                    DeviceUnavailableRow(
                         icon: "airpodspro",
                         name: "AirPods",
-                        subtitle: "Pro / Max",
-                        isConnected: $airPodsConnected,
-                        isScanning: $airPodsScanning,
-                        onConnect: {
-                            airPodsScanning = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                airPodsScanning = false
-                                airPodsConnected = true
-                            }
-                        }
+                        note: "第1期のスコープ外"
                     )
                 }
                 .padding(.horizontal, 24)
@@ -97,12 +80,14 @@ struct DeviceConnectView: View {
                 Spacer()
 
                 // Status hint
-                if !allConnected {
-                    Text("デバイスをタップして接続、またはスキップ")
-                        .font(.system(size: 13))
-                        .foregroundColor(.arGrayText)
-                        .padding(.bottom, 16)
-                }
+                Text(allConnected
+                     ? "ARグラス接続済み — このまま進めます"
+                     : "ARグラスをUSB-Cで接続してください(未接続でも端末画面で走れます)")
+                    .font(.system(size: 13))
+                    .foregroundColor(allConnected ? .arYellow : .arGrayText)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .padding(.bottom, 16)
 
                 // Next button — always available (user can skip devices)
                 Button(action: onNext) {
@@ -223,5 +208,48 @@ struct DeviceConnectRow: View {
         .buttonStyle(.plain)
         .animation(.easeInOut(duration: 0.2), value: isConnected)
         .animation(.easeInOut(duration: 0.2), value: isScanning)
+    }
+}
+
+// MARK: - Unavailable Device Row
+/// 第1期のスコープ外デバイス。**押せない**ことを見た目で示す。
+/// 接続できないものを「接続」ボタン付きで並べると、押しても何も起きない or
+/// 偽の接続済み表示になり、ユーザーは「壊れている」と受け取る。
+struct DeviceUnavailableRow: View {
+    let icon: String
+    let name: String
+    let note: String
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.arBG)
+                    .frame(width: 56, height: 56)
+                    .overlay(Circle().stroke(Color.arBorder, lineWidth: 1))
+                Image(systemName: icon)
+                    .font(.system(size: 24))
+                    .foregroundColor(.arGrayText.opacity(0.6))
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.55))
+                Text(note)
+                    .font(.system(size: 13))
+                    .foregroundColor(.arGrayText)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .background(Color.arCard.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.arBorder.opacity(0.6), lineWidth: 1)
+        )
     }
 }
