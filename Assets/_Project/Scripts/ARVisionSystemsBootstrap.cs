@@ -74,6 +74,7 @@ public static class ARVisionSystemsBootstrap
         // RunTelemetryLogger より先に用意する(Awakeで参照を取りにいくため)
         Ensure<SensorTimingBridge>();
         Ensure<NonFunctionalRequirementsMonitor>(); // §10 位置誤差・連続稼働の実測
+        Ensure<AvatarVisibilityDiagnostics>(); // 「なぜ見えないか」を経路で報告(ログ+Swiftバナー)
 
         // F-11: 100Hz テレメトリCSVロガー(基本設計書§5.2 — PoCの核)。
         // アバターtransformを読むためエンジンと同居させる

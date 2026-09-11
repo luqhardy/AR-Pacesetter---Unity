@@ -417,6 +417,28 @@ struct RunningView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
+                // アバター非表示の理由バナー(Unity AvatarVisibilityDiagnostics)。
+                // 実機で「消えた」と言われたとき、どの経路で消えたかをその場で読めるようにする
+                if let reason = bridge.avatarHiddenReason {
+                    VStack {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "eye.slash.fill")
+                                .font(.system(size: 13))
+                            Text("アバター非表示: \(reason)")
+                                .font(.system(size: 12, weight: .semibold))
+                                .multilineTextAlignment(.leading)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(Color(red: 0.55, green: 0.2, blue: 0.7), in: RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal, 24)
+                        .padding(.top, 206)
+                        Spacer()
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 // 画面ロック — 最前面。走行・Unityの描画は裏で続いており、
                 // 上へスワイプすると元の走行画面へそのまま戻る
                 if isLocked {

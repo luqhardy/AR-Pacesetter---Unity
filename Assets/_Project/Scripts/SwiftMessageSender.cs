@@ -42,6 +42,16 @@ public static class SwiftMessageSender
     public static void SendGpsRecovered()
         => SendRaw("{\"event\":\"GPSRecovered\"}");
 
+    /// <summary>
+    /// アバターの可視状態と、見えていない場合の経路(理由)。変化時のみ送られる。
+    /// Swift側は走行画面にバナーで出す — 実機で「消えた」が「なぜ消えたか」になる
+    /// </summary>
+    public static void SendAvatarVisibility(bool visible, string reason)
+    {
+        string escaped = (reason ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+        SendRaw($"{{\"event\":\"AvatarVisibility\",\"visible\":{(visible ? "true" : "false")},\"reason\":\"{escaped}\"}}");
+    }
+
     public static void SendLatency(double milliseconds)
         => SendRaw(string.Format(CultureInfo.InvariantCulture,
             "{{\"event\":\"LatencyReport\",\"ms\":{0:F1}}}", milliseconds));

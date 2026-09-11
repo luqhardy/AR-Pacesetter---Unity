@@ -217,6 +217,8 @@ public class AvatarEngine : MonoBehaviour
         // ── Pre-start logic ─────────────────────────────────────────────────
         if (!_hasStarted)
         {
+            RecordPreStartPosition();
+
             // Update purified heading but don't move forward yet
             UpdatePurifiedHeading();
             
@@ -916,10 +918,56 @@ public class AvatarEngine : MonoBehaviour
     /// なる場合がある。開始時に限り現在の視線方向を初期アンカーへ使い、移動検出後は
     /// UpdatePurifiedHeadingだけが方位を更新する。従って走行中の見回しでは横揺れしない。
     /// </summary>
+    // 開始時の向き判断用: 走行前のカメラ位置の履歴(時刻つき)。
+    // 進行方向の供給元(RunnerTrackingState / ローカル計測)に依存せず「実際に動いたか」を測る
+    private readonly System.Collections.Generic.Queue<MovementFrame> _preStartPositions
+        = new System.Collections.Generic.Queue<MovementFrame>();
+
+    private void RecordPreStartPosition()
+    {
+        if (userCamera == null) return;
+        _preStartPositions.Enqueue(new MovementFrame(userCamera.position, Time.time));
+        while (_preStartPositions.Count > 0
+               && Time.time - _preStartPositions.Peek().time > StartHeadingPolicy.WindowSeconds + 0.1f)
+            _preStartPositions.Dequeue();
+    }
+
+    /// <summary>直前 <paramref name="windowSeconds"/> 秒の水平移動量(m)。記録が無ければ0。</summary>
+    private float RecentUserDisplacementMeters(float windowSeconds)
+    {
+        if (userCamera == null || _preStartPositions.Count == 0) return 0f;
+
+        Vector3 oldest = Vector3.zero;
+        bool found = false;
+        foreach (var f in _preStartPositions)
+        {
+            if (Time.time - f.time <= windowSeconds) { oldest = f.delta; found = true; break; }
+        }
+        if (!found) return 0f;
+
+        Vector3 moved = userCamera.position - oldest;
+        moved.y = 0f;
+        return moved.magnitude;
+    }
+
     private void AlignStartHeadingToUserView()
     {
-        if (_hasMovementHeading || userCamera == null)
+        if (userCamera == null)
             return;
+
+        // 「移動履歴があるか」ではなく「直前に実際に動いていたか」で判断する。
+        // 待機中の手ブレでも履歴は立つ(1.5秒で2cm)ため、履歴の有無を条件にすると
+        // ほぼランダムな方向の3m先にアバターが現れ、立ち止まっている限り
+        // 視線固定(F-08)でそこに留まる — 実機で「開始したのに見えない」の一因
+        float recent = RecentUserDisplacementMeters(StartHeadingPolicy.WindowSeconds);
+        if (!StartHeadingPolicy.ShouldAlignToView(recent))
+        {
+            Debug.Log($"[PACER ENGINE] Start heading kept from movement " +
+                      $"(moved {recent:F2}m in the last {StartHeadingPolicy.WindowSeconds:F1}s).");
+            return;
+        }
+        Debug.Log($"[PACER ENGINE] Start heading aligned to the user's view " +
+                  $"(moved only {recent:F2}m in the last {StartHeadingPolicy.WindowSeconds:F1}s).");
 
         Vector3 initialForward = userCamera.forward;
         initialForward.y = 0f;

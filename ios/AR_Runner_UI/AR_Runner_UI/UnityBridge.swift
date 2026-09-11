@@ -26,6 +26,9 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var avatarSyncRate: Int = 0       // 0–100%
     @Published var avatarState: AvatarState = .idle
     @Published var gpsStatus: GPSStatus = .searching
+    /// アバターが見えていない理由(Unity AvatarVisibilityDiagnostics)。見えていれば nil。
+    /// 実機で「消えた」を「どの経路で消えたか」に変えるための診断表示
+    @Published var avatarHiddenReason: String? = nil
     @Published var motionToPhotonMs: Double = 0  // latency monitor
     @Published var lastResult: SessionResult?    // EndSession後にUnityから届く
     @Published var history: [HistoryEntry] = []  // RequestHistory応答(新しい順)
@@ -198,6 +201,10 @@ final class UnityBridge: NSObject, ObservableObject {
                 self.gpsStatus = .lost
             case "GPSRecovered":
                 self.gpsStatus = .recovered
+            case "AvatarVisibility":
+                // Unityが判定した「アバターが見えない経路」。見えていれば nil
+                let visible = dict["visible"] as? Bool ?? true
+                self.avatarHiddenReason = visible ? nil : (dict["reason"] as? String ?? "不明")
             case "LatencyReport":
                 self.motionToPhotonMs = dict["ms"] as? Double ?? 0
             case "SessionEnded":

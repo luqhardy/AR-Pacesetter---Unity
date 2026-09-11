@@ -77,6 +77,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         _cameraMover = cam.transform.root != null ? cam.transform.root : cam.transform;
 
+        // エディタのリグはカメラが走行方向(+Z)と無関係な向きで保存されている。
+        // 実機ではARKitがカメラ姿勢を与え、走者は走る方向を向くので、E2Eでも
+        // 「カメラは進行方向を見ている」状態に揃える。これが無いと視野に基づく検証
+        // (アバターが見えているか)がリグの保存姿勢に左右され、意味を持たない
+        FaceRig(Vector3.forward);
+        Debug.Log("[E2E] rig aligned so the camera faces the run direction (+Z)");
+
         // ── Step 0b: 疲労補正係数 (企画書4.4 — 気温閾値。純関数なので走行前に検証) ──
         if (analytics != null)
         {
@@ -108,7 +115,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             float camYBefore    = _cameraMover.position.y;
 
             // 端末を持ち上げる / グラスで上を向く動作の再現
-            _cameraMover.position += Vector3.up * 2.0f;
+            MoveRig(Vector3.up * 2.0f);
             yield return WaitScaled(0.6f);
 
             Check(Mathf.Abs(groundSnap.ResolvedFloorY - floorBefore) < 0.01f,
@@ -302,6 +309,18 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return WaitScaled(0.5f);
         Check(engine.HasStarted, "start: engine.HasStarted after StartSession");
 
+        // 開始の瞬間、アバターは走者の**正面**に出ること。
+        // 待機中の手ブレで立った移動履歴を優先すると、ほぼランダムな方向の3m先に現れ、
+        // 立ち止まっている限り視線固定(F-08)でそこに留まる = 「開始したのに見えない」
+        {
+            Transform camNow = Camera.main != null ? Camera.main.transform : _cameraMover;
+            Vector3 toAvatarStart = engine.transform.position - camNow.position; toAvatarStart.y = 0f;
+            Vector3 camFwd = camNow.forward; camFwd.y = 0f;
+            float startAngle = Vector3.Angle(camFwd, toAvatarStart);
+            Check(startAngle < 45f,
+                $"start: avatar is staged in front of the user's view ({startAngle:F0}° off, {toAvatarStart.magnitude:F1}m)");
+        }
+
         // 企画書 §4.1 実寸: StartSessionで175cmを指定しているので、実際の描画身長も
         // それに一致すること。旧実装は固定倍率(cm/175)で、モデルの素の大きさ次第で
         // 実物より大きく表示されていた(実機で報告された不具合)
@@ -445,7 +464,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Vector3 runDirection = Vector3.forward;
         while (!engine.IsSessionEnded && elapsed < StepTimeoutSeconds)
         {
-            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
             elapsed += Time.deltaTime;
 
             if (!syncObserved && analytics != null && analytics.GetLiveSyncRate() > 30f)
@@ -615,7 +634,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 少し走ってゴーストペース追従を確認
         for (float t = 0; t < 3f; t += Time.deltaTime)
         {
-            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
         Check(engine.GetTargetSpeed() > 0.5f, "ghost: avatar moving at ghost pace");
@@ -646,7 +665,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         while (otElapsed < 6f)
         {
             otElapsed += Time.deltaTime;
-            _cameraMover.position += runDirection * 9f * Time.deltaTime; // 全力疾走
+            MoveRig(runDirection * 9f * Time.deltaTime); // 全力疾走
             if (engine.CurrentOvertakeState != AvatarEngine.OvertakeState.None)
             {
                 sawOvertakeReaction = true;
@@ -661,7 +680,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         while (engine.CurrentOvertakeState != AvatarEngine.OvertakeState.None && otElapsed < 8f)
         {
             otElapsed += Time.deltaTime;
-            _cameraMover.position += runDirection * 9f * Time.deltaTime;
+            MoveRig(runDirection * 9f * Time.deltaTime);
             yield return null;
         }
         Check(engine.CurrentOvertakeState == AvatarEngine.OvertakeState.None,
@@ -670,7 +689,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 通常速度へ戻して体勢回復
         for (float t = 0; t < 1.5f; t += Time.deltaTime)
         {
-            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
 
@@ -682,7 +701,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(engine.IsHalted, "obstacle: avatar halts at simulated wall");
 
             // 停止中にユーザーが追い越す状況を作る(実機で「アバターが消えた」ケース)
-            _cameraMover.position += _cameraMover.forward * 4.0f;
+            MoveRig(CamForwardFlat() * 4.0f);
             yield return WaitScaled(0.3f);
 
             groundSnap.SimulateObstacle = false;
@@ -695,7 +714,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Vector3 toAvatar = engine.transform.position - _cameraMover.position;
             toAvatar.y = 0f;
             float leadAfterClear = toAvatar.magnitude;
-            bool inFront = Vector3.Dot(toAvatar.normalized, _cameraMover.forward) > 0f;
+            bool inFront = Vector3.Dot(toAvatar.normalized, CamForwardFlat()) > 0f;
             Check(inFront && leadAfterClear < 6.0f,
                 $"obstacle: avatar returns in front after the wall clears (lead {leadAfterClear:F1}m, inFront={inFront})");
         }
@@ -747,7 +766,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             while (walked < 6.0f)
             {
                 float step = RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f);
-                _cameraMover.position += _cameraMover.forward * step;
+                MoveRig(CamForwardFlat() * step);
                 walked += step;
 
                 if (Mathf.Abs(groundSnap.ResolvedFloorY - floorBeforeWalk) > 0.01f)
@@ -800,7 +819,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             while (!engine.IsWaitingForUser && waitElapsed < 15f)
             {
                 waitElapsed += Time.deltaTime;
-                _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+                MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
                 yield return null;
             }
             Check(engine.IsWaitingForUser, "wait: avatar holds & beckons at 10m separation");
@@ -818,7 +837,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 Vector3 toAvatar = engine.transform.position - _cameraMover.position;
                 toAvatar.y = 0;
                 if (toAvatar.sqrMagnitude > 0.01f)
-                    _cameraMover.position += toAvatar.normalized * 6f * Time.deltaTime;
+                    MoveRig(toAvatar.normalized * 6f * Time.deltaTime);
                 yield return null;
             }
             Check(!engine.IsWaitingForUser, "wait: pacing resumes when user catches up (7m)");
@@ -827,7 +846,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // コーナー前に直進で体勢を整える(待機解除直後の過渡を収束させる)
         for (float t = 0; t < 4.0f; t += Time.deltaTime)
         {
-            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
 
@@ -848,10 +867,41 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
 
         // ── Step 4: GPS喪失→復帰 FSM ──────────────────────────────────────
+        // 併せて「なぜ見えないか」の診断が症状ではなく経路を報告することを縛る。
+        // 実機で「消えた」と言われても、この行を見れば7つある非表示経路のどれかが分かる
+        var visibility = FindFirstObjectByType<AvatarVisibilityDiagnostics>(FindObjectsInactive.Include);
+        Check(visibility != null, "bootstrap: AvatarVisibilityDiagnostics exists");
+        if (visibility != null)
+        {
+            yield return null;
+            Check(visibility.IsVisible,
+                $"visibility: avatar reported visible during normal pacing ({visibility.CurrentReason})");
+        }
+
         if (stateController != null)
         {
             stateController.TransitionToState(GameStateController.ARVisionState.InertialMovement);
             yield return WaitScaled(0.5f);
+
+            if (visibility != null)
+            {
+                yield return null;
+                Check(visibility.CurrentReason.Contains("GPS"),
+                    $"visibility: inertial movement is attributed to GPS loss ({visibility.CurrentReason})");
+            }
+
+            // 5秒でフェードアウト→1秒後にスタンバイ(SetActive(false))。
+            // この「消えた」が GPS 経路として報告されること
+            stateController.TransitionToState(GameStateController.ARVisionState.FadeOut);
+            yield return WaitScaled(1.5f);
+            Check(stateController.currentState == GameStateController.ARVisionState.Standby,
+                "gps: fade-out completes into Standby (F-10)");
+            if (visibility != null)
+            {
+                yield return null;
+                Check(!visibility.IsVisible && visibility.CurrentReason.Contains("GPSロスト"),
+                    $"visibility: standby is attributed to GPS loss, not left unexplained ({visibility.CurrentReason})");
+            }
 
             // F-10: ロスト中はHUD下部に赤字の減速警告が出ること。
             // 実機で「アバターが理由も分からず消える」状態だったのを塞ぐ回帰テスト
@@ -873,6 +923,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
             if (hud != null)
                 Check(!hud.IsSafetyWarningVisible,
                     "hud: safety warning cleared after GPS recovery (F-10)");
+            if (visibility != null)
+            {
+                yield return null;
+                Check(visibility.IsVisible,
+                    $"visibility: avatar reported visible again after GPS recovery ({visibility.CurrentReason})");
+            }
         }
 
         // ── Step 4b: GPSロスト自動判定 (F-09 / 基本設計書§8.1) ────────────────
@@ -960,6 +1016,48 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
     private bool _metricsSent = false;
 
+    /// <summary>
+    /// リグを動かし、実走者と同じく移動方向を向かせる。
+    /// 位置だけ動かすとカメラが保存姿勢のまま横や後ろを向いて走ることになり、
+    /// 視野に基づく検証(アバターが見えているか)が成立しない。
+    /// 垂直移動(上下)では向きを変えない
+    /// </summary>
+    private void MoveRig(Vector3 delta)
+    {
+        _cameraMover.position += delta;
+        Vector3 flat = delta; flat.y = 0f;
+        if (flat.sqrMagnitude > 1e-8f)
+            FaceRig(flat);
+    }
+
+    /// <summary>
+    /// **カメラの**水平前方が <paramref name="direction"/> を向くようにリグのルートを回す。
+    /// ルートを LookRotation で向けるだけでは足りない — このシーンではカメラがルートに
+    /// 対してローカル回転(約50°)を持っており、ルートの向き ≠ カメラの向きになる。
+    /// 視野に基づく検証で見るのはカメラの向きなので、必ずカメラ基準で揃える
+    /// </summary>
+    /// <summary>走者(カメラ)の水平前方。ルートの forward はカメラの向きと一致しないので使わない。</summary>
+    private Vector3 CamForwardFlat()
+    {
+        Camera cam = Camera.main;
+        Vector3 f = (cam != null ? cam.transform : _cameraMover).forward;
+        f.y = 0f;
+        return f.sqrMagnitude > 1e-8f ? f.normalized : Vector3.forward;
+    }
+
+    private void FaceRig(Vector3 direction)
+    {
+        Camera cam = Camera.main;
+        Transform camT = cam != null ? cam.transform : _cameraMover;
+        Vector3 camFlat = camT.forward; camFlat.y = 0f;
+        Vector3 dirFlat = direction;   dirFlat.y = 0f;
+        if (camFlat.sqrMagnitude < 1e-8f || dirFlat.sqrMagnitude < 1e-8f) return;
+
+        float yaw = Vector3.SignedAngle(camFlat.normalized, dirFlat.normalized, Vector3.up);
+        if (Mathf.Abs(yaw) > 0.01f)
+            _cameraMover.Rotate(0f, yaw, 0f, Space.World);
+    }
+
     private static bool HasFloatParam(Animator animator, string name)
     {
         foreach (var p in animator.parameters)
@@ -1009,6 +1107,9 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Quaternion rotation = Quaternion.AngleAxis(theta * Mathf.Rad2Deg, Vector3.up);
             _cameraMover.position = center + rotation * startOffset;
             tangent = rotation * forward;
+            // 実走者はコーナーでも進行方向を向く。カメラも接線を向かせないと、
+            // 曲線部でアバターが「視野外」になり可視性の検証が成立しない
+            FaceRig(tangent);
 
             // ① 先行距離チェック
             // 注: 移動中の定常先行距離はアンカーラグ(速度/補間率≒1.4m)の分だけ
