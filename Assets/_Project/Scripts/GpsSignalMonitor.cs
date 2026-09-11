@@ -26,6 +26,25 @@ public class GpsSignalMonitor : MonoBehaviour
     [Tooltip("復帰を認める精度ゲート(m)。AGENTS.md §5 の再集積ゲートと同値")]
     [SerializeField] private float accuracyRecoveredThresholdMeters = 5.0f;
 
+    [Tooltip("GPSロスト時にFSMを自動で InertialMovement→FadeOut→Standby へ進める(F-09/F-10)。" +
+             "OFFにするとGPSが悪化・途絶してもアバターは消えない(HUD警告も出ない)。" +
+             "【一時的にOFF】屋内・歩行での可視性検証のため。400mトラック実証(§11.2 ③)の前に必ずONへ戻す")]
+    [SerializeField] private bool autoLostHandlingEnabled = VerificationDefaultAutoLostHandling;
+
+    /// <summary>
+    /// 現在の既定値。検証のため <b>false</b>(GPSロストでアバターを消さない)。
+    /// 実証フェーズ③(トラック)の前に true へ戻すこと — F-09/F-10 はこの経路で発動する。
+    /// </summary>
+    public const bool VerificationDefaultAutoLostHandling = false;
+
+    /// <summary>GPSロストの自動判定→FSM遷移を行うか(実行時に切替可)。</summary>
+    public bool AutoLostHandlingEnabled
+    {
+        get => autoLostHandlingEnabled;
+        set => autoLostHandlingEnabled = value;
+    }
+    private bool _disabledNoticeLogged;
+
     private float _lastUpdateTime = -1f;
     private float _lastAccuracy = -1f;
     private bool _hasReceivedSample;
@@ -74,6 +93,20 @@ public class GpsSignalMonitor : MonoBehaviour
 
         // 再集積ゲート(AGENTS.md §5)へ実測精度を供給する
         stateController.SimulatedGPSAccuracyRadius = _lastAccuracy;
+
+        // 検証のため一時的にOFF: 判定・計測(精度の供給・CSV)は続けるが、FSMは動かさない
+        if (!autoLostHandlingEnabled)
+        {
+            if (!_disabledNoticeLogged)
+            {
+                _disabledNoticeLogged = true;
+                Debug.LogWarning("[GPS MONITOR] GPSロストの自動判定はOFF(検証用) — " +
+                                 "F-09/F-10 は発動せず、GPSが悪化してもアバターは消えません。" +
+                                 "トラック実証の前に AutoLostHandlingEnabled を true へ戻すこと");
+            }
+            _lostReported = false;
+            return;
+        }
 
         bool lost = EvaluateLost();
 

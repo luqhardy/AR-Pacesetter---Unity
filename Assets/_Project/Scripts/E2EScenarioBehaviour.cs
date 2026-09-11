@@ -936,6 +936,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
         var gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
         if (gpsMonitor != null && stateController != null && !engine.IsSessionEnded)
         {
+            // 【一時的】検証のため既定はOFF(GPSロストでアバターを消さない)。
+            // トラック実証の前に戻す — 戻し忘れをこの項目で可視化しておく
+            Check(!GpsSignalMonitor.VerificationDefaultAutoLostHandling && !gpsMonitor.AutoLostHandlingEnabled,
+                "verification: GPS-lost auto handling is OFF by default (temporary — re-enable before the track test)");
+
+            // 自動判定そのものは壊れていないこと — ONにして従来どおり検証する
+            gpsMonitor.AutoLostHandlingEnabled = true;
             stateController.TransitionToState(GameStateController.ARVisionState.Normal);
             yield return null;
 
@@ -961,6 +968,16 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
             // 後続ステップへ影響しないよう監視を解除(未受信状態=非介入へ戻す)
             gpsMonitor.ResetSession();
+            gpsMonitor.AutoLostHandlingEnabled = GpsSignalMonitor.VerificationDefaultAutoLostHandling;
+
+            // OFFの挙動: 精度が10m以上に悪化してもFSMは Normal のまま = アバターは消えない
+            gpsMonitor.AutoLostHandlingEnabled = false;
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 25.0f);
+            yield return WaitScaled(0.3f);
+            Check(stateController.currentState == GameStateController.ARVisionState.Normal,
+                "verification: with auto handling OFF, a 25m-accuracy fix does not hide the avatar");
+            gpsMonitor.ResetSession();
+            gpsMonitor.AutoLostHandlingEnabled = GpsSignalMonitor.VerificationDefaultAutoLostHandling;
         }
 
         // ── Step 4c: ARグラス切断→再スタート (§8.3) ──────────────────────────

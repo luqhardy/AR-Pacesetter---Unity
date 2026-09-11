@@ -556,6 +556,25 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-11 (3) — 【一時的】GPSロストによるアバター無効化(F-09/F-10)を検証のためOFF
+
+屋内・歩行での可視性検証中、GPSロスト(§8.1: 精度10m以上 or 更新1.5秒途絶)が成立すると
+仕様どおり 慣性移動→フェードアウト→スタンバイ(`SetActive(false)`) でアバターが消え、
+壁・天井の検証と切り分けられない。**自動判定→FSM遷移だけ**をスイッチで止めた。
+
+- `GpsSignalMonitor.AutoLostHandlingEnabled`(既定 `VerificationDefaultAutoLostHandling = false`)。
+  OFFでも精度の供給・CSVのGPS列・`IsSignalLost` の評価は続く。止めるのはFSMを動かす部分のみ
+- 起動時に `[GPS MONITOR] GPSロストの自動判定はOFF(検証用)` を警告ログで出す
+- グラス切断→スタンバイ(§8.3)は明示操作なので残している
+- **戻し方**: `GpsSignalMonitor.cs` の `VerificationDefaultAutoLostHandling` を `true` にする(1箇所)。
+  E2Eの `verification: GPS-lost auto handling is OFF by default` が落ちるので戻し忘れに気づける —
+  その時はこの項目を消す
+
+⚠ **400mトラック実証(§11.2 ③)の前に必ず戻すこと。** F-09/F-10 はこの経路で発動する。
+
+**検証**: コンパイル0エラー / **E2E 144項目 全PASS**(2項目追加: 既定OFFの記録 /
+OFF時は精度25mでもFSMがNormalのまま=消えない)。自動判定の従来4項目はONにして従来どおり通過
+
 ### 2026-09-11 (2) — 「アバターがまだ消える」: 残る3経路を塞ぎ、以後は「なぜ消えたか」を端末が言うようにした
 
 前回の修正(天井の断崖誤判定・平面遮蔽・壁停止)後も「非表示になる」との報告。
