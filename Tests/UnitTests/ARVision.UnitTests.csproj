@@ -32,6 +32,8 @@
     <Compile Include="..\..\Assets\_Project\Scripts\TrackingLagMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\AvatarVisibilityReason.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\StartHeadingPolicy.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\HeadingGateMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\SpatialKalmanFilter.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\PaceHudDisplay.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\AvatarScale.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GoalLineMath.cs" />

@@ -352,6 +352,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(countdown.IsShowing, $"countdown: visible right after start (showing '{countdown.CurrentText}')");
         Check(!engine.IsRunMotionActive, "countdown: runner motion remains paused before START");
 
+        // ── Step 1b: ノイズ下の静止 — iPhone 15 Pro Max「アバターが不規則に飛び回る」の再現 ──
+        // エディタには手ブレも測位ノイズも無いので、実機だけが持つ2つの入力をブリッジ経由で注入する:
+        //   ① 手ブレ: カメラ位置に毎フレーム ±2cm の白色ノイズ
+        //   ② 測位ノイズ: 精度8mの GPS fix を1Hzで、真位置から ±4m ずれた座標で送る
+        // カウントダウン中はペース採点が止まっている一方、アバターは同じ進行方向推定で
+        // 3m前方に「置かれ続ける」ので、方位が揺れればここで振り回される(修正前: 3.56m ずれ)
+        yield return StartCoroutine(RunNoiseStationaryTest(engine, bridge));
+
         float startWait = 0f;
         while (!engine.IsRunMotionActive && startWait < 6f)
         {
@@ -453,6 +461,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
 
         var visualsForColor = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
+
+        // ── Step 1c: ノイズ下の直進 — 目標ペースで走りながら手ブレ+測位ノイズを注入 ──
+        // (静止フェーズはカウントダウン中に実施済み。ここは走行中に飛ばないことを縛る。
+        //  目標ペースどおりに走るので、後続のシンクロ率検証を汚さない)
+        yield return StartCoroutine(RunNoiseMovingTest(engine, bridge));
 
         // ── Step 2: 走行シミュレーション(カメラを前進させる) ────────────────
         float elapsed = 0f;
@@ -1053,6 +1066,135 @@ public class E2EScenarioBehaviour : MonoBehaviour
     /// 対してローカル回転(約50°)を持っており、ルートの向き ≠ カメラの向きになる。
     /// 視野に基づく検証で見るのはカメラの向きなので、必ずカメラ基準で揃える
     /// </summary>
+    // ── ノイズ注入の共通部 ────────────────────────────────────────────────
+    private const double NoiseBaseLat = 34.6937, NoiseBaseLon = 135.5023;
+    private const float  NoiseGpsAccuracy = 8f;        // 屋内〜街中の典型
+    private const float  NoiseGpsMeters = 4f;          // 精度8mなら ±4m のふらつきは普通
+    private const float  NoiseHandJitterMeters = 0.02f; // 手ブレ ±2cm
+    private readonly System.Random _noiseRng = new System.Random(20260911);
+    private float Noise(float amp) => (float)(_noiseRng.NextDouble() * 2.0 - 1.0) * amp;
+    private Vector3 _noiseOrigin;      // GPS座標の原点に対応するAR位置
+    private bool _noiseOriginSet;
+
+    /// <summary>AR の +Z を北、+X を東として緯度経度へ写し、UpdateMetrics として送る。</summary>
+    private void SendNoisyGpsFix(ARSessionManagerBridge bridge, Vector3 truePos,
+                                 double distanceKm, double paceKmH, bool speedValid)
+    {
+        if (!_noiseOriginSet) { _noiseOrigin = truePos; _noiseOriginSet = true; }
+        Vector3 posFromStart = truePos - _noiseOrigin;
+        double north = posFromStart.z + Noise(NoiseGpsMeters);
+        double east  = posFromStart.x + Noise(NoiseGpsMeters);
+        double lat = NoiseBaseLat + north / 111320.0;
+        double lon = NoiseBaseLon + east / (111320.0 * System.Math.Cos(NoiseBaseLat * System.Math.PI / 180.0));
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        bridge.OnSwiftCommand(
+            "{\"command\":\"UpdateMetrics\"," +
+            $"\"paceKmH\":{paceKmH.ToString("F1", ci)}," +
+            "\"heartRate\":140," +
+            $"\"distanceKm\":{distanceKm.ToString("F4", ci)}," +
+            $"\"gpsLatitude\":{lat.ToString("F7", ci)}," +
+            $"\"gpsLongitude\":{lon.ToString("F7", ci)}," +
+            $"\"gpsAccuracy\":{NoiseGpsAccuracy.ToString("F1", ci)}," +
+            "\"locationSampleFresh\":true," +
+            $"\"speedSampleValid\":{(speedValid ? "true" : "false")}}}");
+    }
+
+    /// <summary>
+    /// 手ブレ + 測位ノイズ下で静止6秒(最初の2秒は収束待ち)。
+    /// アバター位置の重心からの最大ずれ / フレーム間ジャンプ / リード距離を縛る。
+    /// </summary>
+    private IEnumerator RunNoiseStationaryTest(AvatarEngine engine, ARSessionManagerBridge bridge)
+    {
+        Vector3 truePos = _cameraMover.position; // 手ブレを載せる前の「本当の」位置
+        Transform camT = Camera.main != null ? Camera.main.transform : _cameraMover;
+        float nextFix = 0f, elapsed = 0f;
+        var samples = new List<Vector3>();
+        float maxJump = 0f;
+        Vector3 lastAvatar = engine.transform.position;
+
+        while (elapsed < 6f)
+        {
+            elapsed += Time.deltaTime;
+            _cameraMover.position = truePos + new Vector3(Noise(NoiseHandJitterMeters), Noise(NoiseHandJitterMeters), Noise(NoiseHandJitterMeters));
+
+            if (elapsed >= nextFix) { SendNoisyGpsFix(bridge, truePos, 0.0, 0.0, false); nextFix += 1f; }
+
+            if (elapsed > 2f)
+            {
+                Vector3 a = engine.transform.position; a.y = 0f;
+                samples.Add(a);
+                Vector3 l = lastAvatar; l.y = 0f;
+                maxJump = Mathf.Max(maxJump, Vector3.Distance(a, l));
+            }
+            lastAvatar = engine.transform.position;
+            yield return null;
+        }
+
+        Vector3 centroid = Vector3.zero;
+        foreach (var v in samples) centroid += v;
+        if (samples.Count > 0) centroid /= samples.Count;
+        float maxSpread = 0f;
+        foreach (var v in samples) maxSpread = Mathf.Max(maxSpread, Vector3.Distance(v, centroid));
+
+        Vector3 toAvatarStill = engine.transform.position - camT.position; toAvatarStill.y = 0f;
+        Check(maxSpread < 0.5f,
+            $"noise: avatar stays put while the user stands still under hand jitter + 8m GPS noise " +
+            $"(max drift from centroid {maxSpread:F2}m, max frame jump {maxJump:F2}m)");
+        Check(maxJump < 0.3f,
+            $"noise: no frame-to-frame jumps while stationary (max {maxJump:F2}m)");
+        Check(Mathf.Abs(toAvatarStill.magnitude - engine.LeadDistanceMeters) < 1.0f,
+            $"noise: lead distance holds near 3.0m while stationary ({toAvatarStill.magnitude:F2}m)");
+
+        _cameraMover.position = truePos; // ノイズを外して後続へ
+    }
+
+    /// <summary>
+    /// 手ブレ + 測位ノイズ下で目標ペースの直進5秒。
+    /// リード距離誤差の平均(§10 位置誤差 1.0m)とフレーム間ジャンプを縛る。
+    /// </summary>
+    private IEnumerator RunNoiseMovingTest(AvatarEngine engine, ARSessionManagerBridge bridge)
+    {
+        Vector3 truePos = _cameraMover.position;
+        Transform camT = Camera.main != null ? Camera.main.transform : _cameraMover;
+        float elapsed = 0f, nextFix = 0f, maxJump = 0f;
+        double leadErrSum = 0; int leadN = 0;
+        Vector3 lastAvatar = engine.transform.position;
+        Vector3 dir = Vector3.forward;
+        double distKm = 0;
+
+        while (elapsed < 5f)
+        {
+            float dt = Time.deltaTime;
+            elapsed += dt;
+            truePos += dir * RunSpeedMetersPerSecond * dt;
+            distKm  += RunSpeedMetersPerSecond * dt / 1000.0;
+            MoveRig(Vector3.zero); // 向きだけ維持
+            _cameraMover.position = truePos + new Vector3(Noise(NoiseHandJitterMeters), Noise(NoiseHandJitterMeters), Noise(NoiseHandJitterMeters));
+            FaceRig(dir);
+
+            if (elapsed >= nextFix) { SendNoisyGpsFix(bridge, truePos, distKm, RunSpeedMetersPerSecond * 3.6, true); nextFix += 1f; }
+
+            if (elapsed > 2f)
+            {
+                Vector3 toAvatar = engine.transform.position - camT.position; toAvatar.y = 0f;
+                leadErrSum += Mathf.Abs(toAvatar.magnitude - engine.LeadDistanceMeters); leadN++;
+                Vector3 a = engine.transform.position; a.y = 0f; Vector3 l = lastAvatar; l.y = 0f;
+                maxJump = Mathf.Max(maxJump, Vector3.Distance(a, l));
+            }
+            lastAvatar = engine.transform.position;
+            yield return null;
+        }
+
+        float meanLeadErr = leadN > 0 ? (float)(leadErrSum / leadN) : 99f;
+        Check(meanLeadErr < 1.0f,
+            $"noise: lead error stays within §10 1.0m while running under noise (mean {meanLeadErr:F2}m)");
+        Check(maxJump < 0.5f,
+            $"noise: no frame-to-frame jumps while running under noise (max {maxJump:F2}m)");
+
+        _cameraMover.position = truePos; // ノイズを外して後続へ
+        yield return WaitScaled(0.5f);
+    }
+
     /// <summary>走者(カメラ)の水平前方。ルートの forward はカメラの向きと一致しないので使わない。</summary>
     private Vector3 CamForwardFlat()
     {

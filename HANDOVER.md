@@ -163,7 +163,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 解決済み(参考):
 - ~~HealthKit書き込み~~ → `HealthKitWorkoutSaver.swift` がSessionEnded受信時にHKWorkoutを保存
-- ~~C++カルマンフィルタの実体~~ → `Assets/Plugins/iOS/KalmanFilterNative.mm`(3軸スカラーKF+線形トレンド)。これが無いとiOSビルドはリンクエラーになるため必須部品。
+- ~~C++カルマンフィルタの実体~~ → **2026-09-11 に廃止**。同じアルゴリズムを C# `SpatialKalmanFilter`(純ロジック・ユニットテスト付き)へ移し全環境で使用。`KalmanFilterNative.mm` と `DllImport` は削除済みで、iOSビルドの必須部品ではなくなった(実機専用経路がテストに掛からない問題の解消)。
   **`InitKalmanFilter`/`UpdateKalmanFilter` の実体はこのファイルのみ**とすること — `HeartRatePlugin.mm` にも
   同名実装が残っており、実機リンク時に duplicate symbol 2件でビルドが落ちていた(2026-09-01に削除)。
   ネイティブプラグインの重複はC#コンパイルにもE2Eにも現れず、**実機リンクでしか検出できない**

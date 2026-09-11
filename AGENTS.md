@@ -23,7 +23,7 @@ To prevent motion sickness and maintain absolute sync, a strict **$\\le 20\text{
 ### Core Sampling and Rendering Constraints
 - **IMU Sampling Rate**: $\\ge 100\text{Hz}$ over wired USB-C from the AR Glass (captures head pose and acceleration).
 - **HUD Frame Rate**: Stable $60\text{fps}$ ($16.6\text{ms}$ per frame refresh).
-- **Jitter Tolerance**: Consecutive frame-to-frame delta variation must be within $\\pm 5\text{ms}$. If jitter exceeds this threshold, the system must immediately discard raw measurements and prioritize predictive state interpolation via the C++ Kalman Filter.
+- **Jitter Tolerance**: Consecutive frame-to-frame delta variation must be within $\\pm 5\text{ms}$. If jitter exceeds this threshold, the system must immediately discard raw measurements and prioritize predictive state interpolation via the Kalman filter (`SpatialKalmanFilter`, C#, shared by editor and device since 2026-09-11).
 
 ---
 
