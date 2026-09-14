@@ -27,6 +27,7 @@
     <Compile Include="..\..\Assets\_Project\Scripts\AuraFeedback.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GroundFloorTracker.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\CliffMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\SurfaceSemanticMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\MotionToPhotonMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\NonFunctionalStats.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\TrackingLagMath.cs" />

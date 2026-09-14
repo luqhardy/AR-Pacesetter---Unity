@@ -556,6 +556,33 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-11 (6) — LiDARシーンメッシュと面分類を接地判定へ追加
+
+従来の環境認識は `ARPlaneManager` の平面とRaycastの法線・高さだけで、床・天井・机が
+同じ水平面に見える場面では誤判定しやすかった。`EnvironmentSceneScanner` を追加し、
+LiDAR対応iPhoneではARKitの密なシーンメッシュと面分類(Floor / Wall / Ceiling / Table /
+Seat / Door / Window)を取得する。スキャナは `ARVisionSystemsBootstrap` が既存XROriginの子へ
+自動生成するため、シーンの手作業配線は不要。
+
+- `GroundSnap` は分類済みFloorを優先し、Ceiling / Wall / Table / Seat等を床候補から除外する。
+  ARKitにはRoad分類が無いため、Unknown / Otherは従来の法線・高さ判定へ残し、屋外路面を
+  一律に捨てない
+- 前方障害物の走査を、カメラの視線方向1本から、アバターと共通の走行方位へ投影する
+  足元〜頭部のCapsuleCastへ変更。`HaltOnObstacles`を有効にした場合は分類済みの壁・家具も使う。
+  第1期トラック検証の既定OFFは維持
+- メッシュ更新時の分類配列は面数が同じ間再利用し、生成キューも1件に制限。分類・サブシステムの
+  再試行は1秒間隔とし、60fps経路へ不要なGCと毎フレームのネイティブ呼び出しを入れない
+- LiDAR/メッシュ非対応端末では既存の分類付きARPlaneと幾何判定へ自動フォールバックする
+
+ローカルLLM/Ollamaはフレーム単位の環境認識経路には使用しない。カメラ画像からの推論は
+ARKitの端末内幾何・面分類より遅く、20msのM2P予算と決定的な障害判定に適さないため。
+
+**検証**: Unity 6000.3.17f1 コンパイル0エラー / ユニット **232件 全PASS** /
+**E2E 150項目 全PASS** / Swift `swiftc -parse` 通過。隔離コピーからiOSを再エクスポートし、
+DataをUnityFrameworkへ再リンク後、Xcode 26.4.1でiPhone 15 Pro Max向け署名ビルド成功
+(`ARVisionSensorTiming.mm` / CoreMotion / QuartzCoreを含めてundefined symbolなし)。実機へ
+インストール済み。端末ロック中のため、ARセッション開始後のメッシュ数・分類面数の確認は未完了。
+
 ### 2026-09-11 (5) — 実機で「アバターが不規則に飛び回る」: 進行方向が測位ノイズで振り回されていた
 
 iPhone 15 Pro Max での報告。エディタでは再現しないので、**実機だけが持つ入力(手ブレ・測位ノイズ)を
