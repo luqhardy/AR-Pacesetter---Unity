@@ -124,7 +124,11 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   これはグラスの仕様値で補える定数。実装したら `ProvidesRealMotionToPhoton` を true にすれば
   CSVが実測で埋まり、§11.2 の評価が成立する。**それまで §10 の20ms達成は主張できない。**
 
-- **XREAL head-pose/IMU入力は未統合**: `ExternalDisplayManager.swift`はUnity画面をUSB-C外部ディスプレイへ移すところまで。`ConnectXREAL`もReady状態更新であり、グラス固有の姿勢/IMU値はUnityへ届かない。現状の`RunnerTrackingState`はiPhoneのARKit/XR Camera+CoreLocationを使うためiPhone POVデモは可能だが、グラスを自由に装着した状態の真のworld-lockにはXREAL SDKまたは対応するpose bridgeが必要
+- **XREAL head-pose/IMU入力は原理的に取得不能(2026-09-16 調査で確定)**: XREAL SDKはAndroid専用でiOS版が存在せず、Air系がUSB-HIDで出しているIMUもiOSアプリからは触れない(公開APIが無くMFi/DriverKit対象外)。**回避策は無い**ため、第1期の空間トラッキングはiPhoneのARKit単独で確定。グラスは「平面スクリーン1枚」として扱う。
+  受け口だけは通してある(`UpdateGlassPose` → `GlassViewRig.SetExternalHeadPose`。0.25秒途切れれば§4.1の進行方向ヨーへ自動復帰)。
+  **グラスの画面モードは Follow(固定) にすること** — Anchorだとグラス側X1が頭回転を打ち消すためUnity側と二重補正になる。
+  根拠・数値・設計判断は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
+- **F-03の3.0mとXREAL Oneの画角が両立しない(要チーム判断)**: 眼高1.55mから身長1.75mのアバターを3.0m前方に置くと垂直31.1°を占め、Oneの垂直画角25.7°に全身が入らない(全身には3.71m必要 / One Proでも3.16m)。俯角で中心へ寄せても接地点は3.38m先からしか見えないため、§7.2のオーラ(足元から放射)は事実上見えない。現実装は「欠けを許容」。`GlassViewRig.FullBodyFitsInFov` / `NearestVisibleGroundMeters` で実測でき、E2Eでも固定済み
 - **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
   - **未実施であることの確認方法と症状(重要)**: `ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj` に
     `UnityFramework` の文字列が1つも無い場合、リンクは未実施。このとき Swift 側は

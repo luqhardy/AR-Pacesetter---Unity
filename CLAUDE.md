@@ -56,6 +56,11 @@ Unityプロジェクト(本リポジトリ)+ SwiftUIホスト(`ios/`)のUaaLモ�
 5. ~~**オーラエフェクト(§7.2)**~~ → **実装済み**(`AvatarAuraEffect.cs` + `AuraFeedback.cs`)。目標より5.0m以上遅れるとアバター足元からランナー側へ光のラインを地面に放射。遅れが大きいほど密度(3→7本)と流速(3→9m/s)が上がり、12mで最大。実行時生成のLineRenderer(ワールド空間)でアセット不要。**発動時の見た目はエディタ/実機での目視確認が必要**(E2Eは非発動側=誤発火しないことを検証)
 6. ~~**グラス切断→準備画面リセット(§8.3)**~~ → **実装済み**。切断で`DisconnectXREAL`→スタンバイ移行(アバター消去)、走行セッションは終了させずF-11のCSVログはBG継続。Swiftは準備画面(デバイス接続)へ戻る。**再接続だけではアバターを復帰させず**、準備画面からの再スタート操作(`ResumeSession`)で通常追従へ復帰
 7. Watch/HealthKit/ゴースト等は実装済みだが第1期スコープ外 — 触る際は影響を最小に
+10. **XREAL One統合の基盤は実装済み**(`GlassViewRig` + `GlassDisplayProfile` + `GlassOpticsMath` + `HeadPoseMath`)。
+   グラス接続で**グラスの画角(対角50°→垂直25.7°)・眼高の視点・進行方向ヨー**で描く出力カメラへ切り替わる。
+   **未解決(要チーム判断)**: F-03の3.0m前方と画角が両立しない — 身長1.75mのアバターは3.0mで垂直31.1°を占め
+   全身が入らない(全身には3.7m必要)。§7.2のオーラ(足元)も視野外。**グラスの画面モードはFollow(固定)必須**
+   (Anchorは二重補正)。iOSからグラスの頭部姿勢は原理的に取得不能。根拠は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
 9. **【一時的・要復帰】GPSロストの自動判定→FSM遷移(F-09/F-10)がOFF**(2026-09-11、屋内可視性検証のため)。
    `GpsSignalMonitor.VerificationDefaultAutoLostHandling = false`。GPSが悪化してもアバターは消えず、
    HUD警告も出ない。**トラック実証(§11.2 ③)の前に `true` へ戻す**(E2Eの `verification:` 項目が戻し忘れを検知)

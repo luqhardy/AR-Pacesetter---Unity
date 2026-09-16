@@ -151,8 +151,9 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
 | `ARSessionManager` | `ResumeSession` | — | §8.3: グラス再接続後、**準備画面からの再スタート操作**でスタンバイ中の表示のみ復帰(新規セッションは開始せず記録は継続) |
-| `DeviceManager` | `ConnectXREAL` | — | ReadyチェックのARグラスをConnectedへ |
+| `DeviceManager` | `ConnectXREAL` | `model`(任意), `pixelWidth`(任意), `pixelHeight`(任意), `refreshHz`(任意) | ReadyチェックのARグラスをConnectedへ。併せて**グラスの画角で描く出力リグ**(`GlassViewRig`)を起動する — iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えないため。画角はグラスから取得できないので解像度・リフレッシュレートから機種を推定し、1920×1080(One/One Pro/Air2で共通)は **XREAL One** を既定とする。`model`があればそれが優先。詳細は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) |
 | `DeviceManager` | `DisconnectXREAL` | — | §8.3: スタンバイ移行でアバターを消去。**走行セッションは終了させない**ためF-11のCSVログはBG継続。再接続だけではアバターを復帰させない(安全のため`ResumeSession`が必要) |
+| `DeviceManager` | `UpdateGlassPose` | `yaw`, `pitch`, `roll`, `timestamp` | グラス実機の頭部姿勢(度)。**現状iOSに供給元は無い**(XREAL SDKはAndroid専用・USB-HIDはiOSから触れない)ため将来用の受け口。0.25秒途切れれば自動で §4.1 の移動平均済み進行方向へ戻る。グラスの画面モードが Anchor のときはグラス自身が頭回転を打ち消すためUnity側は採用しない(二重補正の回避) |
 
 `StartSession`は前セッションが終了済みの場合、全コンポーネント(エンジン・集計・HUD・
 セーフティログ・音響)を自動リセットしてから開始する — **同一起動内での再走行に対応**。
@@ -240,8 +241,9 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 ## 既知の制約 / TODO
 
 - 初回のみ UnityFramework の Embed & Sign と Data フォルダの Target Membership 変更が手動(上記②)
-- `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)。DeviceConnectViewのARグラス行タップで送信される
-- 外部ディスプレイへのUnity描画は実装済みだが、XREAL固有のhead-pose/IMU入力は未接続。現在の空間姿勢はiPhone ARKit/XR Camera由来であり、グラスでのworld-lock完成にはpose bridgeが別途必要
+- `ConnectXREAL` はXREAL SDKの初期化ではない(**iOS版SDKは存在しない**)。Readyチェックの更新と、表示メトリクスに基づく出力リグ(画角・視点・HUDセーフエリア)の起動を行う。DeviceConnectViewのARグラス行タップでも送信される
+- **グラス固有のhead-pose/IMUはiOSからは取得できない**(原理的制約。根拠は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) §2-1)。空間トラッキングはiPhoneのARKitが担い、グラスへ出す向きは §4.1 の移動平均済み進行方向(ヨーのみ)から作る。グラス側は**画面モードを Follow(固定)**にしておくこと — Anchorだと二重補正になる
+- **F-03の3.0mとXREAL Oneの画角は両立しない**: 身長1.75mのアバターは3.0m前方で垂直31.1°を占め、Oneの垂直画角25.7°に全身が入らない(全身には3.7m必要)。足元のオーラ(§7.2)・接地の見えにも影響するためチーム判断が要る
 - バックグラウンド中はUnity(AR描画)は停止する — 計測のみ継続し、復帰時にHUD/アバターが追いつく
 
 ## 走行画面の配線(実装済み)

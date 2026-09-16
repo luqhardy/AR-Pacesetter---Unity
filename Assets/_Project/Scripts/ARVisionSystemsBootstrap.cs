@@ -67,6 +67,7 @@ public static class ARVisionSystemsBootstrap
         Ensure<GpsSignalMonitor>(); // F-09 GPSロスト自動判定(§8.1)
         Ensure<CountdownDisplay>(); // 走行開始カウントダウンのAR表示(音のカウントと同期)
         Ensure<ARPassthroughController>(); // 光学シースルー時のカメラ映像抑止
+        Ensure<GlassViewRig>(); // ARグラス接続中の描画をグラスの画角・眼の位置へ切り替える
         Ensure<ARPlaneOcclusionController>(); // 検出平面がアバターを隠さないようにする(既定OFF)
         Ensure<GoalLineController>(); // 目標距離接近時のARゴールライン(実行時生成)
 

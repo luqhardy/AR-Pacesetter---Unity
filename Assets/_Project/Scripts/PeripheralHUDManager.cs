@@ -69,6 +69,10 @@ public class PeripheralHUDManager : MonoBehaviour
     private GameStateController _gameState;
     private PaceHudDisplay.PaceState _currentPaceState = PaceHudDisplay.PaceState.Unknown;
     private bool _peripheralLayoutApplied;
+
+    /// <summary>有効表示域の比率。1.0=iPhone画面 / ARグラス接続中はプロファイルのセーフエリア。</summary>
+    private float _edgeInsetFraction = 1f;
+    private RectTransform _hudCanvasRect;
     private bool _hudHidden;
 
     // HUD自動抑制 (企画書 2. スタビライズ — 横を向いた際は表示を自動抑制)
@@ -437,17 +441,68 @@ public class PeripheralHUDManager : MonoBehaviour
         SetReadoutVisible(textFatigueIndex, false);
         SetReadoutVisible(textGrade, false);
 
+        ApplyPeripheralAnchors();
+
+        Debug.Log("[HUD] F-07 周辺視野レイアウトを適用: 補助表示5件を非表示、時間/距離=左上・ペース=右上へ再配置");
+    }
+
+    /// <summary>
+    /// F-07の四隅配置を(セーフエリアぶんの余白を足して)反映する。
+    /// 余白はARグラス接続時だけ効き、iPhone画面では0。
+    /// </summary>
+    private void ApplyPeripheralAnchors()
+    {
+        Vector2 inset = EdgeInsetPixels();
+
         // 左上: 時間・距離 / 右上: 現在ペース
-        AnchorTo(textTime,     new Vector2(0f, 1f), new Vector2(100f, -100f), TextAlignmentOptions.TopLeft);
-        AnchorTo(textDistance, new Vector2(0f, 1f), new Vector2(100f, -170f), TextAlignmentOptions.TopLeft);
-        AnchorTo(textPace,     new Vector2(1f, 1f), new Vector2(-100f, -100f), TextAlignmentOptions.TopRight);
+        AnchorTo(textTime,     new Vector2(0f, 1f), new Vector2(100f + inset.x, -(100f + inset.y)), TextAlignmentOptions.TopLeft);
+        AnchorTo(textDistance, new Vector2(0f, 1f), new Vector2(100f + inset.x, -(170f + inset.y)), TextAlignmentOptions.TopLeft);
+        AnchorTo(textPace,     new Vector2(1f, 1f), new Vector2(-(100f + inset.x), -(100f + inset.y)), TextAlignmentOptions.TopRight);
 
         // スプリット通知は上部中央へ退避(元は右下で Text_Pitch と重なっていた)。
         // 下部は F-10 の警告専用ゾーンなので使わない
-        AnchorTo(textNotificationAlert, new Vector2(0.5f, 1f), new Vector2(0f, -260f),
+        AnchorTo(textNotificationAlert, new Vector2(0.5f, 1f), new Vector2(0f, -(260f + inset.y)),
                  TextAlignmentOptions.Center);
+    }
 
-        Debug.Log("[HUD] F-07 周辺視野レイアウトを適用: 補助表示5件を非表示、時間/距離=左上・ペース=右上へ再配置");
+    /// <summary>
+    /// ARグラスのセーフエリアをHUDへ適用する(1.0=余白なし / 0.90=外周5%ずつを空ける)。
+    ///
+    /// <para>なぜ必要か: バードバス光学系のグラスは最外周で歪み・減光が出るうえ、
+    /// アイボックスから僅かにずれただけで四隅から欠ける。iPhone画面用の
+    /// 「隅から100px」のままグラスへ出すと、時間・ペースが読めない位置に載る。</para>
+    /// </summary>
+    public void ApplyEdgeInsetFraction(float safeAreaFraction)
+    {
+        float f = Mathf.Clamp(safeAreaFraction, 0.5f, 1f);
+        if (Mathf.Approximately(f, _edgeInsetFraction)) return;
+
+        _edgeInsetFraction = f;
+        if (_peripheralLayoutApplied)
+            ApplyPeripheralAnchors();
+
+        Debug.Log($"[HUD] セーフエリアを適用: 有効表示域 {f * 100f:F0}% (余白 {EdgeInsetPixels()})");
+    }
+
+    /// <summary>E2E/検証用: 現在のセーフエリア率(1.0=iPhone画面)。</summary>
+    public float EdgeInsetFraction => _edgeInsetFraction;
+
+    /// <summary>セーフエリアぶんの余白(キャンバス単位)。上下左右へ均等に効く。</summary>
+    private Vector2 EdgeInsetPixels()
+    {
+        if (_edgeInsetFraction >= 0.999f) return Vector2.zero;
+
+        if (_hudCanvasRect == null)
+        {
+            Canvas canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
+            if (canvas != null) _hudCanvasRect = canvas.transform as RectTransform;
+        }
+
+        float width = _hudCanvasRect != null ? _hudCanvasRect.rect.width : Screen.width;
+        float height = _hudCanvasRect != null ? _hudCanvasRect.rect.height : Screen.height;
+        float margin = (1f - _edgeInsetFraction) * 0.5f;
+
+        return new Vector2(width * margin, height * margin);
     }
 
     private static void SetReadoutVisible(TextMeshProUGUI text, bool visible)

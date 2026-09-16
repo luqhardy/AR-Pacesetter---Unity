@@ -18,6 +18,11 @@ final class ExternalDisplayManager: ObservableObject {
     /// ARグラス(外部ディスプレイ)が接続中かどうか
     @Published private(set) var isGlassesConnected = false
 
+    /// グラス側ディスプレイの実解像度(px)とリフレッシュレート。Unityの画角プロファイル選択に使う。
+    /// iOSから取れるのはここまでで、機種名・画角はグラスからは取得できない。
+    @Published private(set) var displayPixelSize: CGSize = .zero
+    @Published private(set) var displayRefreshHz: Double = 0
+
     fileprivate var externalWindow: UIWindow?
 
     private init() {}
@@ -31,16 +36,29 @@ final class ExternalDisplayManager: ObservableObject {
         externalWindow = window
         isGlassesConnected = true
 
+        // 実解像度(points × scale)とリフレッシュレート。XREAL Oneは1920×1080で受ける
+        let screen = scene.screen
+        let scale = screen.scale > 0 ? screen.scale : 1
+        displayPixelSize = CGSize(width: screen.bounds.width * scale,
+                                  height: screen.bounds.height * scale)
+        displayRefreshHz = Double(screen.maximumFramesPerSecond)
+
         attachUnityViewIfPossible()
 
-        // Unity側のReadyチェックを実接続で更新(手動タップと同じ経路)
-        UnityBridge.shared.connect()
-        print("[ExternalDisplay] ARグラス接続 — ARビューをグラスへ出力します")
+        // Unity側のReadyチェックを実接続で更新(手動タップと同じ経路)。
+        // 併せて表示メトリクスを渡し、グラスの画角で描かせる
+        UnityBridge.shared.connect(pixelWidth: Int(displayPixelSize.width.rounded()),
+                                   pixelHeight: Int(displayPixelSize.height.rounded()),
+                                   refreshHz: displayRefreshHz)
+        print("[ExternalDisplay] ARグラス接続 — ARビューをグラスへ出力します " +
+              "(\(Int(displayPixelSize.width))x\(Int(displayPixelSize.height)) @\(Int(displayRefreshHz))Hz)")
     }
 
     fileprivate func externalDisplayDisconnected() {
         externalWindow = nil
         isGlassesConnected = false
+        displayPixelSize = .zero
+        displayRefreshHz = 0
         print("[ExternalDisplay] ARグラス切断 — ARビューをiPhoneへ戻します")
 
         // §8.3: Unityをスタンバイへ(アバター消去)。走行記録・CSVログは継続し、

@@ -154,9 +154,34 @@ final class UnityBridge: NSObject, ObservableObject {
     }
 
     /// Connect XREAL glasses (triggers Unity AR initialization).
-    func connect() {
+    ///
+    /// 表示メトリクスを一緒に渡す。Unityはこれで「グラスの画角で描く」プロファイルを選ぶ —
+    /// iPhoneカメラの内部パラメータのまま出すと、3.0m前方のアバターが実寸の角度で見えない。
+    ///
+    /// - Note: 画角も機種名もグラスからは取得できない(XREALのSDKはAndroid専用で、
+    ///   USB-HIDもiOSアプリからは触れない)。iOSが知っているのは解像度とリフレッシュレートだけ。
+    ///   1920×1080 は One / One Pro / Air2 で共通のためUnity側は XREAL One を既定に落とす。
+    func connect(model: String? = nil, pixelWidth: Int = 0, pixelHeight: Int = 0, refreshHz: Double = 0) {
+        var payload: [String: Any] = ["command": "ConnectXREAL"]
+        if let model, !model.isEmpty { payload["model"] = model }
+        if pixelWidth > 0 { payload["pixelWidth"] = pixelWidth }
+        if pixelHeight > 0 { payload["pixelHeight"] = pixelHeight }
+        if refreshHz > 0 { payload["refreshHz"] = refreshHz }
+
+        sendToUnity(object: "DeviceManager", method: "OnSwiftCommand", payload: payload)
+    }
+
+    /// グラス実機の頭部姿勢をUnityへ渡す(度)。
+    ///
+    /// - Important: 現状 iOS には供給元が無い。将来グラス側の姿勢が取れるようになったときの
+    ///   受け口として契約だけ通してある。供給が途切れればUnity側は自動で
+    ///   §4.1 の移動平均済み進行方向へ落ちるため、欠測しても破綻しない。
+    ///   グラスの画面モードが Anchor のときはグラス自身が頭回転を打ち消すため、
+    ///   この値を送っても Unity 側は採用しない(二重補正の回避)。
+    func updateGlassPose(yaw: Double, pitch: Double, roll: Double, timestamp: Double) {
         sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
-                    payload: ["command": "ConnectXREAL"])
+                    payload: ["command": "UpdateGlassPose",
+                              "yaw": yaw, "pitch": pitch, "roll": roll, "timestamp": timestamp])
     }
 
     /// ARグラス切断 (§8.3): Unityをスタンバイへ移行させアバターを消去する。

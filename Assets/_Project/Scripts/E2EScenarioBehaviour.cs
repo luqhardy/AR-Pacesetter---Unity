@@ -444,15 +444,87 @@ public class E2EScenarioBehaviour : MonoBehaviour
         {
             Check(passthrough.IsPassthroughEnabled, "passthrough: camera feed shown on the phone by default");
 
-            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");
+            // ── ARグラス出力リグ: グラスの画角・眼の位置で描く ──────────────
+            var glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+            Check(glassRig != null, "glass: GlassViewRig auto-created by bootstrap");
+            Check(glassRig != null && !glassRig.IsGlassOutputActive,
+                "glass: output rig dormant while the phone screen is the display");
+
+            Camera phoneCamera = Camera.main;
+            int phoneCullingMask = phoneCamera != null ? phoneCamera.cullingMask : 0;
+
+            deviceBridge.OnSwiftCommand(
+                "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
             yield return null;
             Check(!passthrough.IsPassthroughEnabled,
                 "passthrough: camera feed off while output goes to see-through glasses");
+
+            if (glassRig != null)
+            {
+                Check(GlassViewRig.VerificationDefaultGlassOutput,
+                    "verification: glass output rig is enabled by default");
+                Check(glassRig.IsGlassOutputActive, "glass: output rig takes over rendering on connect");
+                Check(glassRig.ActiveProfile != null && glassRig.ActiveProfile.Model == "XREAL One",
+                    $"glass: 1920x1080 resolves to the XREAL One profile (got {glassRig.ActiveProfile?.Model})");
+
+                Camera outCam = glassRig.OutputCamera;
+                Check(outCam != null, "glass: output camera created at runtime");
+                if (outCam != null)
+                {
+                    // 垂直画角はビューポートのアスペクトで変わるので、不変量である水平画角で縛る
+                    float hFov = 2f * Mathf.Atan(Mathf.Tan(outCam.fieldOfView * 0.5f * Mathf.Deg2Rad) * outCam.aspect)
+                                 * Mathf.Rad2Deg;
+                    Check(Mathf.Abs(hFov - 44.2f) < 0.6f,
+                        $"glass: projection matches the glass optics, not the iPhone camera (H-FoV {hFov:F1}°)");
+                    Check(outCam.backgroundColor == Color.black && outCam.clearFlags == CameraClearFlags.SolidColor,
+                        "glass: output camera clears to black (see-through glasses treat black as transparent)");
+                    Check(!ReferenceEquals(Camera.main, outCam),
+                        "glass: output camera does not steal Camera.main from the AR camera");
+                }
+
+                Check(phoneCamera == null || phoneCamera.cullingMask == 0,
+                    "glass: AR camera stops drawing but stays enabled for ARKit tracking");
+
+                Check(glassRig.OrientationSource == HeadOrientationSource.TravelHeading,
+                    $"glass: orientation comes from the smoothed travel heading (got {glassRig.OrientationSource})");
+                Check(glassRig.AppliedDownPitchDegrees > 1f && glassRig.AppliedDownPitchDegrees <= 15f,
+                    $"glass: camera pitches down to fit the avatar into the narrow FoV ({glassRig.AppliedDownPitchDegrees:F1}°)");
+
+                // 第1期の要判断事項を数値で固定する(基本設計書 F-03 の 3.0m と光学系の衝突)
+                Check(!glassRig.FullBodyFitsInFov,
+                    "glass: a 1.75m avatar at 3.0m does NOT fit in the XREAL One FoV (design decision pending)");
+                Check(glassRig.NearestVisibleGroundMeters > 3.0f,
+                    $"glass: the avatar's ground contact at 3.0m is outside the FoV " +
+                    $"(ground visible from {glassRig.NearestVisibleGroundMeters:F2}m)");
+
+                if (hud != null)
+                    Check(Mathf.Abs(hud.EdgeInsetFraction - 0.90f) < 0.001f,
+                        $"glass: HUD pulled into the glass safe area (got {hud.EdgeInsetFraction:F2})");
+
+                // 将来のグラス実姿勢供給。来れば採用し、途切れれば進行方向ヨーへ自動で戻る
+                deviceBridge.OnSwiftCommand(
+                    "{\"command\":\"UpdateGlassPose\",\"yaw\":30,\"pitch\":0,\"roll\":0,\"timestamp\":0}");
+                yield return null;
+                Check(glassRig.OrientationSource == HeadOrientationSource.ExternalGlassPose,
+                    "glass: a fresh external head pose is adopted while the screen mode is Follow(locked)");
+            }
 
             deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
             yield return null;
             Check(passthrough.IsPassthroughEnabled,
                 "passthrough: camera feed restored when back on the phone");
+
+            if (glassRig != null)
+            {
+                Check(!glassRig.IsGlassOutputActive, "glass: output rig stops on disconnect");
+                Check(glassRig.OutputCamera == null || !glassRig.OutputCamera.enabled,
+                    "glass: output camera disabled on disconnect");
+                Check(phoneCamera == null || phoneCamera.cullingMask == phoneCullingMask,
+                    "glass: AR camera rendering restored on disconnect");
+                if (hud != null)
+                    Check(Mathf.Abs(hud.EdgeInsetFraction - 1f) < 0.001f,
+                        "glass: HUD returns to the full phone screen on disconnect");
+            }
 
             // 切断はスタンバイへ遷移させるため、後続シナリオのために通常へ戻す
             if (stateController != null)

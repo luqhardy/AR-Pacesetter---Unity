@@ -24,6 +24,7 @@ public class AvatarVisibilityDiagnostics : MonoBehaviour
     /// <summary>直近の判定理由(見えていれば "visible" で始まる)。</summary>
     public string CurrentReason { get; private set; } = "visible";
 
+    private GlassViewRig _glassRig;
     private Renderer[] _renderers = System.Array.Empty<Renderer>();
     private float _nextRendererRefresh;
     private string _lastReported;
@@ -90,9 +91,25 @@ public class AvatarVisibilityDiagnostics : MonoBehaviour
         return _renderers.Length == 0; // Rendererが無いモデルは「描画抑止ではない」とみなす
     }
 
+    /// <summary>
+    /// 視野判定に使うカメラ。ARグラスへ出力している間は<b>出力カメラ</b>を見る —
+    /// グラスの画角はiPhoneカメラよりずっと狭い(垂直25.7° 対 iPhoneの広角)ので、
+    /// ARカメラで判定すると「見えている」と報告しながら実際はグラスで欠けていることになる。
+    /// </summary>
+    private Camera ResolveViewingCamera()
+    {
+        if (_glassRig == null)
+            _glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+
+        if (_glassRig != null && _glassRig.IsGlassOutputActive && _glassRig.OutputCamera != null)
+            return _glassRig.OutputCamera;
+
+        return Camera.main;
+    }
+
     private void FillCameraRelation(ref AvatarVisibilityReason.Inputs inputs)
     {
-        Camera cam = Camera.main;
+        Camera cam = ResolveViewingCamera();
         if (cam == null)
         {
             inputs.InCameraView = true; // カメラが無ければ視野判定はしない

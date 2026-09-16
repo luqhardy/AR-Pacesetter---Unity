@@ -141,7 +141,10 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
 | `AvatarRigLocator.cs` | 有効なAnimatorの優先解決 |
 | `ARVisionSystemsBootstrap.cs` | 新規マネージャーのシーン自動生成 |
 | `ARSessionManagerBridge.cs` | Swift→Unity受信（StartSession/UpdateMetrics/EndSession）＋1Hz状態レポート |
-| `DeviceManagerBridge.cs` | Swift→Unity受信（ConnectXREAL） |
+| `DeviceManagerBridge.cs` | Swift→Unity受信（ConnectXREAL / DisconnectXREAL / UpdateGlassPose） |
+| `GlassViewRig.cs` | ARグラス接続中の描画をグラスの画角・眼の位置・進行方向ヨーへ切り替える |
+| `GlassDisplayProfile.cs` / `GlassOpticsMath.cs` | グラスの機種テーブルと光学計算（画角換算・視野適合） |
+| `HeadPoseMath.cs` | 描画カメラの向きの供給元を決める（Anchorモードでの二重補正を回避） |
 | `SwiftMessageSender.cs` | Unity→Swift送信（SyncRate/AvatarState/GPS/Latency/SessionEnded） |
 
 > Swift UI（[kyainna/AR-runner](https://github.com/kyainna/AR-runner)）との連携手順は [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) を参照。
@@ -534,7 +537,7 @@ Unityをランナーへ入れずに済む。実機へ入れるには署名が必
 
 | 方向 | 経路 | 内容 |
 |---|---|---|
-| Swift → Unity | `sendMessageToGO` → GameObject `ARSessionManager` / `DeviceManager` の `OnSwiftCommand(json)` | `StartSession`（ペースkm/h・目標距離・身長・先行距離）/ `UpdateMetrics`（心拍・距離・**測位3値**）/ `EndSession` / `RequestHistory` / `ResumeSession` / `ConnectXREAL` / `DisconnectXREAL`（計7種） |
+| Swift → Unity | `sendMessageToGO` → GameObject `ARSessionManager` / `DeviceManager` の `OnSwiftCommand(json)` | `StartSession`（ペースkm/h・目標距離・身長・先行距離）/ `UpdateMetrics`（心拍・距離・**測位3値**）/ `EndSession` / `RequestHistory` / `ResumeSession` / `ConnectXREAL`（表示メトリクス付き）/ `DisconnectXREAL` / `UpdateGlassPose`（将来用）（計8種） |
 | Unity → Swift | `UnitySwiftBridge.mm` → NSNotification `UnityToSwiftMessage` → `UnityBridge.onUnityMessage` | `SyncRateUpdated`(1Hz) / `AvatarStateChanged`(Idle・Run・Slow・Fast・Goal・Lost) / `GPSLost`・`GPSRecovered` / `LatencyReport` / `SessionEnded`（グレード・ランク・結果）/ `HistoryData` / `VoiceAlert` / ~~`LowBattery`~~（送出元が未配線のため現在発火しない） |
 
 ブリッジ用GameObjectは起動時に自動生成されるためシーン配線は不要。
@@ -555,6 +558,44 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 ---
 
 ## 6. 更新履歴
+
+### 2026-09-16 — XREAL One統合の基盤: グラスの画角・グラスの視点で描く
+
+これまでグラス接続中も**描画はiPhoneのARKitカメラのまま**で、投影行列はiPhoneカメラの
+内部パラメータ由来だった。XREAL Oneの画角(対角50° → 水平44.2°/垂直25.7°)とは別物なので、
+3.0m前方に置いたアバターが**実寸の角度で見えていなかった**。併せて、胸マウントのARKitカメラの
+姿勢をそのまま頭固定スクリーンへ出すと、胸の上下動・ロールで画面全体が揺れる(§4.1が禁じる酔いの原因)。
+
+一次情報での調査結果と設計判断は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) に集約。
+
+- **`GlassViewRig.cs` 新規**: グラス接続で出力カメラを実行時生成し、グラスの画角で描く。
+  ARKitカメラは**有効なまま**(トラッキングを止めない)`cullingMask = 0` にして描画だけ譲り、
+  切断で元へ戻す。出力カメラはタグ無し = `Camera.main` を奪わないので既存の視野判定・診断は無傷。
+  視点は眼高(1.55m)へ持ち上げ、向きは**§4.1の移動平均済み進行方向のヨーのみ**から作る
+- **`GlassDisplayProfile.cs` / `GlassOpticsMath.cs` 新規**(依存ゼロ・テスト可能): 機種テーブルと光学計算。
+  公称FoVが対角であることは「One Pro = 4mで171インチ」との一致で検算しテストに固定した
+- **`HeadPoseMath.cs` 新規**: 描画カメラの向きをどこから取るかの判断を1か所に閉じた。
+  **Anchorモードでは外部頭部姿勢を採用しない** — グラスのX1が自前の3DoFで頭回転を打ち消すため、
+  Unity側でも適用すると二重補正になり、首を振るたび映像が逆へ流れる
+- **ブリッジ拡張**: `ConnectXREAL` が表示メトリクス(`pixelWidth`/`pixelHeight`/`refreshHz`/`model`)を運ぶ。
+  将来のグラス実姿勢用に `UpdateGlassPose` を追加(0.25秒途切れれば自動で進行方向ヨーへ戻る)。
+  Swift側は `ExternalDisplayManager` が外部ディスプレイの実解像度・リフレッシュレートを拾って送る
+- **HUDのセーフエリア**: バードバス光学系は四隅から欠けるため、グラス接続中は有効表示域を90%に絞る
+  (`PeripheralHUDManager.ApplyEdgeInsetFraction`)。切断で全画面へ戻る
+
+**判ったこと(要チーム判断)**: **F-03の「3.0m前方」とXREAL Oneの画角は両立しない**。
+眼高1.55mから身長1.75mのアバターを3.0m前方に置くと垂直31.1°を占め、Oneの垂直画角25.7°に
+全身が入らない(全身には**3.71m**必要。One Proでも3.16m)。俯角11.8°で中心に寄せても
+**足元の接地点は3.38m先からしか見えない**ため、§7.2のオーラ(足元から放射)は事実上見えない。
+現実装は「欠けを許容」。選択肢(先行距離の変更・アバター縮小・機材変更)は上記Docへ整理した。
+
+**なぜiOSでグラスの頭部姿勢が取れないのか**(調査で確定): XREAL SDKはAndroid専用でiOS版が存在せず、
+Air系がUSB-HIDで出しているIMUもiOSアプリからは触れない(公開APIが無くMFi/DriverKit対象外)。
+回避策は無いため、第1期の空間トラッキングはARKit単独で確定。グラスは平面スクリーン1枚として扱う。
+
+**検証**: フルコンパイル0エラー / ユニットテスト **249件 全PASS**(光学・プロファイル・姿勢ポリシーで33件追加) /
+**E2E 169項目 全PASS**(グラス出力リグ20項目を追加。上の「全身が収まらない」も数値ごと固定) /
+`swiftc -parse` 通過
 
 ### 2026-09-11 (5) — 実機で「アバターが不規則に飛び回る」: 進行方向が測位ノイズで振り回されていた
 
