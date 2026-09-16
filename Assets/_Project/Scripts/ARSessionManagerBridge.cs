@@ -38,6 +38,9 @@ public class ARSessionManagerBridge : MonoBehaviour
         // 未送信(false)なら従来どおりUnityがHUDを描く — エディタ/E2Eは影響を受けない
         public bool hideUnityHud;
 
+        // SetGpsLostHandling: F-09/F-10 の自動判定を実行時に切る(屋内デモ・可視性検証用)
+        public bool enabled;
+
         // true only when CoreLocation delivered a genuinely new fix. Cached timer
         // retransmissions must not refresh Unity's 5-second freshness windows.
         public bool locationSampleFresh;
@@ -56,15 +59,16 @@ public class ARSessionManagerBridge : MonoBehaviour
     [Tooltip("M2Pの実測元(§10)。CSVと同じ値をSwiftへ報告するための唯一の供給元")]
     [SerializeField] private SensorTimingBridge sensorTiming;
 
+    [SerializeField] private GhostPaceDriver ghostDriver;
+    [SerializeField] private GpsSignalMonitor gpsMonitor;
+    [SerializeField] private GoalLineController goalLineController;
+    [SerializeField] private RunnerTrackingState runnerTracking;
+
     /// <summary>
     /// 直近にSwiftへ報告したM2P(ms)。<see cref="MotionToPhotonMath.Unmeasured"/>(-1)は未計測。
     /// 「捏造値が混ざっていないこと」をE2Eで縛るための検証用。
     /// </summary>
     public double LastReportedMotionToPhotonMs { get; private set; } = MotionToPhotonMath.Unmeasured;
-    [SerializeField] private GhostPaceDriver ghostDriver;
-    [SerializeField] private GpsSignalMonitor gpsMonitor;
-    [SerializeField] private GoalLineController goalLineController;
-    [SerializeField] private RunnerTrackingState runnerTracking;
 
     private const float ReportIntervalSeconds = 1.0f;
     private const float BaselineAvatarHeightCm = 175f; // 企画書 §4.1
@@ -143,6 +147,7 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "EndSession": HandleEndSession(); break;
             case "RequestHistory": HandleRequestHistory(); break;
             case "ResumeSession": HandleResumeSession(); break;
+            case "SetGpsLostHandling": HandleSetGpsLostHandling(cmd); break;
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown command: {cmd.command}");
                 break;
@@ -334,6 +339,28 @@ public class ARSessionManagerBridge : MonoBehaviour
     /// §8.3: グラス切断でスタンバイ中の走行を、準備画面での再スタート操作後に再開する。
     /// 新規セッションは開始せず(記録・CSVログは継続)、表示状態のみNormalへ戻す。
     /// </summary>
+    /// <summary>
+    /// F-09/F-10 の自動判定を実行時に切り替える(既定はON = 基本設計書どおり)。
+    ///
+    /// <para>屋内デモや可視性の目視確認では、精度が常に10m超でロスト判定が成立しアバターが
+    /// 消えてしまう。その主因は <c>RequireInitialFixBeforeLost</c> で恒久的に解消してあるが、
+    /// 「掴んだ後に意図的に消えないでほしい」場面のための明示的なスイッチとして残す。
+    /// <b>コード変更なしで戻せる</b>ことが要点 — 定数を書き換える運用は戻し忘れを生む。</para>
+    /// </summary>
+    private void HandleSetGpsLostHandling(SwiftCommand cmd)
+    {
+        if (gpsMonitor == null)
+            gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        if (gpsMonitor == null)
+        {
+            Debug.LogWarning("[SWIFT BRIDGE] SetGpsLostHandling ignored — GpsSignalMonitor not found.");
+            return;
+        }
+
+        gpsMonitor.AutoLostHandlingEnabled = cmd.enabled;
+        Debug.Log($"[SWIFT BRIDGE] SetGpsLostHandling — F-09/F-10 自動判定を{(cmd.enabled ? "ON" : "OFF")}へ");
+    }
+
     private void HandleResumeSession()
     {
         if (avatarEngine == null || !avatarEngine.HasStarted || avatarEngine.IsSessionEnded)

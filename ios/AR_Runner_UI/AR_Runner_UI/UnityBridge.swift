@@ -204,6 +204,17 @@ final class UnityBridge: NSObject, ObservableObject {
                     payload: ["command": "ResumeSession"])
     }
 
+    /// F-09/F-10(GPSロストでアバターを退避)の自動判定を実行時に切り替える。
+    ///
+    /// 既定はON(基本設計書どおり)。屋内デモで「掴んだ後に消えないでほしい」場面のための
+    /// 明示的なスイッチ。定数を書き換える運用は戻し忘れを生むため、実行時に切れるようにしてある。
+    /// なお「一度も良好な測位を得ていない間はロスト判定しない」はUnity側の既定動作なので、
+    /// 屋内で走り出す前にアバターが消えることは、この設定に関わらず起きない。
+    func setGpsLostHandling(enabled: Bool) {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "SetGpsLostHandling", "enabled": enabled])
+    }
+
     /// Request past run history from Unity's session store (HistoryData event).
     func requestHistory() {
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",

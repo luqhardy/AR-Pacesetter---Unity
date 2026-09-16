@@ -151,6 +151,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
 | `ARSessionManager` | `ResumeSession` | — | §8.3: グラス再接続後、**準備画面からの再スタート操作**でスタンバイ中の表示のみ復帰(新規セッションは開始せず記録は継続) |
+| `ARSessionManager` | `SetGpsLostHandling` | `enabled` (bool) | F-09/F-10の自動判定を実行時に切替。**既定はON**(基本設計書どおり)。屋内デモで「掴んだ後に消えないでほしい」場面用の明示的スイッチで、定数を書き換える運用(戻し忘れる)を無くすために用意した。なお**良好な初回測位まではロスト判定しない**のはUnity側の既定動作なので、屋内で走り出す前に消えることはこの設定に関わらず起きない |
 | `DeviceManager` | `ConnectXREAL` | `model`(任意), `pixelWidth`(任意), `pixelHeight`(任意), `refreshHz`(任意) | ReadyチェックのARグラスをConnectedへ。併せて**グラスの画角で描く出力リグ**(`GlassViewRig`)を起動する — iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えないため。画角はグラスから取得できないので解像度・リフレッシュレートから機種を推定し、1920×1080(One/One Pro/Air2で共通)は **XREAL One** を既定とする。`model`があればそれが優先。詳細は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) |
 | `DeviceManager` | `DisconnectXREAL` | — | §8.3: スタンバイ移行でアバターを消去。**走行セッションは終了させない**ためF-11のCSVログはBG継続。再接続だけではアバターを復帰させない(安全のため`ResumeSession`が必要) |
 | `DeviceManager` | `UpdateGlassPose` | `yaw`, `pitch`, `roll`, `timestamp` | グラス実機の頭部姿勢(度)。**現状iOSに供給元は無い**(XREAL SDKはAndroid専用・USB-HIDはiOSから触れない)ため将来用の受け口。0.25秒途切れれば自動で §4.1 の移動平均済み進行方向へ戻る。グラスの画面モードが Anchor のときはグラス自身が頭回転を打ち消すためUnity側は採用しない(二重補正の回避) |

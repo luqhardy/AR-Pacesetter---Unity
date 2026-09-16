@@ -28,14 +28,24 @@ public class GpsSignalMonitor : MonoBehaviour
 
     [Tooltip("GPSロスト時にFSMを自動で InertialMovement→FadeOut→Standby へ進める(F-09/F-10)。" +
              "OFFにするとGPSが悪化・途絶してもアバターは消えない(HUD警告も出ない)。" +
-             "【一時的にOFF】屋内・歩行での可視性検証のため。400mトラック実証(§11.2 ③)の前に必ずONへ戻す")]
+             "実行時に SetGpsLostHandling コマンドで切替できる")]
     [SerializeField] private bool autoLostHandlingEnabled = VerificationDefaultAutoLostHandling;
 
     /// <summary>
-    /// 現在の既定値。検証のため <b>false</b>(GPSロストでアバターを消さない)。
-    /// 実証フェーズ③(トラック)の前に true へ戻すこと — F-09/F-10 はこの経路で発動する。
+    /// 既定値。基本設計書どおり <b>true</b>(F-09/F-10 はこの経路で発動する)。
+    ///
+    /// <para>2026-09-11〜09-16 は屋内の可視性検証のため false にしていた。屋内では精度が
+    /// 常に10m超でロスト判定が即成立し、アバターが消えて視覚の確認ができなかったため。
+    /// その回避は <see cref="requireInitialFixBeforeLost"/>(良好な測位を一度も得ていない間は
+    /// ロスト判定しない)で恒久化したので、既定を仕様どおりへ戻した。</para>
     /// </summary>
-    public const bool VerificationDefaultAutoLostHandling = false;
+    public const bool VerificationDefaultAutoLostHandling = true;
+
+    [Tooltip("良好な測位を一度も得ていない間はロスト判定しない。" +
+             "屋内では精度が常に10m超のため、これが無いと走り出す前からアバターが消える。" +
+             "「一度も掴んでいない」のは§8.1のロスト(掴んでいた信号を失う)ではなく、" +
+             "F-02のレディチェックが弾くべき状態")]
+    [SerializeField] private bool requireInitialFixBeforeLost = true;
 
     /// <summary>GPSロストの自動判定→FSM遷移を行うか(実行時に切替可)。</summary>
     public bool AutoLostHandlingEnabled
@@ -48,6 +58,7 @@ public class GpsSignalMonitor : MonoBehaviour
     private float _lastUpdateTime = -1f;
     private float _lastAccuracy = -1f;
     private bool _hasReceivedSample;
+    private bool _hasHadGoodFix;
     private bool _lostReported;
 
     /// <summary>実測サンプルを受信済みか(未受信なら本監視は介入しない)。</summary>
@@ -56,6 +67,19 @@ public class GpsSignalMonitor : MonoBehaviour
     public float LastAccuracyMeters => _lastAccuracy;
     /// <summary>現在ロスト条件を満たしているか。</summary>
     public bool IsSignalLost => _hasReceivedSample && EvaluateLost();
+
+    /// <summary>
+    /// これまでに「ロスト条件を満たさない精度」の測位を一度でも得たか。
+    /// false の間は(既定では)ロスト判定しない — 掴んでいない信号は失えない。
+    /// </summary>
+    public bool HasHadGoodFix => _hasHadGoodFix;
+
+    /// <summary>良好な初回測位を待ってからロスト判定するか(既定 true)。</summary>
+    public bool RequireInitialFixBeforeLost
+    {
+        get => requireInitialFixBeforeLost;
+        set => requireInitialFixBeforeLost = value;
+    }
 
     void Awake()
     {
@@ -79,6 +103,11 @@ public class GpsSignalMonitor : MonoBehaviour
         _lastAccuracy = horizontalAccuracyMeters;
         _hasReceivedSample = true;
 
+        // 「ロスト条件を満たさない精度」を一度でも得たら、以後は本来のロスト判定を行う。
+        // 屋内(常に10m超)では立たないため、走り出す前にアバターが消えることが無くなる
+        if (horizontalAccuracyMeters < accuracyLostThresholdMeters)
+            _hasHadGoodFix = true;
+
         // F-11 CSVログのGPS列へ供給(§5.2)
         if (telemetryLogger != null)
             telemetryLogger.SetGpsCoordinates(latitude, longitude);
@@ -100,9 +129,9 @@ public class GpsSignalMonitor : MonoBehaviour
             if (!_disabledNoticeLogged)
             {
                 _disabledNoticeLogged = true;
-                Debug.LogWarning("[GPS MONITOR] GPSロストの自動判定はOFF(検証用) — " +
+                Debug.LogWarning("[GPS MONITOR] GPSロストの自動判定はOFF — " +
                                  "F-09/F-10 は発動せず、GPSが悪化してもアバターは消えません。" +
-                                 "トラック実証の前に AutoLostHandlingEnabled を true へ戻すこと");
+                                 "SetGpsLostHandling {\"enabled\":true} で戻せます");
             }
             _lostReported = false;
             return;
@@ -131,6 +160,10 @@ public class GpsSignalMonitor : MonoBehaviour
 
     private bool EvaluateLost()
     {
+        // 一度も掴んでいない信号は失えない。§8.1のロストは「掴んでいた信号が途絶/悪化する」こと、
+        // 一度も掴めていないのは F-02 のレディチェックが弾くべき別の状態
+        if (requireInitialFixBeforeLost && !_hasHadGoodFix) return false;
+
         bool stale = (Time.time - _lastUpdateTime) >= staleTimeoutSeconds;
         bool inaccurate = _lastAccuracy >= accuracyLostThresholdMeters;
         return stale || inaccurate;
@@ -142,6 +175,7 @@ public class GpsSignalMonitor : MonoBehaviour
         _lastUpdateTime = -1f;
         _lastAccuracy = -1f;
         _hasReceivedSample = false;
+        _hasHadGoodFix = false;
         _lostReported = false;
     }
 }

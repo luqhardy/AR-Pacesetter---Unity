@@ -66,9 +66,11 @@ Unityプロジェクト(本リポジトリ)+ SwiftUIホスト(`ios/`)のUaaLモ�
    ARCoreに触れるのは `#if ARCORE_EXTENSIONS` の中だけで、未導入の現在は完全に休眠し接地判定は不変
    (E2Eが「休眠」と「不変」を検証)。**3D面分類は画像分類に上書きされない**のが不変条件。
    導入手順・実機確認項目は [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
-9. **【一時的・要復帰】GPSロストの自動判定→FSM遷移(F-09/F-10)がOFF**(2026-09-11、屋内可視性検証のため)。
-   `GpsSignalMonitor.VerificationDefaultAutoLostHandling = false`。GPSが悪化してもアバターは消えず、
-   HUD警告も出ない。**トラック実証(§11.2 ③)の前に `true` へ戻す**(E2Eの `verification:` 項目が戻し忘れを検知)
+9. ~~**【一時的】GPSロストの自動判定がOFF**~~ → **復帰済み**(2026-09-16)。既定は仕様どおり `true` で
+   F-09/F-10 は発動する。屋内でアバターが消えて検証できない問題は
+   `GpsSignalMonitor.RequireInitialFixBeforeLost`(既定ON)で恒久解決 — **良好な初回測位を一度も
+   得ていない間はロスト判定しない**(掴んでいない信号は失えない。屋内は精度が常に10m超なので成立しない)。
+   意図的に切りたい場合は定数ではなく実行時コマンド `SetGpsLostHandling {enabled}` を使う
 8. **`SafetyAndSystemController`(企画書4.3のTTC危険警告・低バッテリー退避)は実行時に生成されない** —
    シーン/プレハブ未配置かつ`ARVisionSystemsBootstrap`未登録、`AddComponent`も皆無。第1期スコープ外のため
    意図的に休眠。有効化には(a)障害物検知ソースの接続 (b)非検出時にTTCを`ttcScanRange`で計算する誤りの修正

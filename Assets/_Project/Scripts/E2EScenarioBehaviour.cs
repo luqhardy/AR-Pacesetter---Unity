@@ -1069,15 +1069,26 @@ public class E2EScenarioBehaviour : MonoBehaviour
         var gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
         if (gpsMonitor != null && stateController != null && !engine.IsSessionEnded)
         {
-            // 【一時的】検証のため既定はOFF(GPSロストでアバターを消さない)。
-            // トラック実証の前に戻す — 戻し忘れをこの項目で可視化しておく
-            Check(!GpsSignalMonitor.VerificationDefaultAutoLostHandling && !gpsMonitor.AutoLostHandlingEnabled,
-                "verification: GPS-lost auto handling is OFF by default (temporary — re-enable before the track test)");
+            // 既定は基本設計書どおりON。屋内検証のための一時OFF(2026-09-11〜09-16)は
+            // 「良好な初回測位まではロスト判定しない」で恒久化したので戻してある
+            Check(GpsSignalMonitor.VerificationDefaultAutoLostHandling && gpsMonitor.AutoLostHandlingEnabled,
+                "verification: GPS-lost auto handling is ON by default (F-09/F-10 armed for the track test)");
+            Check(gpsMonitor.RequireInitialFixBeforeLost,
+                "verification: lost detection waits for the first usable fix by default");
 
-            // 自動判定そのものは壊れていないこと — ONにして従来どおり検証する
-            gpsMonitor.AutoLostHandlingEnabled = true;
             stateController.TransitionToState(GameStateController.ARVisionState.Normal);
             yield return null;
+
+            // 屋内の再現: 良好な測位を一度も得ないまま精度25mが続いても、アバターは消えない。
+            // 「掴んでいない信号は失えない」— これが無いと屋内では走り出す前に消える
+            gpsMonitor.ResetSession();
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 25.0f);
+            yield return WaitScaled(0.3f);
+            Check(!gpsMonitor.HasHadGoodFix, "gps-auto: a 25m fix never counts as acquiring the signal");
+            Check(!gpsMonitor.IsSignalLost,
+                "gps-auto: indoors (no usable fix yet) is not reported as signal loss");
+            Check(stateController.currentState == GameStateController.ARVisionState.Normal,
+                "gps-auto: the avatar survives indoors where accuracy never gets below 10m");
 
             // 良好サンプル(精度3m)ではロストしない
             gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
@@ -1101,16 +1112,32 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
             // 後続ステップへ影響しないよう監視を解除(未受信状態=非介入へ戻す)
             gpsMonitor.ResetSession();
-            gpsMonitor.AutoLostHandlingEnabled = GpsSignalMonitor.VerificationDefaultAutoLostHandling;
 
-            // OFFの挙動: 精度が10m以上に悪化してもFSMは Normal のまま = アバターは消えない
-            gpsMonitor.AutoLostHandlingEnabled = false;
+            // 実行時スイッチ(SetGpsLostHandling)がコード変更なしで効くこと。
+            // 定数を書き換えて戻し忘れる運用を無くすためのスイッチなので、経路ごと縛る
+            bridge.OnSwiftCommand("{\"command\":\"SetGpsLostHandling\",\"enabled\":false}");
+            yield return null;
+            Check(!gpsMonitor.AutoLostHandlingEnabled,
+                "gps-auto: SetGpsLostHandling(false) disarms F-09/F-10 at runtime");
+
+            // OFFなら、良好な測位を掴んだ後に悪化してもFSMは Normal のまま
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
+            yield return null;
             gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 25.0f);
             yield return WaitScaled(0.3f);
+            Check(gpsMonitor.HasHadGoodFix, "gps-auto: a 3m fix counts as acquiring the signal");
             Check(stateController.currentState == GameStateController.ARVisionState.Normal,
-                "verification: with auto handling OFF, a 25m-accuracy fix does not hide the avatar");
+                "gps-auto: with handling off, a 25m fix after acquisition still does not hide the avatar");
+
+            bridge.OnSwiftCommand("{\"command\":\"SetGpsLostHandling\",\"enabled\":true}");
+            yield return null;
+            Check(gpsMonitor.AutoLostHandlingEnabled,
+                "gps-auto: SetGpsLostHandling(true) re-arms F-09/F-10 at runtime");
+
             gpsMonitor.ResetSession();
             gpsMonitor.AutoLostHandlingEnabled = GpsSignalMonitor.VerificationDefaultAutoLostHandling;
+            stateController.TransitionToState(GameStateController.ARVisionState.Normal);
+            yield return null;
         }
 
         // ── Step 4c: ARグラス切断→再スタート (§8.3) ──────────────────────────
@@ -1266,6 +1293,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
             $"noise: lead distance holds near 3.0m while stationary ({toAvatarStill.magnitude:F2}m)");
 
         _cameraMover.position = truePos; // ノイズを外して後続へ
+        // 測位の供給を止めるので監視も未受信へ戻す。
+        // F-09 は既定でONなので、供給を止めたまま放置すると 1.5秒後に「更新途絶=ロスト」が
+        // 正しく成立してしまい、以降のステップが慣性移動から始まる。E2Eは測位を必要な
+        // ステップだけへ注入する作りなので、ここで「一度も受信していない」状態へ戻す
+        // (GpsSignalMonitor は未受信の間は一切介入しない)
+        ResetGpsMonitor();
     }
 
     /// <summary>
@@ -1312,7 +1345,22 @@ public class E2EScenarioBehaviour : MonoBehaviour
             $"noise: no frame-to-frame jumps while running under noise (max {maxJump:F2}m)");
 
         _cameraMover.position = truePos; // ノイズを外して後続へ
+        // 測位の供給を止めるので監視も未受信へ戻す。
+        // F-09 は既定でONなので、供給を止めたまま放置すると 1.5秒後に「更新途絶=ロスト」が
+        // 正しく成立してしまい、以降のステップが慣性移動から始まる。E2Eは測位を必要な
+        // ステップだけへ注入する作りなので、ここで「一度も受信していない」状態へ戻す
+        // (GpsSignalMonitor は未受信の間は一切介入しない)
+        ResetGpsMonitor();
         yield return WaitScaled(0.5f);
+    }
+
+    /// <summary>
+    /// GPS監視を「実測サンプル未受信」へ戻す。測位を注入したステップの後始末。
+    /// </summary>
+    private void ResetGpsMonitor()
+    {
+        var monitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        if (monitor != null) monitor.ResetSession();
     }
 
     /// <summary>走者(カメラ)の水平前方。ルートの forward はカメラの向きと一致しないので使わない。</summary>
