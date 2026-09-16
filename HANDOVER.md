@@ -121,8 +121,14 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   **実測の作り方**: 真のM2Pは光子の射出時刻が要るのでソフトだけでは取れないが、
   「センサー時刻 → 提示時刻」なら iOS で実測できる(ARKitフレームのタイムスタンプ +
   `CADisplayLink.targetTimestamp`)。欠けるのはディスプレイのスキャンアウトのみで、
-  これはグラスの仕様値で補える定数。実装したら `ProvidesRealMotionToPhoton` を true にすれば
-  CSVが実測で埋まり、§11.2 の評価が成立する。**それまで §10 の20ms達成は主張できない。**
+  これはグラスの仕様値で補える定数。2026-09-16 に**Swiftへの報告経路も実測へ接続済み**:
+  `SensorTimingBridge` が唯一の実測元で、**CSVの `latency_m2p` と `LatencyReport` は同一の値**になる。
+  それ以前はCSVだけが実測で、Swift側は `LatencyBenchmarkRunner.ProvidesRealMotionToPhoton`
+  (常に false)を見ていたため**実機でも -1 しか流れていなかった** —
+  FIELD_TEST_PLAN T2 はこの経路で計測する計画だったので、そのままでは §10 の評価データが
+  1件も取れない状態だった。合成値は報告経路から完全に外れている(参照は残っていない)。
+  **実測値が出るのは iOS実機のみ**(エディタ・E2Eは -1)なので、
+  §10 の20ms達成の主張には実機でのCSV取得が必要。
 
 - **XREAL head-pose/IMU入力は原理的に取得不能(2026-09-16 調査で確定)**: XREAL SDKはAndroid専用でiOS版が存在せず、Air系がUSB-HIDで出しているIMUもiOSアプリからは触れない(公開APIが無くMFi/DriverKit対象外)。**回避策は無い**ため、第1期の空間トラッキングはiPhoneのARKit単独で確定。グラスは「平面スクリーン1枚」として扱う。
   受け口だけは通してある(`UpdateGlassPose` → `GlassViewRig.SetExternalHeadPose`。0.25秒途切れれば§4.1の進行方向ヨーへ自動復帰)。

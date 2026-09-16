@@ -441,6 +441,23 @@ public class E2EScenarioBehaviour : MonoBehaviour
             "m2p: native 100Hz IMU is not claimed in the editor");
         Check(telemetry != null && telemetry.NativeImuRowCount == 0,
             "telemetry: editor rows come from the frame-synced fallback, not native samples");
+
+        // Swiftへ報告するM2Pが、CSVと同じ SensorTimingBridge から来ていること。
+        // 以前ここは LatencyBenchmarkRunner.ProvidesRealMotionToPhoton (常にfalse) を見ており、
+        // 実測経路が出来た後も Swift へは -1 しか流れていなかった。
+        // FIELD_TEST_PLAN T2 はこの経路の1Hz LatencyReport で §10 を評価する計画なので、
+        // 「実測があれば実測が流れる / 無ければ -1」の両側を縛る
+        if (bridge != null)
+        {
+            bool timingHasMeasurement = timing != null && timing.TryGetLatencyMs(out double _);
+            Check(!timingHasMeasurement,
+                "m2p: editor has no real measurement to report (native timing is iOS-only)");
+            Check(bridge.LastReportedMotionToPhotonMs == MotionToPhotonMath.Unmeasured,
+                $"m2p: Swift is told -1 rather than a fabricated latency " +
+                $"(got {bridge.LastReportedMotionToPhotonMs:F2})");
+            Check(!MotionToPhotonMath.MeetsBudget(bridge.LastReportedMotionToPhotonMs),
+                "m2p: an unmeasured report never counts as meeting the 20ms budget");
+        }
         string telemetryPath = telemetry != null ? telemetry.CurrentFilePath : null;
 
         // ── F-07 現在ペース表示 / F-10 安全警告 ────────────────────────────

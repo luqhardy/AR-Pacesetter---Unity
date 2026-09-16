@@ -52,9 +52,27 @@ public static class SwiftMessageSender
         SendRaw($"{{\"event\":\"AvatarVisibility\",\"visible\":{(visible ? "true" : "false")},\"reason\":\"{escaped}\"}}");
     }
 
-    public static void SendLatency(double milliseconds)
-        => SendRaw(string.Format(CultureInfo.InvariantCulture,
-            "{{\"event\":\"LatencyReport\",\"ms\":{0:F1}}}", milliseconds));
+    /// <summary>
+    /// M2P実測の報告 (§10 / FIELD_TEST_PLAN T2)。<c>ms</c> が -1 なら未計測。
+    ///
+    /// <para><paramref name="stats"/> を渡すと区間の最大値・超過率・サンプル数も載せる。
+    /// 1Hzの瞬時値だけではサンプルの谷間で起きた超過を取りこぼすため、
+    /// p95評価が実態を外さないよう併せて送る。統計が無ければ従来どおり <c>ms</c> のみ。</para>
+    /// </summary>
+    public static void SendLatency(double milliseconds, MotionToPhotonStats stats = null)
+    {
+        if (stats == null || stats.SampleCount == 0)
+        {
+            SendRaw(string.Format(CultureInfo.InvariantCulture,
+                "{{\"event\":\"LatencyReport\",\"ms\":{0:F1}}}", milliseconds));
+            return;
+        }
+
+        SendRaw(string.Format(CultureInfo.InvariantCulture,
+            "{{\"event\":\"LatencyReport\",\"ms\":{0:F1},\"maxMs\":{1:F1}," +
+            "\"overBudgetRatio\":{2:F3},\"sampleCount\":{3}}}",
+            milliseconds, stats.MaxMs, stats.OverBudgetRatio, stats.SampleCount));
+    }
 
     /// <summary>
     /// 音声警告 (企画書4.3 — 対象は赤信号/交差点のみ、Swift側でTTC優先制御)。

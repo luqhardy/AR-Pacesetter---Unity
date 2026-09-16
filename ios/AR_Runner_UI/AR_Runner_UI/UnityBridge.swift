@@ -29,7 +29,13 @@ final class UnityBridge: NSObject, ObservableObject {
     /// アバターが見えていない理由(Unity AvatarVisibilityDiagnostics)。見えていれば nil。
     /// 実機で「消えた」を「どの経路で消えたか」に変えるための診断表示
     @Published var avatarHiddenReason: String? = nil
-    @Published var motionToPhotonMs: Double = 0  // latency monitor
+    @Published var motionToPhotonMs: Double = 0  // latency monitor (-1 = 未計測)
+    /// 区間のM2P最大値(ms)。1Hzの瞬時値では拾えない超過を捉えるため Unity から併せて届く
+    @Published var motionToPhotonMaxMs: Double = -1
+    /// 20ms予算(§10)を超えたサンプルの割合(0〜1)。-1 は未計測
+    @Published var motionToPhotonOverBudgetRatio: Double = -1
+    /// これまでに実測できたM2Pサンプル数
+    @Published var motionToPhotonSampleCount: Int = 0
     @Published var lastResult: SessionResult?    // EndSession後にUnityから届く
     @Published var history: [HistoryEntry] = []  // RequestHistory応答(新しい順)
     @Published var lowBatteryMode = false        // Unity側が低バッテリー退避したら true
@@ -231,7 +237,11 @@ final class UnityBridge: NSObject, ObservableObject {
                 let visible = dict["visible"] as? Bool ?? true
                 self.avatarHiddenReason = visible ? nil : (dict["reason"] as? String ?? "不明")
             case "LatencyReport":
+                // ms が -1 なら未計測。maxMs 等は実測サンプルがある時だけ載る(省略時は据え置き)
                 self.motionToPhotonMs = dict["ms"] as? Double ?? 0
+                if let maxMs = dict["maxMs"] as? Double { self.motionToPhotonMaxMs = maxMs }
+                if let ratio = dict["overBudgetRatio"] as? Double { self.motionToPhotonOverBudgetRatio = ratio }
+                if let count = dict["sampleCount"] as? Int { self.motionToPhotonSampleCount = count }
             case "SessionEnded":
                 let result = SessionResult(
                     grade: dict["grade"] as? String ?? "D",

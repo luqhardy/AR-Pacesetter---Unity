@@ -53,6 +53,14 @@ public class ARSessionManagerBridge : MonoBehaviour
     [SerializeField] private GameStateController gameStateController;
     [SerializeField] private PeripheralHUDManager hudManager;
     [SerializeField] private LatencyBenchmarkRunner latencyRunner;
+    [Tooltip("M2Pの実測元(§10)。CSVと同じ値をSwiftへ報告するための唯一の供給元")]
+    [SerializeField] private SensorTimingBridge sensorTiming;
+
+    /// <summary>
+    /// 直近にSwiftへ報告したM2P(ms)。<see cref="MotionToPhotonMath.Unmeasured"/>(-1)は未計測。
+    /// 「捏造値が混ざっていないこと」をE2Eで縛るための検証用。
+    /// </summary>
+    public double LastReportedMotionToPhotonMs { get; private set; } = MotionToPhotonMath.Unmeasured;
     [SerializeField] private GhostPaceDriver ghostDriver;
     [SerializeField] private GpsSignalMonitor gpsMonitor;
     [SerializeField] private GoalLineController goalLineController;
@@ -105,6 +113,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (gameStateController == null) gameStateController = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
         if (hudManager == null) hudManager = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
         if (latencyRunner == null) latencyRunner = FindFirstObjectByType<LatencyBenchmarkRunner>(FindObjectsInactive.Include);
+        if (sensorTiming == null) sensorTiming = FindFirstObjectByType<SensorTimingBridge>(FindObjectsInactive.Include);
         if (ghostDriver == null) ghostDriver = FindFirstObjectByType<GhostPaceDriver>(FindObjectsInactive.Include);
         if (gpsMonitor == null) gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
         if (goalLineController == null) goalLineController = FindFirstObjectByType<GoalLineController>(FindObjectsInactive.Include);
@@ -369,14 +378,24 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         // M2Pは実測できたときだけ送る。-1 = 未計測。
         //
-        // 以前は LatencyBenchmarkRunner の合成値を「実測M2P」として送り、
-        // 無ければ平滑化フレーム時間で埋めていた。どちらもM2Pではないのに、
-        // 受け手(Swiftの motionToPhotonMs)には実測として届いていた。
-        // 合成値の中身と、実測経路の作り方は LatencyBenchmarkRunner を参照
-        double measuredM2p = LatencyBenchmarkRunner.ProvidesRealMotionToPhoton && latencyRunner != null
-            ? latencyRunner.AverageSyntheticTotalMs
-            : -1.0;
-        SwiftMessageSender.SendLatency(measuredM2p);
+        // 供給元は F-11 のCSVと同じ SensorTimingBridge(ARKitフレームのセンサー時刻と
+        // CADisplayLink.targetTimestamp の差)。**CSVとSwiftで同じ値が出ることが重要** —
+        // 片方だけが実測だと、§11.2 ③ の評価をどちらで行ったのかが後から判らなくなる。
+        //
+        // かつてはここが LatencyBenchmarkRunner の合成値を「実測M2P」として送っていた。
+        // その捏造は 2026-09-08 に止めたが、代わりに置かれた
+        // ProvidesRealMotionToPhoton が常に false のため、実測経路が出来た後も
+        // **Swiftへは -1 しか流れていなかった**(FIELD_TEST_PLAN T2 はこの経路で
+        // 1HzのLatencyReportを記録する計画なので、そのままでは何も取れない)
+        double measuredM2p = MotionToPhotonMath.Unmeasured;
+        if (sensorTiming != null)
+            sensorTiming.TryGetLatencyMs(out measuredM2p);
+        LastReportedMotionToPhotonMs = measuredM2p;
+
+        // 1Hzの瞬時値だけでは、サンプルの谷間で起きた超過を取りこぼす。
+        // 区間の最大値と超過率を併せて送り、p95評価(T2)が実態を外さないようにする
+        MotionToPhotonStats stats = sensorTiming != null ? sensorTiming.Stats : null;
+        SwiftMessageSender.SendLatency(measuredM2p, stats);
         SendAvatarStateIfChanged(DeriveAvatarState());
 
         // エディタ/スタンドアロン走行ではUnity自身の距離計測でもゴール判定する

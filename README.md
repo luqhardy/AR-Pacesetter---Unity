@@ -560,6 +560,38 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-16 (3) — M2PがSwiftへ届いていなかった: 報告経路を実測へ接続
+
+**§10の20ms要求を評価するためのデータが、実機でも1件も取れない状態だった。**
+
+2026-09-08 に「合成値を実測として送る」捏造は止めたが、その代わりに置かれた
+`LatencyBenchmarkRunner.ProvidesRealMotionToPhoton` は `const bool = false` のままで、
+`ARSessionManagerBridge` はそれを見て **常に -1 を送っていた**。その後 `SensorTimingBridge`
+(ARKitフレームのセンサー時刻 → `CADisplayLink.targetTimestamp`)という実測経路が出来て
+**F-11のCSVは実測で埋まるようになった**が、**Swiftへの報告経路だけが取り残されていた**。
+
+見つかり方が問題だった: [Docs/FIELD_TEST_PLAN.md](Docs/FIELD_TEST_PLAN.md) の **T2 は
+「走行中の`LatencyReport`(1Hz)をSwift側でログ」して p95 を出す計画**で、
+つまり**計測当日にトラックで初めて「何も記録されていない」と気付く**ところだった。
+
+- **報告元をCSVと同一化**: `ARSessionManagerBridge` は `SensorTimingBridge.TryGetLatencyMs` を
+  直接読む。**CSVの `latency_m2p` と `LatencyReport` が同じ値**になり、
+  「どちらで評価したのか」が後から判らなくなることが無い
+- **区間統計を追加**: 1Hzの瞬時値ではサンプルの谷間で起きた超過を取りこぼすため、
+  `maxMs` / `overBudgetRatio` / `sampleCount` を併せて送る(Swift側に`@Published`で公開)。
+  JSONの追加キーなので既存の受け手は無改修で動く
+- **T2の手順を実態へ**: 主計測を**100HzのCSV**からのp95算出に変更し、`LatencyReport` は
+  走行中の目視確認と超過の記録に回した。1Hzの瞬時値サンプリングでp95を名乗るのは
+  そもそも無理がある(100Hzの実測が既にあるのだから使う)
+- **E2Eで両側を固定**: 「実測が無ければ -1 が流れる」「未計測は 20ms 予算を満たした扱いにならない」
+  を検証。捏造値が再び紛れ込む余地を塞いだ
+
+**残る前提**: 実測値そのものは **iOS実機でしか出ない**(エディタ・E2Eは -1)。
+§10 の20ms達成を主張するには実機でCSVを取る必要がある — そこは変わっていない。
+
+**検証**: フルコンパイル0エラー / ユニットテスト **303件 全PASS** /
+**E2E 181項目 全PASS**(M2P報告経路3項目を追加) / `swiftc -parse` 通過
+
 ### 2026-09-16 (2) — 屋外路面の分類: ARCore Scene Semantics の受け口を用意(既定は休眠)
 
 ARKitの面分類の語彙は屋内語(Floor / Wall / Ceiling / Table / …)で、**road が無い**。

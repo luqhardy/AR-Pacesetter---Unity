@@ -167,7 +167,7 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 | `SyncRateUpdated` | `value` (int 0-100) | 走行中 1Hz |
 | `AvatarStateChanged` | `state` = Idle/Run/Slow/Fast/Goal/Lost | 状態変化時 |
 | `GPSLost` / `GPSRecovered` | — | GPS FSM遷移時 |
-| `LatencyReport` | `ms` (double) | 走行中 1Hz(平滑化フレーム時間) |
+| `LatencyReport` | `ms` (double), `maxMs`・`overBudgetRatio`・`sampleCount`(実測サンプルがある時のみ) | 走行中 1Hz。**F-11のCSV `latency_m2p` と同じ `SensorTimingBridge` の実測値**(ARKitフレームのセンサー時刻と `CADisplayLink.targetTimestamp` の差)。`ms = -1` は未計測で、合成値は一切入らない。`maxMs`/`overBudgetRatio` は1Hzの瞬時値では拾えない超過を捉えるための区間統計 |
 | `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答 |
 | `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
 | `LowBattery` | — | **現在発火しない** — 唯一の送出元 `SafetyAndSystemController` が実行時に生成されないため(HANDOVER.md §5)。Swift側の購読は将来の有効化に備えて残置。※HUDのバッテリー黄色点滅(`PeripheralHUDManager`)は別実装で正常動作 |
@@ -226,7 +226,7 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 |---|---|---|
 | 距離・ペース | `LocationTracker.swift`(CoreLocation、精度20m以下のサンプルのみ採用・GPS飛び棄却) | 設定ペースからの推定 |
 | 心拍 | `HeartRateMonitor.swift`(HealthKit・Apple Watch。HKAnchoredObjectQueryでリアルタイム購読) | ランダム仮値 |
-| LatencyReport | Unity `LatencyBenchmarkRunner` のローリング平均M2P(走行中バックグラウンド計測) | 平滑化フレーム時間 |
+| LatencyReport | Unity `SensorTimingBridge` のM2P実測(ARKitフレーム時刻 → 提示予定時刻)。CSVと同一の供給元 | `-1`(未計測。もっともらしい値を返さない) |
 
 権限まわり(設定済み): カメラ・位置情報・モーション・Bluetooth・ヘルスケアの使用目的文をビルド設定(INFOPLIST_KEY)に、HealthKit entitlementを `AR_Runner_UI.entitlements` に追加済み。
 **初回のみXcodeで**: Signing & Capabilities → + Capability → **HealthKit** を追加(entitlementsファイルは同梱済みなので追加するだけ)。
