@@ -67,6 +67,9 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(planeOcclusion != null && !planeOcclusion.OccludeAvatarBehindPlanes,
             "occlusion: detected planes do not occlude the avatar by default");
 
+        var sceneScanner = FindFirstObjectByType<EnvironmentSceneScanner>(FindObjectsInactive.Include);
+        Check(sceneScanner != null, "bootstrap: EnvironmentSceneScanner exists under XROrigin");
+
         Camera cam = Camera.main;
         Check(cam != null, "scene: main camera exists");
         if (bridge == null || engine == null || session == null || cam == null)

@@ -1,4 +1,5 @@
 using UnityEngine;
+using Unity.XR.CoreUtils;
 
 /// <summary>
 /// シーンに手動配置しなくても新規マネージャー群が動作するよう、
@@ -69,6 +70,7 @@ public static class ARVisionSystemsBootstrap
         Ensure<ARPassthroughController>(); // 光学シースルー時のカメラ映像抑止
         Ensure<GlassViewRig>(); // ARグラス接続中の描画をグラスの画角・眼の位置へ切り替える
         Ensure<ARPlaneOcclusionController>(); // 検出平面がアバターを隠さないようにする(既定OFF)
+        EnsureEnvironmentSceneScanner(); // LiDAR密メッシュ + 面分類。非対応端末はARPlaneへ自動フォールバック
         Ensure<GoalLineController>(); // 目標距離接近時のARゴールライン(実行時生成)
 
         // M2P実測(§10)と100Hz IMU(§5.2)のネイティブ窓口。
@@ -99,5 +101,25 @@ public static class ARVisionSystemsBootstrap
         var go = new GameObject(gameObjectName ?? $"[Auto] {typeof(T).Name}");
         go.AddComponent<T>();
         Debug.Log($"[BOOTSTRAP] {typeof(T).Name} auto-created as '{go.name}'.");
+    }
+
+    private static void EnsureEnvironmentSceneScanner()
+    {
+        if (Object.FindFirstObjectByType<EnvironmentSceneScanner>(FindObjectsInactive.Include) != null)
+            return;
+
+        XROrigin origin = Object.FindFirstObjectByType<XROrigin>(FindObjectsInactive.Include);
+        if (origin == null)
+        {
+            Debug.LogWarning("[BOOTSTRAP] XROrigin not found; EnvironmentSceneScanner was not created.");
+            return;
+        }
+
+        // ARMeshManager は XROrigin の子でなければ動作しない。シーン配線を増やさず、
+        // 既存のAR Rigへ実行時に安全に追加する。
+        var go = new GameObject("[Auto] EnvironmentSceneScanner");
+        go.transform.SetParent(origin.transform, false);
+        go.AddComponent<EnvironmentSceneScanner>();
+        Debug.Log("[BOOTSTRAP] EnvironmentSceneScanner attached under XROrigin.");
     }
 }
