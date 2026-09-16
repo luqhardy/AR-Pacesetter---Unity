@@ -148,6 +148,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 - **Mac側の残作業(コード修正では閉じられない)**: UnityFrameworkのEmbed & Sign と
   `Data`フォルダのTarget Membership変更(SWIFT_INTEGRATION.md ②-2/②-3)。
   これが済むまで Swift 側は `#if canImport(UnityFramework)` の偽実装で動き続ける
+- **ARCore Scene Semantics は受け口のみ(未導入・休眠)**: 屋外路面を Road/Sidewalk/Terrain で分類し、ARKitに road が無い穴を埋めるための実装は入っているが、パッケージ(`arcore-unity-extensions#arf6`)と定義シンボル `ARCORE_EXTENSIONS` が未設定のため休眠中。接地判定は従来のまま(E2Eで固定)。**陸上トラックのタータン路面が UNLABELED に落ちる可能性が高く、その場合トラックでは効果ゼロ**(安全側に倒れるだけ)。導入手順と実機確認5項目は [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
 - **実地フィールドテスト**: `Docs/FIELD_TEST_PLAN.md` の T1〜T9 を実施(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)
 - **ルート同期**: MapRouteView(Swift)で表示するコースがUnityの逸脱判定(`SilentRouteRecoverer.routeWaypoints`)へ未接続。実ルート運用時はStartSessionへポリライン(緯度経度→開始点基準のローカル座標変換)を追加する必要がある。現状の逸脱検知はシミュレーション(D キー/E2E)のみ
 - **`SafetyAndSystemController` が未配線(TTC危険警告・低バッテリー退避が実行時に不在)**: スクリプトは存在するが、

@@ -70,6 +70,34 @@ public class E2EScenarioBehaviour : MonoBehaviour
         var sceneScanner = FindFirstObjectByType<EnvironmentSceneScanner>(FindObjectsInactive.Include);
         Check(sceneScanner != null, "bootstrap: EnvironmentSceneScanner exists under XROrigin");
 
+        // 屋外の画像分類(ARCore Scene Semantics)。パッケージ未導入のこの環境では休眠し、
+        // 接地判定が従来の幾何+ARKit面分類のまま変わらないことを縛る
+        var outdoorSemantics = FindFirstObjectByType<OutdoorSemanticClassifier>(FindObjectsInactive.Include);
+        Check(outdoorSemantics != null, "bootstrap: OutdoorSemanticClassifier auto-created");
+        if (outdoorSemantics != null)
+        {
+            Check(OutdoorSemanticClassifier.VerificationDefaultImageSemantics,
+                "verification: outdoor image semantics enabled by default");
+            Check(!outdoorSemantics.IsSupported,
+                $"semantics: dormant without ARCore Extensions (source: {outdoorSemantics.Source})");
+            Check(!outdoorSemantics.IsAvailable,
+                "semantics: no classification offered while dormant");
+            Check(outdoorSemantics.SampleCount == 0,
+                "semantics: no semantic image sampled (no ML cost on the 60fps path)");
+
+            // 休眠中に問い合わせても false を返すこと = 接地判定は1ミリも変わらない
+            Check(!outdoorSemantics.TryClassify(Vector3.zero, out SurfaceSemantic _),
+                "semantics: TryClassify refuses while dormant, so grounding is unchanged");
+
+            // ARKitに road が無い穴を埋める、という設計そのものの確認
+            Check(SurfaceSemanticMath.GroundPriority(SurfaceSemantic.Road)
+                  == SurfaceSemanticMath.GroundPriority(SurfaceSemantic.Floor),
+                "semantics: outdoor Road ranks as explicit ground, same as indoor Floor");
+            Check(SurfaceSemanticMath.Combine(SurfaceSemantic.Ceiling, SurfaceSemantic.Road)
+                  == SurfaceSemantic.Ceiling,
+                "semantics: a 3D face classification is never overridden by the image label");
+        }
+
         Camera cam = Camera.main;
         Check(cam != null, "scene: main camera exists");
         if (bridge == null || engine == null || session == null || cam == null)

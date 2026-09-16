@@ -345,7 +345,8 @@ public class GroundSnap : MonoBehaviour
 
             // LiDARメッシュ/ARPlaneが明示的に Ceiling/Table/Seat 等と分類した面は
             // 高さと法線が床らしくても採用しない。未分類の屋外路面は幾何判定へ残す。
-            int semanticPriority = SurfaceSemanticMath.GroundPriority(ARMeshSemanticSurface.FromRaycastHit(h));
+            int semanticPriority = SurfaceSemanticMath.GroundPriority(
+                ARMeshSemanticSurface.FromRaycastHit(h, OutdoorSemantics));
             if (semanticPriority == 0) continue;
 
             // 壁・天井を床と誤認しない。ARKitは垂直平面もコライダー付きで生成するため、
@@ -385,7 +386,8 @@ public class GroundSnap : MonoBehaviour
                 bestSemanticPriority = 0;
                 foreach (var hit in s_Hits)
                 {
-                    int semanticPriority = SurfaceSemanticMath.GroundPriority(SemanticForPlane(hit.trackableId));
+                    int semanticPriority = SurfaceSemanticMath.GroundPriority(
+                        SemanticForPlane(hit.trackableId, hit.pose.position));
                     if (semanticPriority == 0) continue;
 
                     // 垂直平面(壁)は地面にしない
@@ -430,7 +432,8 @@ public class GroundSnap : MonoBehaviour
 
                 foreach (var hit in s_Hits)
                 {
-                    int semanticPriority = SurfaceSemanticMath.GroundPriority(SemanticForPlane(hit.trackableId));
+                    int semanticPriority = SurfaceSemanticMath.GroundPriority(
+                        SemanticForPlane(hit.trackableId, hit.pose.position));
                     if (semanticPriority == 0) continue;
 
                     if (Vector3.Dot(hit.pose.up, Vector3.up) < GroundNormalMinDot) continue;
@@ -510,7 +513,7 @@ public class GroundSnap : MonoBehaviour
             // 開始位置がコライダー内部だと normal が零ベクトルで返り、壁と誤判定される
             if (h.distance <= 0.0001f) continue;
 
-            SurfaceSemantic semantic = ARMeshSemanticSurface.FromRaycastHit(h);
+            SurfaceSemantic semantic = ARMeshSemanticSurface.FromRaycastHit(h, OutdoorSemantics);
             if (semantic == SurfaceSemantic.Floor || semantic == SurfaceSemantic.Ceiling) continue;
             if (SurfaceSemanticMath.IsExplicitObstacle(semantic)) return true;
 
@@ -578,7 +581,7 @@ public class GroundSnap : MonoBehaviour
             if (h.transform.root == transform.root) continue;
             if (userCamera != null && h.transform.root == userCamera.root) continue;
 
-            if (!SurfaceSemanticMath.CanBeGround(ARMeshSemanticSurface.FromRaycastHit(h))) continue;
+            if (!SurfaceSemanticMath.CanBeGround(ARMeshSemanticSurface.FromRaycastHit(h, OutdoorSemantics))) continue;
 
             s_GroundCandidates.Add(new CliffMath.GroundCandidate(h.point.y, Vector3.Dot(h.normal, Vector3.up)));
         }
@@ -587,12 +590,33 @@ public class GroundSnap : MonoBehaviour
                                          GroundNormalMinDot, out groundY);
     }
 
-    private SurfaceSemantic SemanticForPlane(TrackableId trackableId)
+    private SurfaceSemantic SemanticForPlane(TrackableId trackableId, Vector3 worldPoint)
     {
         if (_arPlaneManager != null && _arPlaneManager.trackables.TryGetTrackable(trackableId, out ARPlane plane))
-            return ARMeshSemanticSurface.FromPlaneClassifications(plane.classifications);
+            return ARMeshSemanticSurface.FromPlaneClassifications(plane.classifications, worldPoint, OutdoorSemantics);
         return SurfaceSemantic.Unknown;
     }
+
+    /// <summary>
+    /// 屋外の画像分類の供給元(ARCore Scene Semantics)。未導入・未対応なら null 相当で、
+    /// 接地判定は従来の幾何 + ARKit面分類のまま1ミリも変わらない。
+    /// </summary>
+    private IOutdoorSemanticSource OutdoorSemantics
+    {
+        get
+        {
+            if (_outdoorSemantics == null && Time.time >= _nextOutdoorLookupTime)
+            {
+                // Bootstrapの生成順に依存しないよう、見つかるまで1秒間隔で探し直す
+                _nextOutdoorLookupTime = Time.time + 1f;
+                _outdoorSemantics = FindFirstObjectByType<OutdoorSemanticClassifier>(FindObjectsInactive.Include);
+            }
+            return _outdoorSemantics;
+        }
+    }
+
+    private OutdoorSemanticClassifier _outdoorSemantics;
+    private float _nextOutdoorLookupTime;
 
     private void UpdateAnimatorState(bool isHalted)
     {

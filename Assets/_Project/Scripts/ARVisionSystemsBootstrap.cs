@@ -71,6 +71,7 @@ public static class ARVisionSystemsBootstrap
         Ensure<GlassViewRig>(); // ARグラス接続中の描画をグラスの画角・眼の位置へ切り替える
         Ensure<ARPlaneOcclusionController>(); // 検出平面がアバターを隠さないようにする(既定OFF)
         EnsureEnvironmentSceneScanner(); // LiDAR密メッシュ + 面分類。非対応端末はARPlaneへ自動フォールバック
+        Ensure<OutdoorSemanticClassifier>(); // 屋外路面の画像分類(ARCore Scene Semantics)。未導入なら休眠
         Ensure<GoalLineController>(); // 目標距離接近時のARゴールライン(実行時生成)
 
         // M2P実測(§10)と100Hz IMU(§5.2)のネイティブ窓口。

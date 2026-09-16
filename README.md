@@ -145,6 +145,7 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
 | `GlassViewRig.cs` | ARグラス接続中の描画をグラスの画角・眼の位置・進行方向ヨーへ切り替える |
 | `GlassDisplayProfile.cs` / `GlassOpticsMath.cs` | グラスの機種テーブルと光学計算（画角換算・視野適合） |
 | `HeadPoseMath.cs` | 描画カメラの向きの供給元を決める（Anchorモードでの二重補正を回避） |
+| `OutdoorSemanticClassifier.cs` | 屋外路面の画像分類（ARCore Scene Semantics）。未導入時は休眠 |
 | `SwiftMessageSender.cs` | Unity→Swift送信（SyncRate/AvatarState/GPS/Latency/SessionEnded） |
 
 > Swift UI（[kyainna/AR-runner](https://github.com/kyainna/AR-runner)）との連携手順は [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) を参照。
@@ -558,6 +559,39 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 ---
 
 ## 6. 更新履歴
+
+### 2026-09-16 (2) — 屋外路面の分類: ARCore Scene Semantics の受け口を用意(既定は休眠)
+
+ARKitの面分類の語彙は屋内語(Floor / Wall / Ceiling / Table / …)で、**road が無い**。
+そのため屋内の接地は分類で確実に決まるのに、**第1期が実際に走る屋外は法線と高さという
+幾何だけ**で決めていた(直前のLiDAR面分類のコメントにもそう書いてある)。
+ARCore Scene Semantics は Road / Sidewalk / Terrain を直接返すので、そこだけを埋める。
+Geospatial APIと違い**推論は端末内で完結**するのでVPSのカバレッジに依存しない。
+
+導入手順・実機確認項目は [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)。
+
+- **`OutdoorSemanticClassifier.cs` 新規**: セマンティック画像を既定5Hzで引き、ワールド座標の点を
+  ARカメラへ投影して画素のラベルを返す。**ARCoreに触れるのは `#if ARCORE_EXTENSIONS` の中の
+  2メソッドだけ**で、パッケージ未導入の現在は完全に休眠する
+- **`SurfaceSemanticMath` 拡張**: 屋外ラベル(Road / Sidewalk / Terrain / Building / Sky /
+  Structure / Vehicle / Person / Tree / Water)を追加し、ARCoreのラベル値(0〜11)を**数値で**
+  受ける変換を用意した。数値で受けるのは、パッケージ無しでもユニットテストできるようにするため
+- **合成規則**: **3D面分類は画像分類に上書きされない**。メッシュの面分類はその三角形そのものの
+  分類で、画像は2D投影からの推定にすぎない。画像が効くのは3D側がUnknown/Otherのときだけ —
+  つまり「ARKitにroadが無い」その穴だけ。天井が画像でRoadと出ても天井のまま
+- **安全側の既定**: 未知のラベル・低信頼度・画面外・カメラ後方・サンプル切れはすべて
+  「分類しない」に落ち、接地判定は従来のまま。**水面は地面候補にしない**(ランナーを水へ
+  誘導しないため)が足踏み停止もさせない(水たまりで走行が止まる)。空は地面でも障害物でもない
+- **M2P予算(§10)**: 取得は5Hzに落とし、取得時に1度だけバイト配列へ写す。点の問い合わせは
+  配列参照だけなので、60fpsの描画経路にML推論を載せない
+
+**トラックで効かない可能性は織り込み済み**: ARCoreの定義ではROADは「車が走れる路面」、
+TERRAINは「草・土・砂」で、タータントラックはどちらでもない。UNLABELEDに落ちる公算が大きいが、
+その場合はUnknown扱いで従来の幾何判定へ戻るだけ(E2Eでその経路を固定した)。市街地・公園コース
+では効くため、効果が無ければ定義シンボルを外したまま第2期まで寝かせればよい。
+
+**検証**: フルコンパイル0エラー / ユニットテスト **303件 全PASS**(屋外分類で38件追加) /
+**E2E 178項目 全PASS**(「休眠していること」と「休眠中は接地判定が変わらないこと」を8項目で固定)
 
 ### 2026-09-16 — XREAL One統合の基盤: グラスの画角・グラスの視点で描く
 

@@ -61,6 +61,11 @@ Unityプロジェクト(本リポジトリ)+ SwiftUIホスト(`ios/`)のUaaLモ�
    **未解決(要チーム判断)**: F-03の3.0m前方と画角が両立しない — 身長1.75mのアバターは3.0mで垂直31.1°を占め
    全身が入らない(全身には3.7m必要)。§7.2のオーラ(足元)も視野外。**グラスの画面モードはFollow(固定)必須**
    (Anchorは二重補正)。iOSからグラスの頭部姿勢は原理的に取得不能。根拠は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
+11. **屋外路面の分類(ARCore Scene Semantics)の受け口を用意済み・既定は休眠**(`OutdoorSemanticClassifier` +
+   `SurfaceSemanticMath`)。ARKitの面分類には **road が無い**ため屋外の接地は幾何だけで決まっていた。
+   ARCoreに触れるのは `#if ARCORE_EXTENSIONS` の中だけで、未導入の現在は完全に休眠し接地判定は不変
+   (E2Eが「休眠」と「不変」を検証)。**3D面分類は画像分類に上書きされない**のが不変条件。
+   導入手順・実機確認項目は [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
 9. **【一時的・要復帰】GPSロストの自動判定→FSM遷移(F-09/F-10)がOFF**(2026-09-11、屋内可視性検証のため)。
    `GpsSignalMonitor.VerificationDefaultAutoLostHandling = false`。GPSが悪化してもアバターは消えず、
    HUD警告も出ない。**トラック実証(§11.2 ③)の前に `true` へ戻す**(E2Eの `verification:` 項目が戻し忘れを検知)

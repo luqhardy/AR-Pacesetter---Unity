@@ -53,6 +53,36 @@ public sealed class ARMeshSemanticSurface : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// 3D面分類に、屋外の画像分類(ARCore Scene Semantics)を重ねて解決する。
+    ///
+    /// <para>3D側が明示的に分類していればそちらが勝つ(<see cref="SurfaceSemanticMath.Combine"/>)。
+    /// 画像側が効くのは、ARKitの語彙に road が無いせいで屋外路面が Unknown で
+    /// 落ちてくるときだけ。供給元が無い/未対応なら結果は従来と完全に同一。</para>
+    /// </summary>
+    public static SurfaceSemantic FromRaycastHit(RaycastHit hit, IOutdoorSemanticSource outdoor)
+    {
+        SurfaceSemantic geometric = FromRaycastHit(hit);
+
+        if (outdoor == null || !outdoor.IsAvailable) return geometric;
+        if (!outdoor.TryClassify(hit.point, out SurfaceSemantic image)) return geometric;
+
+        return SurfaceSemanticMath.Combine(geometric, image);
+    }
+
+    /// <summary>ARPlane の分類に屋外の画像分類を重ねる(平面ヒットにはRaycastHitが無いため点で問い合わせる)。</summary>
+    public static SurfaceSemantic FromPlaneClassifications(PlaneClassifications classifications,
+                                                           Vector3 worldPoint,
+                                                           IOutdoorSemanticSource outdoor)
+    {
+        SurfaceSemantic geometric = FromPlaneClassifications(classifications);
+
+        if (outdoor == null || !outdoor.IsAvailable) return geometric;
+        if (!outdoor.TryClassify(worldPoint, out SurfaceSemantic image)) return geometric;
+
+        return SurfaceSemanticMath.Combine(geometric, image);
+    }
+
     public static SurfaceSemantic FromRaycastHit(RaycastHit hit)
     {
         if (hit.collider == null)
