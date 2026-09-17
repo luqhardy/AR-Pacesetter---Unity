@@ -1441,6 +1441,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Vector3 lastAvatarPos = engine.transform.position;
         Vector3 tangent = forward;
 
+        // ワープが出たフレームの文脈を残す。コーナーのフレークは再現が1/3程度で、
+        // 「最大何m跳んだか」だけでは原因が特定できない
+        var trackingForCorner = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
+        Vector3 lastEngineHeading = engine.CurrentHeading;
+        string worstJumpContext = "";
+
         while (theta < quarterTurnRadians)
         {
             // フレームヒッチ時に Time.deltaTime(timeScale=3で更に増幅)をそのまま使うと、
@@ -1473,16 +1479,32 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
             // ② ワープチェック(フレーム間のアバター移動量)
             float jump = Vector3.Distance(engine.transform.position, lastAvatarPos);
-            maxJump = Mathf.Max(maxJump, jump);
+            if (jump > maxJump)
+            {
+                maxJump = jump;
+                float headingSwing = Vector3.Angle(lastEngineHeading, engine.CurrentHeading);
+                worstJumpContext =
+                    $"θ={theta * Mathf.Rad2Deg:F1}° dt={dt * 1000f:F1}ms jump={jump:F2}m lead={lead:F2}m " +
+                    $"engineHeadingSwing={headingSwing:F1}° engineHeading={engine.CurrentHeading} " +
+                    $"trackHeading={(trackingForCorner != null ? trackingForCorner.CurrentHeading.ToString() : "n/a")} " +
+                    $"src={(trackingForCorner != null ? trackingForCorner.CurrentHeadingSource.ToString() : "n/a")} " +
+                    $"halted={engine.IsHalted} waiting={engine.IsWaitingForUser} " +
+                    $"overtake={engine.CurrentOvertakeState} recovery={engine.IsOverriddenByRecovery}";
+            }
             if (jump > maxFrameJump)
                 noWarp = false;
             lastAvatarPos = engine.transform.position;
+            lastEngineHeading = engine.CurrentHeading;
 
             yield return null;
         }
 
         Check(leadOk, $"corner: lead distance stayed 1-9m (min {minLead:F1}m / max {maxLead:F1}m)");
-        Check(noWarp, $"corner: no warp — max frame jump {maxJump:F2}m");
+        Debug.Log($"[E2E CORNER] worst frame — {worstJumpContext}");
+        Debug.Log($"[E2E CORNER] frame timing — maxDeltaTime={engine.MaxObservedDeltaSeconds * 1000f:F0}ms " +
+                  $"longFrames={engine.LongFrameCount} " +
+                  $"(飽和閾値 {1f / 2.5f * 1000f:F0}ms @k=2.5)");
+        Check(noWarp, $"corner: no warp — max frame jump {maxJump:F2}m ({worstJumpContext})");
 
         // ③ 接線追従: アバターの向きと進行方向の角度差
         float headingError = Vector3.Angle(engine.transform.forward, tangent);

@@ -143,6 +143,16 @@ public class AvatarEngine : MonoBehaviour
     /// <summary>純化済みの進行方向(水平・単位ベクトル)。ペースシンクロ色の
     /// 符号付きリード距離算出などに使う。待機/停止中も直近の向きを保持する。</summary>
     public Vector3 CurrentHeading => _currentLinearDirection;
+
+    // ── フレーム時間の診断 (コーナーのワープ調査) ───────────────────────────
+    // 位置追従は Lerp(現在, 目標, Time.deltaTime * k)。Unityの Lerp は t を [0,1] へ
+    // 丸めるため、**1フレームが 1/k 秒(k=2.5 なら0.4秒)を超えると t が飽和し、
+    // アバターは補間ではなく目標へ「瞬間移動」する**。実機のGCヒッチやE2Eの
+    // timeScale=3 では現実的に起こりうる。まず起きているのかを数える。
+    /// <summary>走行中に観測した最大の Time.deltaTime(秒)。</summary>
+    public float MaxObservedDeltaSeconds { get; private set; }
+    /// <summary>平滑化の上限に掛かった(=クランプが無ければ瞬間移動していた)フレーム数。</summary>
+    public int LongFrameCount { get; private set; }
     public float LeadDistanceMeters => leadDistanceMeters;
 
     public void StartPacing()
@@ -338,8 +348,21 @@ public class AvatarEngine : MonoBehaviour
         // 平滑の強さ(k)は変えないため手ブレ除去性能は落ちず、定常成分だけが消える
         Vector3 feedForward = ComputeTrackingLagFeedForward(filtered, posLerpSpeed);
 
+        // 長いフレームで補間係数が1へ飽和すると、追従ではなく目標への瞬間移動になる
+        // (k=2.5 なら400ms超で発生)。平滑化に使う経過時間に上限を掛けて防ぐ。
+        // 遅れは次フレーム以降で自然に解消するので、ワープより常に望ましい
+        if (Time.deltaTime > MaxObservedDeltaSeconds) MaxObservedDeltaSeconds = Time.deltaTime;
+        if (FrameSmoothing.WouldSaturate(Time.deltaTime, posLerpSpeed))
+        {
+            LongFrameCount++;
+            Debug.LogWarning($"[PACER ENGINE] 長いフレームを検出 — " +
+                             $"deltaTime={Time.deltaTime * 1000f:F0}ms k={posLerpSpeed} " +
+                             $"(飽和閾値 {FrameSmoothing.SaturationThresholdSeconds(posLerpSpeed) * 1000f:F0}ms)。" +
+                             $"平滑化は{FrameSmoothing.MaxSmoothingDeltaSeconds * 1000f:F0}msで頭打ちにして瞬間移動を防ぎます");
+        }
+
         _targetPacingPosition = Vector3.Lerp(_targetPacingPosition, filtered + feedForward,
-                                             Time.deltaTime * posLerpSpeed);
+                                             FrameSmoothing.Factor(Time.deltaTime, posLerpSpeed));
         
         // Align our internal tracking position with GroundSnap's actual height to avoid Y drift fighting
         _targetPacingPosition.y = transform.position.y;
@@ -549,7 +572,7 @@ public class AvatarEngine : MonoBehaviour
 
         // Smooth the multiplier so speed changes aren't abrupt
         _effectiveSpeedMultiplier = Mathf.Lerp(_effectiveSpeedMultiplier, targetMultiplier,
-                                               Time.deltaTime * 3.0f);
+                                               FrameSmoothing.Factor(Time.deltaTime, 3.0f));
     }
 
     // ════════════════════════════════════════════════════════════════════════
