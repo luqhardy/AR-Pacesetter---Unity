@@ -155,7 +155,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   `Data`フォルダのTarget Membership変更(SWIFT_INTEGRATION.md ②-2/②-3)。
   これが済むまで Swift 側は `#if canImport(UnityFramework)` の偽実装で動き続ける
 - **ARCore Scene Semantics は受け口のみ(未導入・休眠)**: 屋外路面を Road/Sidewalk/Terrain で分類し、ARKitに road が無い穴を埋めるための実装は入っているが、パッケージ(`arcore-unity-extensions#arf6`)と定義シンボル `ARCORE_EXTENSIONS` が未設定のため休眠中。接地判定は従来のまま(E2Eで固定)。**陸上トラックのタータン路面が UNLABELED に落ちる可能性が高く、その場合トラックでは効果ゼロ**(安全側に倒れるだけ)。導入手順と実機確認5項目は [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
-- **フレーム時間依存の平滑化が残っている箇所**: `Time.deltaTime * k` 形式の `Lerp` は 1フレームが 1/k 秒を超えると係数が1に飽和し、補間ではなく瞬間移動になる(2026-09-17に `AvatarEngine` は `FrameSmoothing` へ移行済み)。**未対応**: `GroundSnap` の接地平滑2箇所(飽和するとY方向のポップ)と `SilentRouteRecoverer` の位置・回転2箇所(飽和するとユーザー背後へワープ)。実機では走行中の最大フレームが330msに達しているため、追従速度kが3.0以上の箇所は現実的に飽和しうる
+- ~~**フレーム時間依存の平滑化**~~ → **全箇所移行済み**(2026-09-17)。`AvatarEngine`・`GroundSnap`・`SilentRouteRecoverer` は `FrameSmoothing.Factor` を経由し、`SpatialKalmanFilter` は時間単位化した。**新規コードで `Lerp(a, b, Time.deltaTime * k)` を書かないこと** — 1フレームが 1/k 秒を超えると 係数が1に飽和して瞬間移動になる(実機の走行中フレームは最大330msに達する)。`FrameSmoothing.Factor(Time.deltaTime, k)` を使う
 - **実地フィールドテスト**: `Docs/FIELD_TEST_PLAN.md` の T1〜T9 を実施(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)
 - **ルート同期**: MapRouteView(Swift)で表示するコースがUnityの逸脱判定(`SilentRouteRecoverer.routeWaypoints`)へ未接続。実ルート運用時はStartSessionへポリライン(緯度経度→開始点基準のローカル座標変換)を追加する必要がある。現状の逸脱検知はシミュレーション(D キー/E2E)のみ
 - **`SafetyAndSystemController` が未配線(TTC危険警告・低バッテリー退避が実行時に不在)**: スクリプトは存在するが、

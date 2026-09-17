@@ -61,6 +61,10 @@ public static class DevDiagnostics
             Add(rows, "csv.imuSource", telemetry.ImuSource);
             Add(rows, "csv.nativeImuRows", telemetry.NativeImuRowCount.ToString(CultureInfo.InvariantCulture));
             Add(rows, "csv.droppedRows", telemetry.DroppedRowCount.ToString(CultureInfo.InvariantCulture));
+            Add(rows, "csv.timeline", telemetry.TimelineSource);
+            Add(rows, "csv.loggedSpanSec", Num(telemetry.LoggedSpanSeconds));
+            Add(rows, "csv.wallClockSpanSec", Num(telemetry.WallClockSpanSeconds));
+            Add(rows, "csv.timelineDriftSec", Num(telemetry.TimelineDriftSeconds));
             Add(rows, "csv.path", telemetry.CurrentFilePath ?? "");
         }
 

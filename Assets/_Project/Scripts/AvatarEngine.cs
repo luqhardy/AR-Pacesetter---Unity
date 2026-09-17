@@ -1075,7 +1075,7 @@ public class AvatarEngine : MonoBehaviour
 
     private Vector3 SmoothSpatialData(Vector3 raw)
     {
-        _spatialFilter.Update(raw.x, raw.y, raw.z, out float ox, out float oy, out float oz);
+        _spatialFilter.Update(raw.x, raw.y, raw.z, Time.deltaTime, out float ox, out float oy, out float oz);
         return new Vector3(ox, oy, oz);
     }
 }

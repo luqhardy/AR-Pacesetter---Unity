@@ -422,6 +422,21 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         // H5: IMUの供給元。エディタにはジャイロが無いので近似にフォールバックするのが正。
         // 実機では "device"(CoreMotion)、Swift供給時は "external" になる
+        // CSVのtimestamp列がどの時間軸かを明示できること。解析側がこれを知らないと
+        // 「合成100Hzの等間隔タイムライン」を実時間として読んでしまう
+        Check(telemetry != null && telemetry.TimelineSource == "synthetic 100Hz",
+            $"telemetry: editor CSV declares the synthetic timeline (got {telemetry?.TimelineSource})");
+        // ドリフトの符号は環境依存(合成タイムラインはスケール時間で進むため、
+        // timeScale=3 のE2Eでは壁時計より先行する)。ここでは「測れていること」だけを縛り、
+        // 値そのものは開発者モードで実機の timeScale=1 のときに読む
+        if (telemetry != null)
+            Debug.Log($"[E2E TELEMETRY] timeline={telemetry.TimelineSource} " +
+                      $"logged={telemetry.LoggedSpanSeconds:F2}s wall={telemetry.WallClockSpanSeconds:F2}s " +
+                      $"drift={telemetry.TimelineDriftSeconds:F2}s (timeScale={Time.timeScale})");
+        Check(telemetry != null && telemetry.LoggedSpanSeconds > 0.0
+              && telemetry.WallClockSpanSeconds > 0.0,
+            "telemetry: both the CSV timeline span and the wall-clock span are measurable");
+
         Check(telemetry != null && telemetry.ImuSource == "approximated",
             "telemetry: IMU source falls back to approximation in editor (device/external on hardware)");
 
@@ -1197,9 +1212,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // ── Step 6: HUD自動抑制 (首振り検知で四隅表示をフェード) ──────────────
         if (hud != null)
         {
+            // フレーム数でも下限を切る: バッチモードでは1フレームが330msに達することがあり、
+            // 経過時間だけで回すとループが2回しか回らずに抑制を観測し損ねる
+            // (2026-09-17に1回だけ落ちたのはこれ)
             bool sawSuppressed = false;
-            for (float t = 0; t < 0.7f; t += Time.deltaTime)
+            int hudFrames = 0;
+            for (float t = 0; t < 0.7f || hudFrames < 20; t += Time.deltaTime)
             {
+                hudFrames++;
                 _cameraMover.Rotate(0f, 300f * Time.deltaTime, 0f); // 素早い首振り(>120°/s)
                 if (hud.CurrentHudVisibility < 0.85f) sawSuppressed = true;
                 yield return null;

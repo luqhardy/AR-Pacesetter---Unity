@@ -228,7 +228,9 @@ public class GroundSnap : MonoBehaviour
         // 4. Terrain Normal Alignment
         if (alignWithTerrainNormal)
         {
-            _currentNormal = Vector3.Slerp(_currentNormal, groundNormal, Time.deltaTime * alignmentSpeed);
+            // 長いフレームで係数が1に飽和すると傾きが1フレームで飛ぶ(FrameSmoothing 参照)
+            _currentNormal = Vector3.Slerp(_currentNormal, groundNormal,
+                                           FrameSmoothing.Factor(Time.deltaTime, alignmentSpeed));
             
             // Limit tilt angle
             float tilt = Vector3.Angle(Vector3.up, _currentNormal);
@@ -238,7 +240,8 @@ public class GroundSnap : MonoBehaviour
             }
 
             Quaternion targetRot = Quaternion.FromToRotation(transform.up, _currentNormal) * transform.rotation;
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * alignmentSpeed);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot,
+                                                  FrameSmoothing.Factor(Time.deltaTime, alignmentSpeed));
         }
 
         ApplyFloorVisibilityGate();

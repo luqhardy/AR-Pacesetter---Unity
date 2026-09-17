@@ -55,6 +55,8 @@ public class RunTelemetryLogger : MonoBehaviour
     private readonly double[] _imuSampleTimes = new double[SensorTimingBridge.MaxDrainPerFrame];
     private readonly float[]  _imuSampleXyz   = new float[SensorTimingBridge.MaxDrainPerFrame * 3];
     private double _mediaTimeAtLogStart;
+    private float _logStartRealtime;
+    private long _lastWrittenTsMs;
 
     // 実機供給値(未供給時は下記のエディタ近似/0)
     private double _gpsLat, _gpsLon;
@@ -112,6 +114,34 @@ public class RunTelemetryLogger : MonoBehaviour
 
     /// <summary>ネイティブ100Hzサンプルから書いた行数(0ならフレーム同期の擬似100Hz)。</summary>
     public long NativeImuRowCount { get; private set; }
+
+    /// <summary>
+    /// CSVの <c>timestamp</c> 列がどの時間軸か。解析側はこれを知らないと誤読する。
+    ///
+    /// <para><b>native sample times</b>: 実機のCoreMotionサンプル自身の観測時刻。実時間と一致する。</para>
+    /// <para><b>synthetic 100Hz</b>: サンプル番号×10msの合成タイムライン(エディタ・ネイティブ非対応時)。
+    /// 行は等間隔だが、フレームがヒッチした分だけ<b>実時間から遅れる</b> —
+    /// 1フレームで書ける行数に上限(50行)があり、残りは次フレームへ繰り越されるため。
+    /// 総経過時間の絶対値をこの列から読んではいけない。</para>
+    /// </summary>
+    public string TimelineSource => NativeImuRowCount > 0 ? "native sample times" : "synthetic 100Hz";
+
+    /// <summary>CSVのtimestamp列が示す経過秒(最後の行 − 開始)。</summary>
+    public double LoggedSpanSeconds => _logging && _lastWrittenTsMs > 0
+        ? (_lastWrittenTsMs - _logStartEpochMs) / 1000.0 : 0.0;
+
+    /// <summary>
+    /// 実時間(壁時計)の経過秒。<see cref="LoggedSpanSeconds"/> との差がタイムラインのずれ。
+    ///
+    /// <para><b>注意</b>: 合成タイムラインは <c>Time.deltaTime</c>(=Unityのスケール時間)で
+    /// 進むため、<c>Time.timeScale != 1</c> の環境(E2Eは3倍)では壁時計より<b>先に</b>進む。
+    /// 実機は timeScale=1 なので、そこでの差はフレームヒッチによる繰り越し遅れだけを表す。</para>
+    /// </summary>
+    public double WallClockSpanSeconds => _logging
+        ? Mathf.Max(0f, Time.realtimeSinceStartup - _logStartRealtime) : 0.0;
+
+    /// <summary>合成タイムラインが実時間からどれだけ遅れているか(秒)。</summary>
+    public double TimelineDriftSeconds => WallClockSpanSeconds - LoggedSpanSeconds;
 
     /// <summary>
     /// 端末のIMU(iOSではCoreMotion)を100Hzで起動する。F-11のCSVの
@@ -232,6 +262,7 @@ public class RunTelemetryLogger : MonoBehaviour
     private void AppendRowAt(long tsMs)
     {
         var ci = CultureInfo.InvariantCulture;
+        _lastWrittenTsMs = tsMs; // TimelineSource / ドリフト診断用
 
         Vector3 avatarPos = avatarEngine != null ? avatarEngine.transform.position : Vector3.zero;
 
@@ -290,6 +321,8 @@ public class RunTelemetryLogger : MonoBehaviour
         DroppedRowCount = 0;
         _sampleAccumulator = 0f;
         _logStartEpochMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        _logStartRealtime = Time.realtimeSinceStartup;
+        _lastWrittenTsMs = 0;
         _sampleIndex = 0;
         NativeImuRowCount = 0;
 
