@@ -67,6 +67,7 @@ struct HomeView: View {
     @ObservedObject private var bridge = UnityBridge.shared
     @ObservedObject private var external = ExternalDisplayManager.shared
     @StateObject private var locationManager = HomeLocationManager()
+    @State private var showDevMode = false
 
     private let accent = Color(hex: "#c7f219")
     private let cardColor = Color(hex: "#1C1C1E")
@@ -92,6 +93,7 @@ struct HomeView: View {
             bridge.requestHistory()
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showDevMode) { DevModeView() }
     }
 
     // MARK: - Header
@@ -128,6 +130,13 @@ struct HomeView: View {
                 }
                 Button { onDisclaimer() } label: {
                     Label("安全上の注意", systemImage: "exclamationmark.shield")
+                }
+
+                // 開発者モード: 走行ログCSVの取り出しと実機の状態確認。
+                // 第1期の成果物(CSV)はサンドボックス内にあり、これが唯一の取り出し口
+                Divider()
+                Button { showDevMode = true } label: {
+                    Label("開発者モード", systemImage: "wrench.and.screwdriver")
                 }
             } label: {
                 Image(systemName: "line.3.horizontal")

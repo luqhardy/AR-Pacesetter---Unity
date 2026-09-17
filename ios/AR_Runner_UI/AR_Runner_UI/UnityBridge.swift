@@ -40,6 +40,14 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var history: [HistoryEntry] = []  // RequestHistory応答(新しい順)
     @Published var lowBatteryMode = false        // Unity側が低バッテリー退避したら true
 
+    // MARK: 開発者モード (Unityからのスナップショット)
+    /// `RequestDiagnostics` の応答。表示順を保つため配列で保持する
+    @Published var diagnostics: [DiagnosticRow] = []
+    /// `RequestLogFiles` の応答。F-11走行ログCSVの一覧(新しい順)
+    @Published var logFiles: [LogFile] = []
+    /// 走行ログの保存ディレクトリ(Unityの persistentDataPath 配下)
+    @Published var logDirectory: String = ""
+
     // MARK: Types
     enum AvatarState: String {
         case idle = "Idle"
@@ -61,6 +69,39 @@ final class UnityBridge: NSObject, ObservableObject {
         let distanceKm: Double
         let elapsedSeconds: Double
         let calories: Double     // Unity側でオンボーディング体重から算出
+    }
+
+    struct DiagnosticRow: Identifiable {
+        let id = UUID()
+        let key: String
+        let value: String
+    }
+
+    /// F-11走行ログCSVの1件。`url` は共有シートへそのまま渡せる
+    struct LogFile: Identifiable {
+        let id = UUID()
+        let name: String
+        let path: String
+        let bytes: Int
+        let modifiedIso: String
+
+        var url: URL { URL(fileURLWithPath: path) }
+
+        var sizeLabel: String {
+            ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+        }
+
+        /// "09/17 14:23" 形式(ファイル名の日時と突き合わせやすい形)
+        var modifiedLabel: String {
+            let parser = ISO8601DateFormatter()
+            parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let date = parser.date(from: modifiedIso)
+                ?? ISO8601DateFormatter().date(from: modifiedIso)
+            guard let date else { return modifiedIso }
+            let out = DateFormatter()
+            out.dateFormat = "MM/dd HH:mm"
+            return out.string(from: date)
+        }
     }
 
     struct HistoryEntry: Identifiable {
@@ -215,6 +256,21 @@ final class UnityBridge: NSObject, ObservableObject {
                     payload: ["command": "SetGpsLostHandling", "enabled": enabled])
     }
 
+    /// 開発者モード: 現在の状態スナップショットを要求する(Diagnostics イベントで返る)。
+    func requestDiagnostics() {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "RequestDiagnostics"])
+    }
+
+    /// 開発者モード: F-11走行ログCSVの一覧を要求する(LogFiles イベントで返る)。
+    ///
+    /// CSVはUnityの persistentDataPath 配下にあり、これまでアプリからは存在すら見えなかった。
+    /// 第1期の成果物そのものなので、一覧とパスを受け取って共有シートで書き出せるようにする。
+    func requestLogFiles() {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "RequestLogFiles"])
+    }
+
     /// Request past run history from Unity's session store (HistoryData event).
     func requestHistory() {
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
@@ -253,6 +309,21 @@ final class UnityBridge: NSObject, ObservableObject {
                 if let maxMs = dict["maxMs"] as? Double { self.motionToPhotonMaxMs = maxMs }
                 if let ratio = dict["overBudgetRatio"] as? Double { self.motionToPhotonOverBudgetRatio = ratio }
                 if let count = dict["sampleCount"] as? Int { self.motionToPhotonSampleCount = count }
+            case "Diagnostics":
+                let rows = dict["rows"] as? [[String: Any]] ?? []
+                self.diagnostics = rows.map {
+                    DiagnosticRow(key: $0["key"] as? String ?? "",
+                                  value: $0["value"] as? String ?? "")
+                }
+            case "LogFiles":
+                self.logDirectory = dict["directory"] as? String ?? ""
+                let files = dict["files"] as? [[String: Any]] ?? []
+                self.logFiles = files.map {
+                    LogFile(name: $0["name"] as? String ?? "",
+                            path: $0["path"] as? String ?? "",
+                            bytes: $0["bytes"] as? Int ?? 0,
+                            modifiedIso: $0["modifiedIso"] as? String ?? "")
+                }
             case "SessionEnded":
                 let result = SessionResult(
                     grade: dict["grade"] as? String ?? "D",

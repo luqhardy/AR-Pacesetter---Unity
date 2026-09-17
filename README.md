@@ -145,6 +145,7 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
 | `GlassViewRig.cs` | ARグラス接続中の描画をグラスの画角・眼の位置・進行方向ヨーへ切り替える |
 | `GlassDisplayProfile.cs` / `GlassOpticsMath.cs` | グラスの機種テーブルと光学計算（画角換算・視野適合） |
 | `HeadPoseMath.cs` | 描画カメラの向きの供給元を決める（Anchorモードでの二重補正を回避） |
+| `DevDiagnostics.cs` | 開発者モードの状態スナップショットと走行ログCSV一覧の組み立て |
 | `OutdoorSemanticClassifier.cs` | 屋外路面の画像分類（ARCore Scene Semantics）。未導入時は休眠 |
 | `SwiftMessageSender.cs` | Unity→Swift送信（SyncRate/AvatarState/GPS/Latency/SessionEnded） |
 
@@ -559,6 +560,35 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 ---
 
 ## 6. 更新履歴
+
+### 2026-09-17 — 開発者モード: 走行ログCSVの取り出しと実機状態の可視化
+
+**第1期の成果物(技術限界データのCSV)が、端末から取り出せなかった。**
+書き出し先は Unity の `persistentDataPath/RunLogs/` で、Swift側には `UIFileSharingEnabled` も
+共有UIも無く(`ShareLink`/`UIActivityViewController`/`fileExporter` は1箇所も使われていなかった)、
+**取り出す手段はMacのXcodeでコンテナをダウンロードすることだけ**だった。
+トラックで走った直後にその場で確認・共有することができない状態。
+
+- **`DevDiagnostics.cs` 新規**: 状態スナップショットと走行ログ一覧をJSONで組み立てる。
+  `RequestDiagnostics` / `RequestLogFiles` の2コマンドで取得する
+- **`DevModeView.swift` 新規**(ホーム右上メニュー → 開発者モード):
+  - **走行ログCSVの一覧**(新しい順・日時とサイズ付き)。タップで共有シート →
+    AirDrop・ファイルへ保存・メールなど、**Mac無しでその場から書き出せる**
+  - **状態の可視化**: M2Pが実測か未計測か・IMUの供給元・CSVの欠落行数・GPS判定の状態
+    (自動判定ON/OFF、初回測位の取得有無)・グラスの画角と光学適合レポート・
+    屋外画像分類の供給元・§10の位置誤差と連続稼働・FSM・目標/実fps。1秒ごとに自動更新
+- **数字を作らない**: スナップショットは未計測を `-1` のまま出す。この画面で嘘をつくと
+  実機での判断を誤らせるため(M2Pの捏造を止めた経緯と同じ方針)
+
+**検証**: フルコンパイル0エラー / ユニットテスト **303件 全PASS** /
+**E2E 194項目 全PASS**(開発者モード6項目を追加。走行中のファイルが一覧に載ることまで確認) /
+`swiftc -parse` 通過。**Swiftは構文検査のみ**(型検査・実機動作はMacでの確認が必要)。
+新規Swiftファイルはプロジェクトが `PBXFileSystemSynchronizedRootGroup` のため
+Xcodeへの手動追加は不要。
+
+**E2Eの既知のフレーク**: 3回中1回、コーナー追従の `no warp`(最大フレーム跳び5.10m)と
+それに続く視野判定が落ちた。残り2回は全PASS。コーナーのフレークは過去にも再発しており
+(2026-09-02のエントリ参照)、今回の変更との因果は特定できていない。**要観察**。
 
 ### 2026-09-16 (4) — GPSロスト判定を仕様どおりONへ復帰(屋内で消える問題は恒久解決)
 

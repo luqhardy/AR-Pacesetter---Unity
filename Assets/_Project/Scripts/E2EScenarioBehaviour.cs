@@ -460,6 +460,28 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
         string telemetryPath = telemetry != null ? telemetry.CurrentFilePath : null;
 
+        // ── 開発者モード: 第1期の成果物(CSV)を端末から取り出せること ──────────
+        // CSVは persistentDataPath 配下にあり、これまでアプリからは存在すら見えなかった。
+        // 一覧と状態スナップショットが壊れていないことをここで縛る
+        string devSnapshot = DevDiagnostics.BuildSnapshotJson();
+        Check(devSnapshot.StartsWith("{\"event\":\"Diagnostics\""),
+            "dev: diagnostics snapshot is a Diagnostics event");
+        Check(devSnapshot.Contains("m2p.native") && devSnapshot.Contains("gps.autoLostHandling")
+              && devSnapshot.Contains("render.targetFps"),
+            "dev: snapshot carries the keys the field test needs");
+        // 改行・タブが混ざるとSwift側のJSON解釈が壊れる。エスケープ済みであること
+        Check(devSnapshot.IndexOf((char)10) < 0 && devSnapshot.IndexOf((char)9) < 0,
+            "dev: snapshot values are escaped so the JSON survives paths and reports");
+
+        string devLogs = DevDiagnostics.BuildLogFilesJson();
+        Check(devLogs.StartsWith("{\"event\":\"LogFiles\"") && devLogs.EndsWith("]}"),
+            "dev: log listing is a well-formed LogFiles event");
+        Check(devLogs.Contains(DevDiagnostics.Escape(DevDiagnostics.LogDirectory)),
+            "dev: log listing reports the RunLogs directory so Swift can show where files live");
+        if (!string.IsNullOrEmpty(telemetryPath))
+            Check(devLogs.Contains(DevDiagnostics.Escape(System.IO.Path.GetFileName(telemetryPath))),
+                $"dev: the run in progress appears in the log listing ({System.IO.Path.GetFileName(telemetryPath)})");
+
         // ── F-07 現在ペース表示 / F-10 安全警告 ────────────────────────────
         var hud = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
         Check(hud != null, "hud: PeripheralHUDManager present");

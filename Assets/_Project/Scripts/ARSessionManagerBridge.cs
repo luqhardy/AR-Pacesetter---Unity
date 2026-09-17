@@ -148,6 +148,8 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "RequestHistory": HandleRequestHistory(); break;
             case "ResumeSession": HandleResumeSession(); break;
             case "SetGpsLostHandling": HandleSetGpsLostHandling(cmd); break;
+            case "RequestDiagnostics": SwiftMessageSender.SendRaw(DevDiagnostics.BuildSnapshotJson()); break;
+            case "RequestLogFiles": SwiftMessageSender.SendRaw(DevDiagnostics.BuildLogFilesJson()); break;
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown command: {cmd.command}");
                 break;
