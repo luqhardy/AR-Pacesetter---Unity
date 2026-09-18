@@ -86,6 +86,10 @@ public static class DevDiagnostics
             Add(rows, "glass.profile", glass.ActiveProfile != null ? glass.ActiveProfile.ToString() : "");
             Add(rows, "glass.orientation", glass.OrientationSource.ToString());
             Add(rows, "glass.downPitchDeg", Num(glass.AppliedDownPitchDegrees));
+            Add(rows, "glass.viewportAspect", Num(glass.ViewportAspect));
+            Add(rows, "glass.fillsScreen", glass.IsGlassOutputActive
+                ? (glass.ViewportMatchesGlass ? "一致(画面を埋めている)" : "不一致(帯が出る)")
+                : "-");
             if (!string.IsNullOrEmpty(glass.LastFitReport))
                 Add(rows, "glass.fit", glass.LastFitReport);
         }
@@ -114,6 +118,7 @@ public static class DevDiagnostics
         if (visibility != null)
             Add(rows, "avatar.visibility", visibility.IsVisible ? "表示中" : visibility.CurrentReason);
 
+        Add(rows, "render.screenPx", $"{Screen.width}x{Screen.height}");
         Add(rows, "render.targetFps", Application.targetFrameRate.ToString(CultureInfo.InvariantCulture));
         Add(rows, "render.currentFps", Num(Time.smoothDeltaTime > 0.0001f ? 1f / Time.smoothDeltaTime : -1f));
         Add(rows, "app.persistentDataPath", Application.persistentDataPath);

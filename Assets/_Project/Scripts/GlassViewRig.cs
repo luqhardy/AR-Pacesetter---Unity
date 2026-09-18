@@ -63,6 +63,19 @@ public sealed class GlassViewRig : MonoBehaviour
 
     /// <summary>足元の地面が見え始める距離(m)。∞ なら地面は一切視野に入らない。</summary>
     public float NearestVisibleGroundMeters { get; private set; } = float.PositiveInfinity;
+
+    /// <summary>出力カメラのビューポート縦横比(=実際の描画面の縦横比)。</summary>
+    public float ViewportAspect => _outputCamera != null ? _outputCamera.aspect : 0f;
+
+    /// <summary>
+    /// 描画面がグラスの縦横比と一致しているか。**false なら画面を埋めきれていない** —
+    /// Swift側でUnityビューを移設したときに描画面(CAMetalLayer)の作り直しが
+    /// 効いていないことを意味する。この場合でも横方向の画角は実物に合わせるため
+    /// 見え方は歪まないが、上下に描かない帯が出る(または上下がはみ出す)。
+    /// </summary>
+    public bool ViewportMatchesGlass =>
+        ActiveProfile != null && ActiveProfile.OverridesProjection && _outputCamera != null
+        && System.Math.Abs(_outputCamera.aspect - ActiveProfile.Aspect) <= 0.01;
     public string LastFitReport { get; private set; } = string.Empty;
 
     void Awake() => Resolve();
@@ -108,7 +121,9 @@ public sealed class GlassViewRig : MonoBehaviour
         ApplyHudSafeArea();
         UpdateOutputCamera();
 
-        Debug.Log($"[GLASS] 出力リグ起動: {profile}");
+        Debug.Log($"[GLASS] 出力リグ起動: {profile} / 描画面 {Screen.width}x{Screen.height} " +
+                 $"(アスペクト {ViewportAspect:F3} 期待 {profile.Aspect:F3} " +
+                 $"{(ViewportMatchesGlass ? "一致" : "不一致=画面を埋めきれていない")})");
     }
 
     /// <summary>グラス切断。ARKitカメラの描画へ戻す。</summary>

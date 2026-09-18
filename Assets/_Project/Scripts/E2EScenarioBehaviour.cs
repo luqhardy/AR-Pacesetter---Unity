@@ -565,6 +565,15 @@ public class E2EScenarioBehaviour : MonoBehaviour
                         "glass: output camera clears to black (see-through glasses treat black as transparent)");
                     Check(!ReferenceEquals(Camera.main, outCam),
                         "glass: output camera does not steal Camera.main from the AR camera");
+
+                    // 描画面がグラスの縦横比と一致しているかを機械的に判定できること。
+                    // 実機で「グラスを埋めているか」はこの値で判断する(バッチモードの
+                    // ビューポートは16:9ではないので、ここでは判定が機能することだけを縛る)
+                    Check(glassRig.ViewportAspect > 0f,
+                        $"glass: viewport aspect is measurable ({glassRig.ViewportAspect:F3})");
+                    Check(glassRig.ViewportMatchesGlass ==
+                          (Mathf.Abs(glassRig.ViewportAspect - (float)glassRig.ActiveProfile.Aspect) <= 0.01f),
+                        "glass: fills-the-screen check agrees with the measured aspect");
                 }
 
                 Check(phoneCamera == null || phoneCamera.cullingMask == 0,

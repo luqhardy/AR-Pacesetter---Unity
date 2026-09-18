@@ -82,6 +82,10 @@ XREAL One は iPhone(USB-C)に対して**外部ディスプレイ**として振�
 - 切断 → 走行画面の`UnityContainerView`が自動でiPhone側へ回収
 - 接続検知は DeviceConnectView のARグラス行に自動反映され、Unityの`ConnectXREAL`も送信される
 - グラス出力中、iPhoneの走行画面は「ARビューはグラスに出力中」表示+HUD操作に切替
+- **移設時は描画面(CAMetalLayer)のスケールも移設先へ合わせる**。`contentScaleFactor` を
+  iPhoneの@3xのままにするとグラスで縦横比が合わず、描画面積も最大9倍になって60fps/M2Pを壊す。
+  `ExternalDisplayManager.matchRenderScale` が移設・回収の両方で処理する。
+  埋まっているかは開発者モードの `glass.fillsScreen`(期待値: 一致)で確認する
 
 **前提(重要)**: 外部ディスプレイ用のシーンは、アプリが**マルチシーンに対応している場合のみ**
 iOSが生成する。`UIApplicationSupportsMultipleScenes` が false だと `ExternalSceneDelegate` は
