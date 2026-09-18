@@ -442,7 +442,17 @@ struct RunningView: View {
                 // 画面ロック — 最前面。走行・Unityの描画は裏で続いており、
                 // 上へスワイプすると元の走行画面へそのまま戻る
                 if isLocked {
-                    LockScreenView(onUnlock: { isLocked = false })
+                    LockScreenView(
+                        onUnlock: { isLocked = false },
+                        // 停止ボタン(hsu/main 由来)。onEnd()だけを呼ぶと Unity へ EndSession が
+                        // 飛ばず記録が閉じないため、通常の終了と同じ順序を通す
+                        onEnd: {
+                            isLocked = false
+                            session.end()               // Unityへ EndSession → SessionEnded
+                            UnityLauncher.shared.pause()
+                            onEnd()
+                        }
+                    )
                         .transition(.opacity)
                 }
             }

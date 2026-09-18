@@ -80,6 +80,10 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 lastRunCard
+                if locationManager.isPermissionDenied {
+                    LocationPermissionMessage()
+                        .frame(maxWidth: .infinity)
+                }
                 bottomStartCard
             }
             .padding(.horizontal, 20)
@@ -352,16 +356,23 @@ private struct SlideToStartButton: View {
 private final class HomeLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var userCoordinate: CLLocationCoordinate2D?
     @Published var suggestedRoute: [CLLocationCoordinate2D]?
+    @Published private(set) var authorizationStatus: CLAuthorizationStatus
 
     private let manager = CLLocationManager()
 
     override init() {
+        authorizationStatus = manager.authorizationStatus
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
     }
 
+    var isPermissionDenied: Bool {
+        authorizationStatus == .denied || authorizationStatus == .restricted
+    }
+
     func start() {
+        authorizationStatus = manager.authorizationStatus
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
@@ -373,6 +384,7 @@ private final class HomeLocationManager: NSObject, ObservableObject, CLLocationM
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
         if manager.authorizationStatus == .authorizedWhenInUse
             || manager.authorizationStatus == .authorizedAlways {
             manager.startUpdatingLocation()

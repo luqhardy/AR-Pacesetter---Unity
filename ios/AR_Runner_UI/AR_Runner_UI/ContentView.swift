@@ -104,8 +104,8 @@ struct ContentView: View {
             // 4. Draw route on map
             case .mapRoute:
                 MapRouteView(
-                    onStart: { screen = .running },
-                    onBack:  { screen = .runningSettings }
+                    onNext: { screen = .running },
+                    onBack: { screen = .runningSettings }
                 )
 
             // 5. Running screen (Unity ARビュー + HUD)
@@ -123,7 +123,10 @@ struct ContentView: View {
             case .stats:
                 StatsView(
                     onHistory: { historyOrigin = .stats; screen = .history },
-                    onBack:    { screen = .home }
+                    onBack:    { screen = .home },
+                    // 「終了」と「戻る」を分けた(hsu/main 由来)。どちらもホームだが、
+                    // 戻る導線が後から変わっても終了の行き先は動かない
+                    onFinish:  { screen = .home }
                 )
 
             // 7. History

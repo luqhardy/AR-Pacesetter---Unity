@@ -562,6 +562,38 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-18 (3) — hsuyaminmyat625/AR_project との2回目の合体(位置情報許可・マップ・停止ボタン)
+
+UI別リポジトリが5コミット進んでいたので取り込んだ。両リポジトリは**ディレクトリ構成が違う**
+(相手はルート直下 `AR_Runner_UI/`、本リポジトリは `ios/AR_Runner_UI/`)ため、
+前回同様に**履歴は合体・ファイルは精査して移植**する方針。
+
+**取り込んだもの**:
+- **`LocationPermissionMessage.swift` 新規**: 位置情報が拒否/制限のときに理由と設定導線を出す
+- **HomeView**: 許可状態を監視し、拒否時にホームへ上記バナーを表示(開発者モードのメニューとは自動マージで両立)
+- **maprouteview**: 相手側の全面改稿を採用(Unity依存が無いため丸ごと)。
+  ハードコードされた大阪の固定ルートから、現在地ベースの実装になった
+- **lockscreenview**: ロック画面に停止ボタン。**ただし `onEnd()` を直接呼ぶ実装は使わず**、
+  通常の終了と同じ順序(`session.end()` → Unityへ EndSession → `pause()` → 画面遷移)へ繋いだ。
+  そのまま繋ぐと記録が閉じずUnityが走り続ける
+- **RunningSettingsView**: キーボードを開いたまま「次へ」を押すと入力値が捨てられる不具合の修正
+  (`finishEditing()`)。**共有ストアへの反映はその後**に行う — 順序が逆だと確定前の値がUnityへ流れる
+- **StatsView**: 「終了」と「戻る」の導線を分離
+
+**取り込まなかったもの(理由つき)**:
+- **`RunConfiguration.swift`**: 走行設定の共有は既に `RunSettings.shared` が担い、Unityへの
+  引き渡しもそこを通る。**同じ3値の置き場を2つ作らない**
+- **ContentView / CourseRunningView**: 相手側は前回移植時点の古い構成(旧HomeViewシグネチャ・
+  Unity参照なしのモック走行画面)。必要な変更点だけを本リポジトリ側へ適用した
+- **pbxproj**: 差分は相手個人の `DEVELOPMENT_TEAM` と `PRODUCT_BUNDLE_IDENTIFIER`、
+  および本リポジトリに既にある位置情報の用途文のみ。**`UIApplicationSupportsMultipleScenes = YES`
+  (ARグラスの外部ディスプレイ出力に必須)が消えないこと**を確認済み
+- `.DS_Store` / `xcuserstate`: 個人のXcode状態。`.gitignore` 済み
+
+**検証**: フルコンパイル0エラー / ユニットテスト **317件 全PASS** / **E2E 198項目 全PASS** /
+`swiftc -parse` 全Swiftファイル通過。**Unity/C#側の変更は無し**(Swiftとpbxprojのみ)。
+Swiftは構文検査のみのため、型検査と実機動作はMacでの確認が必要。
+
 ### 2026-09-18 (2) — グラスの画面を埋める: 移設しただけでは描画面が追従していなかった
 
 Unityビューをグラス側ウィンドウへ移設する処理は、フレームを合わせて `addSubview` するだけだった。
