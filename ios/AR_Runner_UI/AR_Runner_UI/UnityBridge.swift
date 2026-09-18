@@ -48,6 +48,14 @@ final class UnityBridge: NSObject, ObservableObject {
     /// 走行ログの保存ディレクトリ(Unityの persistentDataPath 配下)
     @Published var logDirectory: String = ""
 
+    // MARK: 差し替えアバター (VRM)
+    /// 選べるアバターの一覧(同梱 + 取り込み)
+    @Published var vrmAvatars: [VrmAvatar] = []
+    /// 現在適用中のアバター名。既定モデルのままなら空
+    @Published var currentVrmAvatar: String = ""
+    /// 直近の取り込み/選択の結果。UIはこれを見て成否と理由を出す
+    @Published var lastVrmResult: VrmImportResult?
+
     // MARK: Types
     enum AvatarState: String {
         case idle = "Idle"
@@ -69,6 +77,23 @@ final class UnityBridge: NSObject, ObservableObject {
         let distanceKm: Double
         let elapsedSeconds: Double
         let calories: Double     // Unity側でオンボーディング体重から算出
+    }
+
+    struct VrmAvatar: Identifiable {
+        let id = UUID()
+        let name: String
+        let path: String
+    }
+
+    /// 取り込み結果。**断られた理由を必ず持つ** — VRChat向けアバターは三角形数の
+    /// 上限に掛かることが多く、「失敗しました」だけでは利用者が直しようがない。
+    struct VrmImportResult {
+        let accepted: Bool
+        let name: String
+        /// 実測値つきの説明(三角形数・マテリアル数・身長など)
+        let report: String
+        /// 断った理由。成功時は空
+        let reason: String
     }
 
     struct DiagnosticRow: Identifiable {
@@ -271,6 +296,27 @@ final class UnityBridge: NSObject, ObservableObject {
                     payload: ["command": "RequestLogFiles"])
     }
 
+    /// 取り込んだ .vrm を適用する。`path` はアプリのサンドボックス内の**絶対パス**。
+    ///
+    /// Swift側でファイルをサンドボックスへコピーしてから呼ぶこと — ドキュメントピッカーが
+    /// 返すURLはセキュリティスコープ付きで、Unity側からはそのままでは読めない。
+    func importVrmAvatar(path: String) {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "ImportVrmAvatar", "path": path])
+    }
+
+    /// 一覧から既存のアバターを選び直す。
+    func selectVrmAvatar(path: String) {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "SelectVrmAvatar", "path": path])
+    }
+
+    /// 選べるアバターの一覧を要求する(VrmAvatarList イベントで返る)。
+    func requestVrmAvatars() {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "RequestVrmAvatars"])
+    }
+
     /// Request past run history from Unity's session store (HistoryData event).
     func requestHistory() {
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
@@ -309,6 +355,25 @@ final class UnityBridge: NSObject, ObservableObject {
                 if let maxMs = dict["maxMs"] as? Double { self.motionToPhotonMaxMs = maxMs }
                 if let ratio = dict["overBudgetRatio"] as? Double { self.motionToPhotonOverBudgetRatio = ratio }
                 if let count = dict["sampleCount"] as? Int { self.motionToPhotonSampleCount = count }
+            case "VrmAvatarList":
+                self.currentVrmAvatar = dict["current"] as? String ?? ""
+                let list = dict["avatars"] as? [[String: Any]] ?? []
+                self.vrmAvatars = list.map {
+                    VrmAvatar(name: $0["name"] as? String ?? "",
+                              path: $0["path"] as? String ?? "")
+                }
+            case "VrmImportResult":
+                let accepted = dict["accepted"] as? Bool ?? false
+                self.lastVrmResult = VrmImportResult(
+                    accepted: accepted,
+                    name: dict["name"] as? String ?? "",
+                    report: dict["report"] as? String ?? "",
+                    reason: dict["reason"] as? String ?? ""
+                )
+                if accepted {
+                    self.currentVrmAvatar = dict["name"] as? String ?? ""
+                    self.requestVrmAvatars()   // 一覧の「使用中」表示を更新する
+                }
             case "Diagnostics":
                 let rows = dict["rows"] as? [[String: Any]] ?? []
                 self.diagnostics = rows.map {

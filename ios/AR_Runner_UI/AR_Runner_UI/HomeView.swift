@@ -68,6 +68,7 @@ struct HomeView: View {
     @ObservedObject private var external = ExternalDisplayManager.shared
     @StateObject private var locationManager = HomeLocationManager()
     @State private var showDevMode = false
+    @State private var showAvatarLibrary = false
 
     private let accent = Color(hex: "#c7f219")
     private let cardColor = Color(hex: "#1C1C1E")
@@ -98,6 +99,7 @@ struct HomeView: View {
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showDevMode) { DevModeView() }
+        .sheet(isPresented: $showAvatarLibrary) { AvatarLibraryView() }
     }
 
     // MARK: - Header
@@ -128,6 +130,9 @@ struct HomeView: View {
                 }
                 Button { onDevices() } label: {
                     Label("AR設定", systemImage: "eyeglasses")
+                }
+                Button { showAvatarLibrary = true } label: {
+                    Label("アバター", systemImage: "person.crop.square")
                 }
                 Button { onTutorial() } label: {
                     Label("使い方", systemImage: "book")

@@ -41,6 +41,9 @@ public class ARSessionManagerBridge : MonoBehaviour
         // SetGpsLostHandling: F-09/F-10 の自動判定を実行時に切る(屋内デモ・可視性検証用)
         public bool enabled;
 
+        // ImportVrmAvatar / SelectVrmAvatar: 差し替えアバターの絶対パス
+        public string path;
+
         // true only when CoreLocation delivered a genuinely new fix. Cached timer
         // retransmissions must not refresh Unity's 5-second freshness windows.
         public bool locationSampleFresh;
@@ -150,6 +153,9 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "SetGpsLostHandling": HandleSetGpsLostHandling(cmd); break;
             case "RequestDiagnostics": SwiftMessageSender.SendRaw(DevDiagnostics.BuildSnapshotJson()); break;
             case "RequestLogFiles": SwiftMessageSender.SendRaw(DevDiagnostics.BuildLogFilesJson()); break;
+            case "ImportVrmAvatar": HandleVrmAvatar(cmd.path); break;
+            case "SelectVrmAvatar": HandleVrmAvatar(cmd.path); break;
+            case "RequestVrmAvatars": HandleRequestVrmAvatars(); break;
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown command: {cmd.command}");
                 break;
@@ -361,6 +367,48 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         gpsMonitor.AutoLostHandlingEnabled = cmd.enabled;
         Debug.Log($"[SWIFT BRIDGE] SetGpsLostHandling — F-09/F-10 自動判定を{(cmd.enabled ? "ON" : "OFF")}へ");
+    }
+
+    /// <summary>
+    /// 差し替えアバターを読み込んで適用する。取り込み(Swiftがコピーしたファイル)も
+    /// 一覧からの選択も、やることは同じ「絶対パスを読む」なので1つの経路に閉じる。
+    /// </summary>
+    private void HandleVrmAvatar(string path)
+    {
+        var loader = FindFirstObjectByType<VrmAvatarLoader>(FindObjectsInactive.Include);
+        if (loader == null)
+        {
+            SwiftMessageSender.SendVrmImportResult(false, "", "", "VrmAvatarLoader がシーンにありません");
+            return;
+        }
+        if (string.IsNullOrEmpty(path))
+        {
+            SwiftMessageSender.SendVrmImportResult(false, "", "", "パスが空です");
+            return;
+        }
+
+        string name = VrmAvatarCatalog.DisplayName(path);
+
+        if (!VrmAvatarLoader.IsRuntimeLoadAvailable)
+        {
+            // ここで黙って失敗すると「壊れている」と誤解される。原因を名指しする
+            SwiftMessageSender.SendVrmImportResult(false, name, "",
+                "UniVRM が未導入のビルドです。アバターの読み込みにはUniVRMを含めた再ビルドが必要です");
+            return;
+        }
+
+        bool ok = loader.TryLoadFromFile(path, out VrmRejectReason reason);
+        SwiftMessageSender.SendVrmImportResult(ok, name, loader.LastReport,
+            ok ? "" : VrmAvatarPolicy.ReasonText(reason));
+    }
+
+    /// <summary>選べるアバターの一覧をSwiftへ返す。</summary>
+    private void HandleRequestVrmAvatars()
+    {
+        var loader = FindFirstObjectByType<VrmAvatarLoader>(FindObjectsInactive.Include);
+        VrmAvatarCatalog.EnsureImportedDirectory();
+        SwiftMessageSender.SendVrmAvatarList(VrmAvatarCatalog.ListAllFiles(),
+                                             loader != null ? loader.CurrentAvatarName : "");
     }
 
     private void HandleResumeSession()

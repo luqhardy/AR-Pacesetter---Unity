@@ -358,6 +358,24 @@ public class E2EScenarioBehaviour : MonoBehaviour
         float avatarHeight = engine.MeasuredAvatarHeightMeters;
         Check(avatarHeight > 0.01f, $"scale: avatar height is measurable ({avatarHeight:F2}m)");
 
+        // 接地誤差 (§10: 上下5cm以内)。GroundSnap が床に合わせるのは「原点」なので、
+        // 原点が足裏に無いと床の推定が完璧でも足は浮く/沈む。見えるのは足裏なので、
+        // **足裏の実際の高さと床の差**を測る — これが「浮遊感」の正体かを切り分ける
+        var gs = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
+        if (gs != null)
+        {
+            float footOffset  = engine.FootOffsetMeters;
+            float soleY       = gs.transform.position.y + footOffset;
+            float contactErr  = soleY - gs.ResolvedFloorY;
+
+            Check(Mathf.Abs(contactErr) < 0.05f,
+                $"ground: soles meet the floor within ±5cm (§10) — error {contactErr:+0.000;-0.000}m " +
+                $"(pivot→sole {footOffset:F3}m, root {gs.transform.position.y:F3}, floor {gs.ResolvedFloorY:F3})");
+        }
+        if (avatarHeight > 0.01f)
+            Check(Mathf.Abs(avatarHeight - 1.75f) < 0.15f,
+                $"scale: avatar renders at real-world height for 175cm (measured {avatarHeight:F2}m)");
+
         // ── 差し替えアバター(VRM): 判定と入れ替え経路 ──────────────────────
         // 一番壊れやすいのはVRMのパースではなく「差し替えた後の再配線」なので、
         // UniVRM が無い環境でも、拒否経路と既定アバターの無事を常時縛る
@@ -382,8 +400,15 @@ public class E2EScenarioBehaviour : MonoBehaviour
             // リグの無いモデルは断り、**既定アバターには手を触れない**こと。
             // 断ったついでに表示を壊すのが最悪の失敗なので、そこを縛る
             float heightBefore = engine.MeasuredAvatarHeightMeters;
-            var bogus = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            bogus.name = "E2E_BogusAvatar";
+            // コライダーを持たせないこと。CreatePrimitive は BoxCollider 付きの立方体を
+            // 原点に作るため、GroundSnap の真下レイがそれを「地面」として拾い、
+            // 接地判定(§10 ±5cm)が壊れる。描画だけの器で十分
+            var bogus = new GameObject("E2E_BogusAvatar",
+                                       typeof(MeshFilter), typeof(MeshRenderer));
+            bogus.transform.position = new Vector3(0f, -500f, 0f); // 走行空間から離す
+            var bogusPrimitive = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            bogus.GetComponent<MeshFilter>().sharedMesh = bogusPrimitive.GetComponent<MeshFilter>().sharedMesh;
+            DestroyImmediate(bogusPrimitive);
             bool adopted = vrmLoader.TryAdopt(bogus, "bogus", out VrmRejectReason why);
 
             Check(!adopted, "vrm: a model without a humanoid rig is rejected");
@@ -391,27 +416,25 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 $"vrm: rejection names the real reason (got {why})");
             Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - heightBefore) < 0.01f,
                 "vrm: a rejected model leaves the running avatar untouched");
-            Destroy(bogus);
+            DestroyImmediate(bogus); // 次のフレームまで残すと接地レイに拾われる
             yield return null;
-        }
 
-        // 接地誤差 (§10: 上下5cm以内)。GroundSnap が床に合わせるのは「原点」なので、
-        // 原点が足裏に無いと床の推定が完璧でも足は浮く/沈む。見えるのは足裏なので、
-        // **足裏の実際の高さと床の差**を測る — これが「浮遊感」の正体かを切り分ける
-        var gs = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
-        if (gs != null)
-        {
-            float footOffset  = engine.FootOffsetMeters;
-            float soleY       = gs.transform.position.y + footOffset;
-            float contactErr  = soleY - gs.ResolvedFloorY;
+            // Swiftからの取り込み経路。UniVRM未導入でも「黙って失敗」せず理由を返すこと —
+            // ここで無言だと利用者にはアプリが壊れたようにしか見えない
+            VrmAvatarCatalog.EnsureImportedDirectory();
+            Check(System.IO.Directory.Exists(VrmAvatarCatalog.ImportedDirectory),
+                "vrm: the import directory is created for Swift to copy into");
 
-            Check(Mathf.Abs(contactErr) < 0.05f,
-                $"ground: soles meet the floor within ±5cm (§10) — error {contactErr:+0.000;-0.000}m " +
-                $"(pivot→sole {footOffset:F3}m, root {gs.transform.position.y:F3}, floor {gs.ResolvedFloorY:F3})");
+            bridge.OnSwiftCommand("{\"command\":\"RequestVrmAvatars\"}");
+            yield return null;
+            bridge.OnSwiftCommand(
+                "{\"command\":\"ImportVrmAvatar\",\"path\":\"" +
+                DevDiagnostics.Escape(System.IO.Path.Combine(VrmAvatarCatalog.ImportedDirectory, "sample.vrm")) +
+                "\"}");
+            yield return null;
+            Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - heightBefore) < 0.01f,
+                "vrm: an import attempt without UniVRM leaves the running avatar untouched");
         }
-        if (avatarHeight > 0.01f)
-            Check(Mathf.Abs(avatarHeight - 1.75f) < 0.15f,
-                $"scale: avatar renders at real-world height for 175cm (measured {avatarHeight:F2}m)");
         // StartSession first arms the 3-2-1-START presentation. Movement,
         // analytics, telemetry, clock and distance must still be paused here.
         var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
