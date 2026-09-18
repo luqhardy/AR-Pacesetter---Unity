@@ -22,7 +22,10 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 ## 1. Windows側で事前に済ませる
 
 - [ ] 最新の状態をpush済みにする(Macでは浅いcloneを使う)
-- [ ] **Unityエクスポートを実行する**
+- [ ] **Unityエクスポートを実行する(飛ばさない)**
+      `ios/UnityExport/` は生成物でgit管理外のため、**C#を1行でも変えたら作り直す**。
+      古いまま持って行くと**ビルドも起動も成功するのに、変更が何ひとつ入っていない**
+      アプリができあがる。最も気づきにくい失敗。
 
       ```
       "C:\Program Files\Unity\Hub\Editor\6000.3.17f1\Editor\Unity.exe" -batchmode -quit ^
@@ -133,10 +136,23 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
       → 終了時にクラッシュしないこと(修正済みのC1がここで効く)
 - [ ] 統計画面に結果が出る
 - [ ] **CSVログを回収する**(PoCの成果物)
-      Xcode → Window → Devices and Simulators → 対象デバイス → Installed Apps →
-      AR_Runner_UI → 歯車 → **Download Container…** →
-      `.xcappdata` を右クリック → パッケージの内容を表示 →
-      `AppData/Documents/RunLogs/Log_*.csv`
+      **ホーム右上メニュー → 開発者モード → ログ一覧をタップ → 共有**
+      (AirDrop / ファイルへ保存 / メール)。**Mac不要でその場から取り出せる**(2026-09-17 追加)。
+      開発者モードが出ない古いビルドの場合のみ、Xcode → Window → Devices and Simulators →
+      対象デバイス → Installed Apps → AR_Runner_UI → 歯車 → **Download Container…** →
+      `.xcappdata` を右クリック → パッケージの内容を表示 → `AppData/Documents/RunLogs/Log_*.csv`
+- [ ] **開発者モードで実機の状態を確認する**(実機でしか分からないことがここに集まる)
+      - `m2p.lastMs` が **-1 以外** = M2Pが実測できている(§10の評価はこの値が要る)
+      - `csv.imuSource` が `device` か `native`(`approximated` はエディタ用の近似)
+      - `gps.autoLostHandling` が **ON**
+- [ ] **ARグラスを繋ぐ場合**(XREAL One)
+      - [ ] グラス側の画面モードを **Follow(固定)** にする ※Anchorだと二重補正になる
+      - [ ] iPhone 15以降なら**ハブ無しで直結**でよい(グラスはiPhoneからバスパワー給電)
+      - [ ] **iPhoneの縦画面がそのまま出ていたら失敗**(ミラーリング)。
+            外部ディスプレイのシーンが生成されていない
+      - [ ] 開発者モードで `glass.output = グラスへ出力中` /
+            `glass.fillsScreen = 一致(画面を埋めている)` を確認
+      - [ ] `glass.fit` に光学適合の実測が出る(3.0m前方のアバターは全身が入らない — 既知)
 - [ ] CSVを開き、`imu_accel_x/y/z` が **0以外の実測値**で埋まっていることを確認
       (実機ではCoreMotionから100Hzで供給される)
 
