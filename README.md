@@ -562,6 +562,35 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ## 6. 更新履歴
 
+### 2026-09-18 — XREAL One実機の立ち上げ: 外部ディスプレイのシーンが生成されない設定だった
+
+実機入手に合わせて配線経路を端から端まで追ったところ、**そのままではグラスに
+「ミラーリング」しか出ない**状態だった。
+
+**原因**: 外部ディスプレイ用のシーンは、アプリが**マルチシーンに対応している場合のみ**
+iOSが生成する。ホストアプリは `INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES` で
+マニフェストを自動生成していたが、`UIApplicationSupportsMultipleScenes` は未設定=false だった。
+この状態では:
+
+1. `ExternalSceneDelegate.willConnectTo` が一度も呼ばれない
+2. → `ExternalDisplayManager.isGlassesConnected` が false のまま
+3. → `ConnectXREAL` が飛ばない → `GlassViewRig` が起動しない(グラスの画角で描かれない)
+4. → パススルーも切れない → **光学シースルーの現実にカメラ映像が重なって二重像になる**
+5. → F-02のレディチェックのARグラス行も緑にならない
+
+つまり「映ってはいるが、設計したものは何ひとつ効いていない」という、
+最も気づきにくい壊れ方をする。`INFOPLIST_KEY_UIApplicationSupportsMultipleScenes = YES` を
+Debug/Release 両方へ追加(XcodeのGeneral → Deployment Info → Supports multiple windows と同じ)。
+
+**接続方法**: XREAL One は USB-C の DisplayPort Alt Mode で受けるため、
+**iPhone 15以降ならハブ無しで直結できる**(グラスはiPhoneからバスパワー給電)。
+ハブが必要なのは DP Alt Mode 非対応ホストか、使用中にiPhoneを充電したい場合。
+**§10の「60分連続稼働・バッテリー30%以上」の計測は給電ありの方が条件を満たしやすい**。
+
+**検証**: 設定変更のためコード検証は不要(コンパイル・E2Eに影響なし)。
+**実機での確認が必要な項目**は FIELD_TEST_PLAN の事前準備へ追加した
+(ミラーリングになっていないか / 開発者モードで `glass.output` と `glass.fit` を確認)。
+
 ### 2026-09-17 (3) — カルマンフィルタを時間単位へ / 残りの平滑化も移行 / CSVの時間軸を明示
 
 前エントリでコーナーのフレークを直したが、**同じ経路のすぐ隣に同じ種類のバグが残っていた**。

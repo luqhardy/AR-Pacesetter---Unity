@@ -83,8 +83,23 @@ XREAL One は iPhone(USB-C)に対して**外部ディスプレイ**として振�
 - 接続検知は DeviceConnectView のARグラス行に自動反映され、Unityの`ConnectXREAL`も送信される
 - グラス出力中、iPhoneの走行画面は「ARビューはグラスに出力中」表示+HUD操作に切替
 
+**前提(重要)**: 外部ディスプレイ用のシーンは、アプリが**マルチシーンに対応している場合のみ**
+iOSが生成する。`UIApplicationSupportsMultipleScenes` が false だと `ExternalSceneDelegate` は
+一度も呼ばれず、グラスには**ただのミラーリング**(iPhoneの縦画面)が出る。この場合
+`ConnectXREAL` も飛ばないため `GlassViewRig` が起動せず、パススルーも切れない
+(=現実の上にカメラ映像が重なって二重像になる)。
+Xcodeの該当項目は **General → Deployment Info → Supports multiple windows**。
+ビルド設定 `INFOPLIST_KEY_UIApplicationSupportsMultipleScenes = YES` を追加済み(2026-09-18)。
+
+**接続は直挿しでよい**: XREAL One は USB-C の DisplayPort Alt Mode で受けるため、
+iPhone 15以降なら**ハブ無しで直結**できる(グラスはiPhoneからバスパワー給電される)。
+ハブが要るのは (a) DP Alt Mode 非対応のホスト (b) 使用中にiPhoneを充電したいとき。
+**§10の60分連続稼働の計測は、給電しながらの方が条件を満たしやすい**点に注意。
+
 実機確認: iPhone 15以降(USB-C) + XREAL One を接続し、走行画面でグラス側に
 Unityの映像が出ること。3DoF頭部追従はグラス側X1チップのネイティブ機能で行われる。
+**グラスの画面モードは Follow(固定)にすること** — Anchorだと二重補正になる
+([Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) §2-3)。
 
 ### ③ SwiftUIからUnityを表示
 
