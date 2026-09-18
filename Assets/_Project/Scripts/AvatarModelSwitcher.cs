@@ -128,6 +128,12 @@ public class AvatarModelSwitcher : MonoBehaviour
     }
 
     /// <summary>
+    /// 現在このコンテナの下にある表示モデルへ、Animator・IKリレー・レンダラー参照を
+    /// 結び直す。<b>モデルを差し替えたら必ず呼ぶ</b>(<see cref="VrmAvatarLoader"/> も使う)。
+    /// </summary>
+    public void RebindActiveModel() => AutoWireSingleModel();
+
+    /// <summary>
     /// Fallback when the switcher references are unusable: wire the single model
     /// that actually lives under this container (animator, glow renderer, IK relay).
     /// </summary>

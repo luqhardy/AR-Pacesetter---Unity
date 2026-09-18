@@ -66,6 +66,12 @@ Unityプロジェクト(本リポジトリ)+ SwiftUIホスト(`ios/`)のUaaLモ�
    ARCoreに触れるのは `#if ARCORE_EXTENSIONS` の中だけで、未導入の現在は完全に休眠し接地判定は不変
    (E2Eが「休眠」と「不変」を検証)。**3D面分類は画像分類に上書きされない**のが不変条件。
    導入手順・実機確認項目は [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
+12. **差し替えアバター(VRM)は土台のみ・既定は休眠**(`VrmAvatarPolicy` + `VrmAvatarLoader` +
+   `VrmAvatarCatalog`)。**VRChatのアバターはそのままでは使えない**(`.vrca`は取り出せず、
+   iOSは実行時のコード読み込みを許さない)。使えるのはVRM。UniVRMに依存するのは`.vrm`の
+   パースだけで、計測・判定・差し替えはパッケージ無しでも動きE2Eで検証済み。
+   受け入れ基準(三角形70,000/マテリアル8等)は60fpsとM2P 20msを守るため。
+   取り込みUIは未実装(第1期スコープ外)。詳細は [Docs/VRM_AVATARS.md](Docs/VRM_AVATARS.md)
 9. ~~**【一時的】GPSロストの自動判定がOFF**~~ → **復帰済み**(2026-09-16)。既定は仕様どおり `true` で
    F-09/F-10 は発動する。屋内でアバターが消えて検証できない問題は
    `GpsSignalMonitor.RequireInitialFixBeforeLost`(既定ON)で恒久解決 — **良好な初回測位を一度も

@@ -358,6 +358,43 @@ public class E2EScenarioBehaviour : MonoBehaviour
         float avatarHeight = engine.MeasuredAvatarHeightMeters;
         Check(avatarHeight > 0.01f, $"scale: avatar height is measurable ({avatarHeight:F2}m)");
 
+        // ── 差し替えアバター(VRM): 判定と入れ替え経路 ──────────────────────
+        // 一番壊れやすいのはVRMのパースではなく「差し替えた後の再配線」なので、
+        // UniVRM が無い環境でも、拒否経路と既定アバターの無事を常時縛る
+        var vrmLoader = FindFirstObjectByType<VrmAvatarLoader>(FindObjectsInactive.Include);
+        Check(vrmLoader != null, "bootstrap: VrmAvatarLoader auto-created");
+        if (vrmLoader != null)
+        {
+            Check(!VrmAvatarLoader.IsRuntimeLoadAvailable,
+                "vrm: runtime .vrm loading is dormant without UniVRM");
+            Check(!vrmLoader.TryLoadFromFile("nonexistent.vrm", out VrmRejectReason _),
+                "vrm: loading refuses cleanly when UniVRM is absent");
+
+            // 現在表示中のモデルを実測できること(計測はUniVRMに依存しない)
+            Animator shownRig = AvatarRigLocator.FindBestAnimator(engine.transform);
+            if (shownRig != null)
+            {
+                VrmAvatarProfile shown = VrmAvatarLoader.Measure(shownRig.gameObject, "scene");
+                Check(shown.RendererCount > 0,
+                    $"vrm: the live model is measurable ({shown.TriangleCount} tris, {shown.MaterialCount} materials)");
+            }
+
+            // リグの無いモデルは断り、**既定アバターには手を触れない**こと。
+            // 断ったついでに表示を壊すのが最悪の失敗なので、そこを縛る
+            float heightBefore = engine.MeasuredAvatarHeightMeters;
+            var bogus = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            bogus.name = "E2E_BogusAvatar";
+            bool adopted = vrmLoader.TryAdopt(bogus, "bogus", out VrmRejectReason why);
+
+            Check(!adopted, "vrm: a model without a humanoid rig is rejected");
+            Check(why == VrmRejectReason.NoHumanoidRig,
+                $"vrm: rejection names the real reason (got {why})");
+            Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - heightBefore) < 0.01f,
+                "vrm: a rejected model leaves the running avatar untouched");
+            Destroy(bogus);
+            yield return null;
+        }
+
         // 接地誤差 (§10: 上下5cm以内)。GroundSnap が床に合わせるのは「原点」なので、
         // 原点が足裏に無いと床の推定が完璧でも足は浮く/沈む。見えるのは足裏なので、
         // **足裏の実際の高さと床の差**を測る — これが「浮遊感」の正体かを切り分ける
