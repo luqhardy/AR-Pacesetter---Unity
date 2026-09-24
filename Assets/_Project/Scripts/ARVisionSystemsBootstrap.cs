@@ -50,6 +50,13 @@ public static class ARVisionSystemsBootstrap
             Debug.Log("[BOOTSTRAP] ProceduralGestureDriver auto-attached to avatar.");
         }
 
+        // 足のめり込み補正(§10 接地誤差±5cm — 走行クリップは立脚期に足を原点より下げる)
+        if (engine.GetComponent<FootPlanting>() == null)
+        {
+            engine.gameObject.AddComponent<FootPlanting>();
+            Debug.Log("[BOOTSTRAP] FootPlanting auto-attached to avatar.");
+        }
+
         // サイレントルート復帰はアバターのtransformを操作するため同居必須。
         // シーンに未配置だと逸脱復帰機能が丸ごと不在になる(E2Eで検出)
         if (Object.FindFirstObjectByType<SilentRouteRecoverer>(FindObjectsInactive.Include) == null)

@@ -692,9 +692,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 原点が足裏に無いと床の推定が完璧でも足は浮く/沈む。見えるのは足裏なので、
         // **足裏の実際の高さと床の差**を測る — これが「浮遊感」の正体かを切り分ける。
         // 1フレームだと歩幅の位相で値が動く(遊脚期は両足が浮く)ため、走行中に1歩幅ぶん
-        // 毎フレーム採取し、立脚期(=最下点)で判定する(GroundContactMath)
+        // 毎フレーム採取し、立脚期(=最下点)で判定する(GroundContactMath)。
+        // 足裏は**スキンメッシュを焼いた最下頂点**で測る — 補正(FootPlanting)が使う足裏の点とは
+        // 独立した真値なので、補正の推定が外れていればここで落ちる
         var gs = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
+        var planting = engine.GetComponent<FootPlanting>();
         var soleSamples = new List<float>();
+        float maxLift = 0f;
+        var bakedMesh = new Mesh();
         const float SoleSampleStart = 2f;   // 走り出しの加速が落ち着いてから
 
         Vector3 runDirection = Vector3.forward;
@@ -726,7 +731,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
             if (gs != null && elapsed >= SoleSampleStart
                 && elapsed < SoleSampleStart + GroundContactMath.StrideWindowSeconds)
-                soleSamples.Add(gs.transform.position.y + engine.FootOffsetMeters - gs.ResolvedFloorY);
+            {
+                float lowestVertex = LowestSkinnedVertexY(engine.transform, bakedMesh);
+                if (!float.IsNaN(lowestVertex)) soleSamples.Add(lowestVertex - gs.ResolvedFloorY);
+                if (planting != null) maxLift = Mathf.Max(maxLift, planting.CurrentLiftMeters);
+            }
 
             // 途中でSwiftメトリクスも1回注入(実機経路の確認)
             if (!_metricsSent && elapsed > 3f)
@@ -752,19 +761,18 @@ public class E2EScenarioBehaviour : MonoBehaviour
             "goal: imported win jingle started playing");
         Check(syncObserved, "run: live sync rate exceeded 30% during run");
 
+        Destroy(bakedMesh);
+        Check(planting != null, "bootstrap: FootPlanting auto-attached to avatar");
+        Check(planting != null && planting.UsesMeshSolePoints,
+            $"ground: foot planting found sole points on the mesh ({(planting != null ? planting.SolePointCount : 0)} points)");
         if (gs != null)
         {
-            // 既知の未達(HANDOVER.md §5): 立脚期の足は床へ約6cm沈む(メッシュ最下点では最大約10cm)。
-            // §10 の合否は報告に留め、ここでは「浮かない」「今より沈まない」を回帰として縛る
-            const float KnownSinkLimitMeters = -0.08f;
             bool measured = GroundContactMath.TryContactError(soleSamples, out float contactErr);
             float swingPeak = soleSamples.Count > 0 ? Mathf.Max(soleSamples.ToArray()) : 0f;
-            string detail = $"stance error {contactErr:+0.000;-0.000}m over {soleSamples.Count} frames " +
-                            $"(swing peak {swingPeak:+0.000;-0.000}m, floor {gs.ResolvedFloorY:F3})";
-            Check(measured && contactErr < GroundContactMath.ToleranceMeters && contactErr > KnownSinkLimitMeters,
-                $"ground: stance contact has not regressed (no floating, sinks less than 8cm) — {detail}");
-            Debug.Log($"[E2E] INFO: §10 ground contact ±5cm " +
-                      $"{(measured && GroundContactMath.IsWithinTolerance(contactErr) ? "MET" : "NOT MET (known, HANDOVER §5)")} — {detail}");
+            Check(measured && GroundContactMath.IsWithinTolerance(contactErr),
+                $"ground: soles meet the floor within ±5cm (§10) — stance error {contactErr:+0.000;-0.000}m " +
+                $"(lowest mesh vertex over {soleSamples.Count} frames, swing peak {swingPeak:+0.000;-0.000}m, " +
+                $"max lift {maxLift:F3}m, floor {gs.ResolvedFloorY:F3})");
         }
         Check(justColorObserved, "color: pace-sync GREEN (just) while on target pace (§7.1)");
         Check(livePaceObserved, "hud: live pace value rendered during run (not '--')");
@@ -1614,6 +1622,23 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // ③ 接線追従: アバターの向きと進行方向の角度差
         float headingError = Vector3.Angle(engine.transform.forward, tangent);
         Check(headingError < 60f, $"corner: avatar heading tracks tangent (error {headingError:F0}°)");
+    }
+
+    /// <summary>
+    /// 表示中のスキンメッシュを現在の姿勢で焼き、最も低い頂点のワールド高さを返す(足裏の真値)。
+    /// </summary>
+    private static float LowestSkinnedVertexY(Transform root, Mesh scratch)
+    {
+        float lowest = float.PositiveInfinity;
+        foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>())
+        {
+            if (!smr.enabled || smr.sharedMesh == null) continue;
+            smr.BakeMesh(scratch, true);
+            Matrix4x4 toWorld = Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one);
+            foreach (Vector3 v in scratch.vertices)
+                lowest = Mathf.Min(lowest, toWorld.MultiplyPoint3x4(v).y);
+        }
+        return float.IsPositiveInfinity(lowest) ? float.NaN : lowest;
     }
 
     private static IEnumerator WaitScaled(float seconds)

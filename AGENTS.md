@@ -132,6 +132,7 @@ stateDiagram-v2
 - **UnitySendMessage対象のGameObject名は固定**: "ARSessionManager" / "DeviceManager"(Bootstrapが自動生成)
 - **他コンポーネントの状態は型安全な公開APIで触る**(例: `AvatarEngine.ResyncPacingAnchor`)。リフレクション(`field?.SetValue`)は名前変更時に無言で失敗するため使わない
 - **平滑化はフレーム時間依存にする**(`FrameSmoothing`)。長いフレームで追従が瞬間移動に化けないため
+- **モデル(Animatorの付いた子)の `localPosition` は `FootPlanting` が毎フレーム書く**(足のめり込み補正)。位置を変えたいときはルートを動かす。足裏の点はメッシュから取るので、アバターのFBXは **Read/Write 有効**にする(無効だと骨からの概算に落ちる)
 - 新規マネージャーは `ARVisionSystemsBootstrap` に登録すればシーン配線不要
 
 ### ペース単位の規約

@@ -63,6 +63,56 @@ public class GroundContactMathTests
         Assert.IsFalse(GroundContactMath.TryContactError(new List<float> { float.NaN }, out _));
     }
 
+    // ── 足のめり込み補正 ──────────────────────────────────────────────
+
+    [Test]
+    public void めり込んだ分だけ持ち上げる()
+    {
+        Assert.AreEqual(0.06f, GroundContactMath.ComputeLift(-0.06f), 1e-6f);
+    }
+
+    [Test]
+    public void 足が床より上なら持ち上げない_空中局面を消さない()
+    {
+        Assert.AreEqual(0f, GroundContactMath.ComputeLift(0f));
+        Assert.AreEqual(0f, GroundContactMath.ComputeLift(0.12f));
+    }
+
+    [Test]
+    public void 異常値で宙へ飛ばさない()
+    {
+        Assert.AreEqual(GroundContactMath.MaxLiftMeters, GroundContactMath.ComputeLift(-3f), 1e-6f);
+        Assert.AreEqual(0f, GroundContactMath.ComputeLift(float.NaN));
+        Assert.AreEqual(0f, GroundContactMath.ComputeLift(float.NegativeInfinity));
+    }
+
+    [Test]
+    public void 足裏の点は最下点と足裏の前後左右の端()
+    {
+        // 足の甲(高い)と足裏(低い)。足裏は前後 -0.05〜+0.15、左右 -0.04〜+0.04
+        var h = new List<float> { 0.08f, 0.000f, 0.005f, 0.010f, 0.004f, 0.006f, 0.09f };
+        var f = new List<float> { 0.05f, 0.020f, -0.05f, 0.150f, 0.030f, 0.060f, 0.20f };
+        var s = new List<float> { 0.00f, 0.000f, 0.000f, 0.000f, -0.04f, 0.040f, 0.00f };
+
+        var picks = GroundContactMath.SelectSolePoints(h, f, s, GroundContactMath.SoleBandMeters);
+
+        CollectionAssert.AreEquivalent(new[] { 1, 2, 3, 4, 5 }, picks);
+        CollectionAssert.DoesNotContain(picks, 0, "足の甲は足裏ではない");
+        CollectionAssert.DoesNotContain(picks, 6, "足裏の面より上の点は前端でも選ばない");
+    }
+
+    [Test]
+    public void 足裏の点は重複せず_空入力では空()
+    {
+        var one = GroundContactMath.SelectSolePoints(
+            new List<float> { 0f }, new List<float> { 0f }, new List<float> { 0f }, 0.015f);
+        CollectionAssert.AreEqual(new[] { 0 }, one);
+
+        Assert.IsEmpty(GroundContactMath.SelectSolePoints(
+            new List<float>(), new List<float>(), new List<float>(), 0.015f));
+        Assert.IsEmpty(GroundContactMath.SelectSolePoints(null, null, null, 0.015f));
+    }
+
     [Test]
     public void 非有限値は読み飛ばす()
     {
