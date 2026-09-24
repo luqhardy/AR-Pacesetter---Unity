@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-09-24 (8) — O/Pキーのリフレクション呼び出しを公開APIへ / Tests/README を現状へ
+
+`GameStateController` がリフレクションで `AvatarEngine` のprivateメソッドを呼んでいた(改名で無言で壊れる)ため `SimulateBeingOvertaken` / `SimulateOvertaking` を公開。プロジェクトのスクリプトからリフレクションが無くなった。
+Tests/README.md の件数(23件・37+項目)が古かったので、件数を書かず全25テストファイルの対象表・足し方・`tools/verify.sh` へ書き直し。
+検証: tools/verify.sh 全通過(dotnet test 340/340、Swift 24ファイル、E2E 209/209)
+
 ### 2026-09-24 (7) — .vs/(Visual Studioのローカル状態)を追跡対象から外し gitignore へ
 
 ウィンドウ配置・Copilot索引DB・.suo の5ファイルは個人のエディタ状態で共有物ではない。`git rm --cached` なので各自の手元のファイルは残る。

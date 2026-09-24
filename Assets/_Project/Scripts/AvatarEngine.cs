@@ -635,6 +635,18 @@ public class AvatarEngine : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 「ユーザーに追い抜かれる」状態へ即座に入る(エディタのOキー・検証用)。
+    /// 通常は速度差の検知で自動的に入る。
+    /// (旧実装は GameStateController がリフレクションで private メソッドを呼んでいた — 型安全化)
+    /// </summary>
+    public void SimulateBeingOvertaken() => EnterBeingOvertakenState();
+
+    /// <summary>
+    /// 「アバターが抜き返してスプリントする」状態へ即座に入る(エディタのPキー・検証用)。
+    /// </summary>
+    public void SimulateOvertaking() => EnterOvertakingState();
+
     private void EnterBeingOvertakenState()
     {
         _overtakeState  = OvertakeState.BeingOvertaken;
