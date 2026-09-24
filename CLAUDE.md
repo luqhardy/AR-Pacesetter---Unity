@@ -64,7 +64,7 @@ Watch/HealthKit/ゴースト等の企画書由来機能も実装済み。削除�
 - GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う。既定値(`true`)は仕様どおりに保つ。
   屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)
 - 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する
-- IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、Swiftの `SetImuAcceleration` が優先、エディタ=カメラ差分近似)
+- IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、エディタ=カメラ差分近似)。`SetImuAcceleration` はC#専用で、Swiftからは呼べない
 - アニメーションの閾値は km/h 基準を m/s に換算した値(Walk 0.0278 / Run 1.3889 / Sprint 4.1667)。AnimatorController はジェネレータで再生成する
 - グラスの画面モードは **Follow(固定)**。Anchor だと頭部補正が二重にかかる。iOSからグラスの頭部姿勢は取得できない
 - 屋外路面分類(ARCore)は `#if ARCORE_EXTENSIONS` の中だけで触る。**3D面分類を画像分類で上書きしない**

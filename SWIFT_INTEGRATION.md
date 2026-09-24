@@ -142,6 +142,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 > `imu_accel_x/y/z` 列は実機では **CoreMotion の実測値**(`Input.gyro.userAcceleration` を
 > 100Hzで取得し m/s² へ換算)。エディタはジャイロが無いためカメラ速度差分の近似になる。
 > 供給元は `RunTelemetryLogger.ImuSource`(`device` / `external` / `approximated`)で判別できる。
+> `external` は C# の `SetImuAcceleration` 呼び出し時のみで、Swift からこれを呼ぶブリッジコマンドは無い。
 > GPS列(`gps_latitude`/`gps_longitude`)は`UpdateMetrics`経由で実測値が入る。
 
 ## アーキテクチャ

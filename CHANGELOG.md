@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-09-24 (2) — PRでユニットテストを自動実行 / FootOffsetMetersのAnimator解決 / IMU供給経路の記述訂正 / 不要ファイル削除
+
+`.github/workflows/unit-tests.yml` を追加(PR・master push で `dotnet test`、Unity不要)。`AvatarEngine.FootOffsetMeters` が無効化された旧Animatorを拾い得たため `AvatarRigLocator.FindBestAnimator` へ(既定Y Botでは結果同一、VRM差し替え時の誤計測を予防)。
+`SetImuAcceleration` はSwiftから呼べない(ブリッジコマンド無し)ので、そう書いていたCLAUDE.md・コメントを訂正。`Assets/_Recovery/`(復旧シーン)・`extracted_variables.md`・無関係な`copilot-instructions.md`を削除し `_Recovery` をignore。
+検証: dotnet test 329/329、E2E 207/207(終了コード0)
+
 ### 2026-09-24 — ドキュメント再編: 更新履歴をCHANGELOG.mdへ分離 / CLAUDE.md・AGENTS.mdを現行ルールへ圧縮
 
 README(164KB→19KB)から更新履歴をCHANGELOG.md、発表ネタをDocs/PRESENTATION.mdへ移し、数式はAGENTS.md §4に一本化。

@@ -734,7 +734,7 @@ public class AvatarEngine : MonoBehaviour
         get
         {
             // ① ヒューマノイドの足ボーンが最も正確(ポーズを含めた実際の足の位置)
-            var animator = GetComponentInChildren<Animator>(true);
+            var animator = AvatarRigLocator.FindBestAnimator(transform);
             if (animator != null && animator.isHuman)
             {
                 Transform lf = animator.GetBoneTransform(HumanBodyBones.LeftFoot);

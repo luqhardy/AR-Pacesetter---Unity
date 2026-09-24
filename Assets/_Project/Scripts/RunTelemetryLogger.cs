@@ -12,9 +12,9 @@ using UnityEngine;
 /// 列(§5.2): timestamp, gps_latitude, gps_longitude, imu_accel_x/y/z,
 ///           avatar_pos_x, avatar_pos_z, latency_m2p
 ///
-/// GPS緯度経度・IMU加速度は実機ではSwift(CoreLocation/CoreMotion)から
-/// SetGpsCoordinates/SetImuAcceleration で供給する。エディタではIMUを
-/// カメラ速度差分で近似し、GPSは0とする。
+/// GPS緯度経度は Swift の UpdateMetrics → GpsSignalMonitor → SetGpsCoordinates で入る。
+/// IMU加速度は実機では端末IMU(Input.gyro.userAcceleration)を直接読み、エディタでは
+/// カメラ速度差分で近似する。SetImuAcceleration は C# 側の受け口で、Swift からの経路は無い。
 /// AvatarEngineと同じGameObjectに置く(Bootstrapが自動装着)。
 /// </summary>
 public class RunTelemetryLogger : MonoBehaviour
@@ -97,7 +97,7 @@ public class RunTelemetryLogger : MonoBehaviour
     }
 
     /// <summary>
-    /// 外部(Swift/CoreMotion)からIMU加速度を供給する。呼ばれた時点で
+    /// 外部からIMU加速度を供給する(C#専用。Swiftからのブリッジコマンドは無い)。呼ばれた時点で
     /// 端末IMU・エディタ近似の両方より優先される。
     /// </summary>
     public void SetImuAcceleration(Vector3 accelMetersPerSec2)

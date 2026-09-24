@@ -42,3 +42,7 @@ ios/**/*.xcuserstate
 # 検証時の生成物 (E2E/エクスポートのログ)
 /e2e.log
 /export.log
+
+# Unityのクラッシュ復旧シーン(自動生成物)
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
