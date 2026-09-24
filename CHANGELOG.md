@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-09-24 (7) — .vs/(Visual Studioのローカル状態)を追跡対象から外し gitignore へ
+
+ウィンドウ配置・Copilot索引DB・.suo の5ファイルは個人のエディタ状態で共有物ではない。`git rm --cached` なので各自の手元のファイルは残る。
+検証: コード変更なし
+
 ### 2026-09-24 (6) — 全AIエージェント共通の指針: AGENTS.md へ一本化 / tools/verify.sh / tools/compile-check
 
 CLAUDE.md にしか無かったスコープ・F-01〜F-11・仕様値・約束・未決事項を AGENTS.md へ移し、CLAUDE.md・GEMINI.md は `@AGENTS.md` の読み込み、`.github/copilot-instructions.md` は要約付きの参照に。
