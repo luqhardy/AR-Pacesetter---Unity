@@ -46,3 +46,7 @@ ios/**/*.xcuserstate
 # Unityのクラッシュ復旧シーン(自動生成物)
 /[Aa]ssets/_Recovery/
 /[Aa]ssets/_Recovery.meta
+
+# コンパイル検証(tools/compile-check)の生成物
+/tools/compile-check/bin/
+/tools/compile-check/obj/

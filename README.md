@@ -5,8 +5,9 @@ ARランニングペーサー — 3.0m前方を走る半透明アバターとの
 
 | 知りたいこと | 読む場所 |
 |---|---|
-| 第1期スコープ・機能一覧(F-01〜F-11)・仕様値 | [CLAUDE.md](CLAUDE.md) |
-| 数式・GPS FSM・レイテンシ予算・検証手順・実装の不変条件 | [AGENTS.md](AGENTS.md) |
+| 第1期スコープ・機能一覧(F-01〜F-11)・仕様値 | [AGENTS.md](AGENTS.md) §2 |
+| 数式・GPS FSM・レイテンシ予算・検証手順(`tools/verify.sh`)・実装の約束 | [AGENTS.md](AGENTS.md) |
+| AIエージェント(Claude Code / Codex / Cursor / Copilot / Gemini)の使い方 | [Docs/AI_AGENTS.md](Docs/AI_AGENTS.md) |
 | 機能→実装→検証の対応表 | [HANDOVER.md](HANDOVER.md) |
 | Swift⇄Unity 連携 | [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) |
 | 変更の経緯 | [CHANGELOG.md](CHANGELOG.md) |
@@ -118,6 +119,7 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
   Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log
   ```
   終了コード 0=全PASS / 1=FAILあり。ログの `[E2E] SUMMARY` を参照。
+- 一括(コンパイル → ユニットテスト → Swift構文 → E2E、Windows Git Bash / macOS 共通): `tools/verify.sh`(E2Eを省くなら `--fast`)
 
 ### 主要スクリプト一覧
 

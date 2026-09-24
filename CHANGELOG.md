@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-09-24 (6) — 全AIエージェント共通の指針: AGENTS.md へ一本化 / tools/verify.sh / tools/compile-check
+
+CLAUDE.md にしか無かったスコープ・F-01〜F-11・仕様値・約束・未決事項を AGENTS.md へ移し、CLAUDE.md・GEMINI.md は `@AGENTS.md` の読み込み、`.github/copilot-instructions.md` は要約付きの参照に。
+検証を1コマンド化(`tools/verify.sh`、Windows Git Bash / macOS)し、手作りしていたコンパイル検証用csprojを `tools/compile-check` としてコミット。使い方は Docs/AI_AGENTS.md(英語)。
+検証: tools/verify.sh 全通過(dotnet test 340/340、Swift 24ファイル、E2E 209/209)。Unity失敗時に非0が伝わることも確認
+
 ### 2026-09-24 (5) — .gitattributes を追加(改行コードの統一・UnityシーンのSmartMerge)
 
 `* text=auto` で改行をLFに統一(各自の core.autocrlf に依存しない)。Unityのシーン/プレハブ等に `merge=unityyamlmerge`、FBX・画像・音声等を binary に。
