@@ -27,6 +27,7 @@
     <Compile Include="..\..\Assets\_Project\Scripts\AuraFeedback.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GroundFloorTracker.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\CliffMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\GroundContactMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\FrameSmoothing.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\VrmAvatarPolicy.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GlassOpticsMath.cs" />

@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-09-24 (3) — §10接地判定を歩幅の位相に依存しない形へ / 立脚期の足が約6cm沈む未達が判明
+
+E2Eの接地判定は足裏を1フレームで測っており、位相次第で合格していた。走行中に1歩幅(1.2s)ぶん毎フレーム採取し立脚期(最下点)で判定する `GroundContactMath` を追加(ユニットテスト6件)。
+結果は **-0.060m で§10未達**(メッシュ最下頂点では最大-0.104m、推定誤差ではなく実際のめり込み)。E2Eは§10を `[E2E] INFO` で報告し、浮き・-8cm超の沈みのみ失敗とする。HANDOVER §5 へ未解決として記録。
+検証: dotnet test 335/335、E2E 207/207(終了コード0)
+
 ### 2026-09-24 (2) — PRでユニットテストを自動実行 / FootOffsetMetersのAnimator解決 / IMU供給経路の記述訂正 / 不要ファイル削除
 
 `.github/workflows/unit-tests.yml` を追加(PR・master push で `dotnet test`、Unity不要)。`AvatarEngine.FootOffsetMeters` が無効化された旧Animatorを拾い得たため `AvatarRigLocator.FindBestAnimator` へ(既定Y Botでは結果同一、VRM差し替え時の誤計測を予防)。
