@@ -1,0 +1,60 @@
+# 改行コードをリポジトリ内で LF に統一する(Windows / Mac の混在対策)。
+# 各自の core.autocrlf 設定に依存せず、チェックアウト時は各OSの既定に変換される。
+* text=auto
+
+# ── Unity のシリアライズ済みアセット(YAML) ─────────────────────────────
+# merge=unityyamlmerge: シーン/プレハブの競合を Unity の SmartMerge で解く。
+# ドライバは各自のgit設定に1回だけ登録する(未登録なら通常の3-wayマージになるだけで害は無い):
+#   git config merge.unityyamlmerge.name "Unity SmartMerge"
+#   git config merge.unityyamlmerge.driver "'C:/Program Files/Unity/Hub/Editor/6000.3.17f1/Editor/Data/Tools/UnityYAMLMerge.exe' merge -p %O %B %A %A"
+#   git config merge.unityyamlmerge.recursive binary
+# (Mac: /Applications/Unity/Hub/Editor/6000.3.17f1/Unity.app/Contents/Tools/UnityYAMLMerge)
+*.unity          text eol=lf merge=unityyamlmerge
+*.prefab         text eol=lf merge=unityyamlmerge
+*.asset          text eol=lf merge=unityyamlmerge
+*.mat            text eol=lf merge=unityyamlmerge
+*.anim           text eol=lf merge=unityyamlmerge
+*.controller     text eol=lf merge=unityyamlmerge
+*.overrideController text eol=lf merge=unityyamlmerge
+*.physicMaterial text eol=lf merge=unityyamlmerge
+*.preset         text eol=lf merge=unityyamlmerge
+*.scenetemplate  text eol=lf merge=unityyamlmerge
+*.meta           text eol=lf
+
+# ── シェルスクリプトはMac/CIで実行するので常にLF ────────────────────────
+*.sh             text eol=lf
+*.cmd            text eol=crlf
+*.bat            text eol=crlf
+
+# ── Xcode プロジェクト(pbxproj は競合時に行単位で解けるよう text のまま) ──
+*.pbxproj        text eol=lf
+
+# ── バイナリ(改行変換・差分・マージをしない) ──────────────────────────
+*.fbx            binary
+*.FBX            binary
+*.vrm            binary
+*.glb            binary
+*.png            binary
+*.jpg            binary
+*.jpeg           binary
+*.tga            binary
+*.tif            binary
+*.psd            binary
+*.exr            binary
+*.hdr            binary
+*.wav            binary
+*.mp3            binary
+*.ogg            binary
+*.ttf            binary
+*.otf            binary
+*.dll            binary
+*.a              binary
+*.so             binary
+*.dylib          binary
+*.pdf            binary
+*.docx           binary
+*.pptx           binary
+*.xlsx           binary
+*.zip            binary
+*.db             binary
+*.suo            binary

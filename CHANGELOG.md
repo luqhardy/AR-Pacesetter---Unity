@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-09-24 (5) — .gitattributes を追加(改行コードの統一・UnityシーンのSmartMerge)
+
+`* text=auto` で改行をLFに統一(各自の core.autocrlf に依存しない)。Unityのシーン/プレハブ等に `merge=unityyamlmerge`、FBX・画像・音声等を binary に。
+既存でCRLFだった2ファイル(`AR-Pacesetter---Unity.slnx` / `AddBluetoothFramework.cs`)をLFへ正規化(改行以外の差分なし)。SmartMergeのドライバ登録手順はファイル冒頭のコメント。
+検証: コード変更なし。renormalize後の差分が改行のみであることを確認
+
 ### 2026-09-24 (4) — 足のめり込み補正(FootPlanting): §10 接地誤差を達成
 
 走行クリップが立脚期に足を原点平面より下げ、メッシュ最下頂点で最大-0.104m床へめり込んでいた。`FootPlanting` がバインドポーズのメッシュから足裏の点を選び、最下点が床下ならモデルを持ち上げる(上げるだけ)。Y Bot.fbx を Read/Write 有効に。
