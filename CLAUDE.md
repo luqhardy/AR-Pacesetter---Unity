@@ -3,21 +3,32 @@
 ARランニング支援システム。3.0m前方を走る半透明アバターとの「距離感」でペーシングする。
 Unityプロジェクト(本リポジトリ)+ SwiftUIホスト(`ios/`)のUaaLモノレポ。
 
-## 仕様の優先順位(一次情報)
+## 仕様の優先順位
 
-1. **Aチーム基本設計書 v1**(2025/06/09 梁・PDF、下記に要点転記)— 第1期検証フェーズの正式仕様
-2. [AGENTS.md](AGENTS.md) — 数式・FSM・レイテンシ予算・**検証ワークフロー・実装不変条件**(変更時は必読)
-3. [HANDOVER.md](HANDOVER.md) — 機能→実装→検証の対応表 / [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) — ブリッジ契約
+1. **Aチーム基本設計書 v1**(2025/06/09 梁・PDF、要点は本ファイルに転記)— 第1期の正式仕様
+2. [AGENTS.md](AGENTS.md) — 数式・FSM・レイテンシ予算・検証ワークフロー・実装不変条件
+3. [HANDOVER.md](HANDOVER.md) — 機能→実装→検証の対応表
 
-## 第1期検証フェーズのスコープ(基本設計書 §1.2 — 重要)
+## いつ何を読むか
 
-**iPhone単体 + ARグラス(USB-C有線)の2デバイスに特化。Apple Watch等の外部デバイス連携・
-外部サーバー・バイタルセンサー連携はあえてスコープ外**(通信ボトルネック排除とM2P 20ms死守のため)。
-第1期ゴール =「陸上トラックにおけるARペーシング技術の完全確立」。PoCとして技術限界データの
-計測・蓄積(CSV出力)がソラド社への譲渡基盤となる。
+- コードを変更する前 → AGENTS.md §6(検証ワークフローと不変条件)
+- アバター位置・接地・カルマンフィルタ・同期率に触れる → AGENTS.md §4
+- GPSロスト/FSM(`GameStateController` / `GpsSignalMonitor`)に触れる → AGENTS.md §5
+- Swift⇄Unity のメッセージを追加・変更する → [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md)
+- グラス表示・画角・頭部姿勢 → [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
+- 屋外路面の分類(ARCore) → [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
+- 差し替えアバター(VRM) → [Docs/VRM_AVATARS.md](Docs/VRM_AVATARS.md)
+- 実地テストの計画 → [Docs/FIELD_TEST_PLAN.md](Docs/FIELD_TEST_PLAN.md)
+- 過去の経緯(なぜそうなっているか) → [CHANGELOG.md](CHANGELOG.md) を検索する(全文は長いので読み通さない)
 
-※現リポジトリにはWatch/HealthKit/ゴースト等のフェーズ外機能も実装済み(企画書由来)。
-これらは削除不要だが、**第1期の検証・デモ・実装優先度は上記スコープ内機能(F-01〜F-11)が最優先**。
+## 第1期検証フェーズのスコープ(基本設計書 §1.2)
+
+**iPhone単体 + ARグラス(USB-C有線)の2台構成**。Apple Watch・外部サーバー・バイタルセンサーは
+意図的にスコープ外 — 通信ボトルネックを排し M2P 20ms を守るため。
+ゴールは「陸上トラックにおけるARペーシング技術の完全確立」。技術限界データのCSV蓄積がソラド社への譲渡基盤になる。
+
+Watch/HealthKit/ゴースト等の企画書由来機能も実装済み。削除はせず、触るときは影響を最小に留める。
+検証・デモ・実装の優先度は F-01〜F-11 が先。
 
 ## 機能一覧(F-01〜F-11)
 
@@ -37,53 +48,38 @@ Unityプロジェクト(本リポジトリ)+ SwiftUIホスト(`ios/`)のUaaLモ�
 
 ## 主要仕様値
 
-- **アバター色(ペースシンクロ・カラーエフェクト §7.1)**: ジャスト(±1.5m)=**緑** / 遅延(3.0m以上離れ)=**橙→赤**グラデ / 超過(追い抜き)=**青**
-- **オーラエフェクト(§7.2)**: 5.0m以上遅れで足元からランナー側へ光のライン放射
-- **非機能(§10)**: M2P **20ms以内(最大許容30ms)** / 位置誤差**1.0m以内**・接地誤差**上下5cm以内** / 連続稼働**60分**(バッテリー30%以上維持)
-- **描画**: 60fps、映像はDisplayPort Alt Mode(USB-C有線・無圧縮1080p)、グラスへはバスパワー給電
-- **グラス切断時(§8.3)**: ログ書き出しはBG継続+スタンバイ移行。再接続時は即出現でなく準備画面から再スタート
+- **アバター色(§7.1)**: ジャスト(目標リード±1.5m)=緑 / 遅延(3.0m以上離れ)=橙→赤グラデ / 超過(追い抜き)=青。`AvatarPaceColor`
+- **オーラ(§7.2)**: 5.0m以上遅れで足元からランナー側へ光のライン。`AvatarAuraEffect`
+- **非機能(§10)**: M2P 20ms以内(最大許容30ms) / 位置誤差1.0m以内・接地誤差上下5cm以内 / 連続稼働60分(バッテリー30%以上)
+- **描画**: 60fps。映像はDisplayPort Alt Mode(USB-C有線・無圧縮1080p)、グラスはバスパワー給電
+- **グラス切断時(§8.3)**: CSVログはBGで継続しスタンバイへ。再接続だけではアバターを出さず、準備画面からの再スタート(`ResumeSession`)で復帰
 - **設定データ(§5.1)**: `targetPaceMinutesPerKm`(**秒**で保持、例270=4分30秒)・`trackLength`(m)・`avatarDistance`(3.0)・`isGlassConnected`・`gpsAccuracyStatus`(0=圏外/1=低/2=高)
-- **走行ログCSV(§5.2)**: `Log_YYYYMMDD_HHMMSS.csv`、100Hz、列=`timestamp, gps_latitude, gps_longitude, imu_accel_x/y/z, avatar_pos_x, avatar_pos_z, latency_m2p`
-- **開発環境(§11)**: Unity LTS / C#+Swift / iOS 26+ / NRSDK等公式Unity SDK / iPhone 12 Pro以上
-- **テスト3フェーズ(§11.2)**: ①室内ベンチ(センサー100Hz+CSV出力確認) → ②歩行・低速(3m追従・ワープなし) → ③400mトラック実証(旋回・HUD・フェードアウト+CSV解析で20ms評価)
+- **走行ログCSV(§5.2)**: `<persistentDataPath>/RunLogs/Log_YYYYMMDD_HHMMSS.csv`、100Hz、列=`timestamp, gps_latitude, gps_longitude, imu_accel_x/y/z, avatar_pos_x, avatar_pos_z, latency_m2p`。`RunTelemetryLogger`
+- **開発環境(§11)**: Unity 6000.3.17f1 / C#+Swift / iOS 26+ / iPhone 12 Pro以上
+- **テスト3フェーズ(§11.2)**: ①室内ベンチ(100Hz+CSV確認) → ②歩行・低速(3m追従・ワープなし) → ③400mトラック実証(旋回・HUD・フェードアウト+CSVで20ms評価)
 
-## 現実装と基本設計書の既知の差分(要対応 or 要チーム判断)
+## 守るべき実装上の約束
 
-1. ~~**アバター色**~~ → **移行済み**(`AvatarPaceColor.cs` + `AvatarVisualsAndActions.cs`)。§7.1のペースシンクロ色を実装: ジャスト(目標リード±1.5m)=緑 / 遅延(前方へ離隔)=橙→赤グラデ / 超過(追い抜き)=青。符号付きリード距離で判定。バイタル警告(深青・第1期スコープ外)は優先オーバーライドとして温存。**視覚反映にはアバターmaterialが発光(Emission)対応であること**
-2. ~~**F-11 CSVログ(100Hz)**~~ → **実装済み**(`RunTelemetryLogger.cs`)。`<persistentDataPath>/RunLogs/Log_YYYYMMDD_HHMMSS.csv`へ§5.2の9列を100Hz出力。GPS緯度経度は`GpsSignalMonitor`経由でSwiftから供給済み(ブリッジ配線完了)。IMU加速度は**実機では`Input.gyro.userAcceleration`(iOSではCoreMotionが実体)を100Hzで取得**して実測で埋まる。Swiftから`SetImuAcceleration`を呼べばそちらが優先。エディタ(ジャイロ無し)はカメラ速度差分で近似 — 供給元は`RunTelemetryLogger.ImuSource`で判別できる
-3. ~~**モーション閾値**~~ → **調整済み**(`AvatarAnimatorControllerGenerator.cs`)。§7.3のkm/h基準へ換算: Idle=0 / Walk=0.0278(0.1km/h) / Run=1.3889(5.0km/h) / Sprint=4.1667(15km/h)m/s。歩行は`PlaybackSpeed`(既定1.0)で再生速度を同期。**同時に既存バグを発見・修正**: BlendTreeが`AddObjectToAsset`未登録で保存時に破棄され、Locomotionの`m_Motion`が空=ロコモーションが一切再生されない状態だった。加えて`useAutomaticThresholds`が閾値を[0,1]へ均等再配置していたため無効化
-4. ~~**GPSロスト判定条件**~~ → **実装済み**(`GpsSignalMonitor.cs`)。§8.1の「更新1.5秒途絶 or 水平精度10m以上」でFSMを自動遷移、精度5m以内で復帰。Swift `LocationTracker`の生サンプル(精度不良も含む)を`UpdateMetrics`のgpsLatitude/gpsLongitude/gpsAccuracyで供給。**実測サンプル未受信時は非介入**なのでエディタのG/R/Aキー検証は従来どおり
-5. ~~**オーラエフェクト(§7.2)**~~ → **実装済み**(`AvatarAuraEffect.cs` + `AuraFeedback.cs`)。目標より5.0m以上遅れるとアバター足元からランナー側へ光のラインを地面に放射。遅れが大きいほど密度(3→7本)と流速(3→9m/s)が上がり、12mで最大。実行時生成のLineRenderer(ワールド空間)でアセット不要。**発動時の見た目はエディタ/実機での目視確認が必要**(E2Eは非発動側=誤発火しないことを検証)
-6. ~~**グラス切断→準備画面リセット(§8.3)**~~ → **実装済み**。切断で`DisconnectXREAL`→スタンバイ移行(アバター消去)、走行セッションは終了させずF-11のCSVログはBG継続。Swiftは準備画面(デバイス接続)へ戻る。**再接続だけではアバターを復帰させず**、準備画面からの再スタート操作(`ResumeSession`)で通常追従へ復帰
-7. Watch/HealthKit/ゴースト等は実装済みだが第1期スコープ外 — 触る際は影響を最小に
-10. **XREAL One統合の基盤は実装済み**(`GlassViewRig` + `GlassDisplayProfile` + `GlassOpticsMath` + `HeadPoseMath`)。
-   グラス接続で**グラスの画角(対角50°→垂直25.7°)・眼高の視点・進行方向ヨー**で描く出力カメラへ切り替わる。
-   **未解決(要チーム判断)**: F-03の3.0m前方と画角が両立しない — 身長1.75mのアバターは3.0mで垂直31.1°を占め
-   全身が入らない(全身には3.7m必要)。§7.2のオーラ(足元)も視野外。**グラスの画面モードはFollow(固定)必須**
-   (Anchorは二重補正)。iOSからグラスの頭部姿勢は原理的に取得不能。根拠は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
-11. **屋外路面の分類(ARCore Scene Semantics)の受け口を用意済み・既定は休眠**(`OutdoorSemanticClassifier` +
-   `SurfaceSemanticMath`)。ARKitの面分類には **road が無い**ため屋外の接地は幾何だけで決まっていた。
-   ARCoreに触れるのは `#if ARCORE_EXTENSIONS` の中だけで、未導入の現在は完全に休眠し接地判定は不変
-   (E2Eが「休眠」と「不変」を検証)。**3D面分類は画像分類に上書きされない**のが不変条件。
-   導入手順・実機確認項目は [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
-12. **差し替えアバター(VRM)は土台のみ・既定は休眠**(`VrmAvatarPolicy` + `VrmAvatarLoader` +
-   `VrmAvatarCatalog`)。**VRChatのアバターはそのままでは使えない**(`.vrca`は取り出せず、
-   iOSは実行時のコード読み込みを許さない)。使えるのはVRM。UniVRMに依存するのは`.vrm`の
-   パースだけで、計測・判定・差し替えはパッケージ無しでも動きE2Eで検証済み。
-   受け入れ基準(三角形70,000/マテリアル8等)は60fpsとM2P 20msを守るため。
-   取り込みUIは未実装(第1期スコープ外)。詳細は [Docs/VRM_AVATARS.md](Docs/VRM_AVATARS.md)
-9. ~~**【一時的】GPSロストの自動判定がOFF**~~ → **復帰済み**(2026-09-16)。既定は仕様どおり `true` で
-   F-09/F-10 は発動する。屋内でアバターが消えて検証できない問題は
-   `GpsSignalMonitor.RequireInitialFixBeforeLost`(既定ON)で恒久解決 — **良好な初回測位を一度も
-   得ていない間はロスト判定しない**(掴んでいない信号は失えない。屋内は精度が常に10m超なので成立しない)。
-   意図的に切りたい場合は定数ではなく実行時コマンド `SetGpsLostHandling {enabled}` を使う
-8. **`SafetyAndSystemController`(企画書4.3のTTC危険警告・低バッテリー退避)は実行時に生成されない** —
-   シーン/プレハブ未配置かつ`ARVisionSystemsBootstrap`未登録、`AddComponent`も皆無。第1期スコープ外のため
-   意図的に休眠。有効化には(a)障害物検知ソースの接続 (b)非検出時にTTCを`ttcScanRange`で計算する誤りの修正
-   が必要(そのまま配線すると19.2km/h超で誤警報)。詳細と根拠は [HANDOVER.md](HANDOVER.md) §5
+- アバターの色は発光で出すので、アバターのmaterialは **Emission 対応**にする
+- GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う。既定値(`true`)は仕様どおりに保つ。
+  屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)
+- 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する
+- IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、Swiftの `SetImuAcceleration` が優先、エディタ=カメラ差分近似)
+- アニメーションの閾値は km/h 基準を m/s に換算した値(Walk 0.0278 / Run 1.3889 / Sprint 4.1667)。AnimatorController はジェネレータで再生成する
+- グラスの画面モードは **Follow(固定)**。Anchor だと頭部補正が二重にかかる。iOSからグラスの頭部姿勢は取得できない
+- 屋外路面分類(ARCore)は `#if ARCORE_EXTENSIONS` の中だけで触る。**3D面分類を画像分類で上書きしない**
+- VRMアバターの受け入れ基準(三角形70,000・マテリアル8等)は 60fps と M2P 20ms のための値。`.vrca`(VRChat)は使えない
 
-## 作業規約(要約 — 詳細はAGENTS.md)
+## 未決事項(チーム判断待ち — 独断で解決しない)
 
-- 変更時の検証: `dotnet build`(コンパイル) → `Tests/UnitTests`で`dotnet test` → E2E(`-executeMethod E2EScenarioRunner.Run`、終了コード0) → Swiftは`swiftc -parse`
-- 純ロジックは`PaceMath`のような依存ゼロ静的クラスへ書き、MonoBehaviourは委譲
-- コミット前にREADME更新履歴へ1エントリ。コミットは日本語、検証結果を明記
+1. **3.0m前方と画角の両立(F-03 × グラス)**: 身長1.75mのアバターは3.0mで垂直31.1°を占め、グラスの垂直25.7°に全身が入らない
+   (全身には3.7m必要)。§7.2のオーラ(足元)も視野外。距離か見え方か、どちらを譲るかはチームが決める
+2. **`SafetyAndSystemController`(TTC警告・低バッテリー退避)は休眠中**: 実行時に生成されない。有効化には
+   (a)障害物検知ソースの接続 (b)非検出時にTTCを `ttcScanRange` で計算する誤りの修正が要る —
+   そのまま配線すると19.2km/h超で誤警報が出る。詳細は HANDOVER.md §5
+
+## 作業規約
+
+- 検証は AGENTS.md §6 の手順どおり、コンパイル → ユニットテスト → (Swift構文) → E2E(終了コード0)まで通して完了とする
+- 純ロジックは `PaceMath` のような依存ゼロの静的クラスへ書き、MonoBehaviour は委譲する
+- コミット前に [CHANGELOG.md](CHANGELOG.md) の先頭へ5行以内のエントリを足す。コミットメッセージは日本語で、検証結果を書く

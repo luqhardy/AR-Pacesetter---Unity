@@ -12,8 +12,9 @@
 
 | ドキュメント | 内容 |
 |---|---|
-| [README.md](README.md) | 開発手順・数式・フローチャート・スクリプト一覧・**更新履歴**・E2E検証手順 |
-| [AGENTS.md](AGENTS.md) | 技術仕様の一次情報(数式・GPS FSM・レイテンシ予算 ≤20ms) |
+| [README.md](README.md) | 開発手順・フローチャート・スクリプト一覧・E2E検証手順 |
+| [CHANGELOG.md](CHANGELOG.md) | 更新履歴 |
+| [AGENTS.md](AGENTS.md) | 技術仕様の一次情報(数式・GPS FSM・レイテンシ予算 ≤20ms・検証手順) |
 | [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) | SwiftUI⇄Unity連携(モノレポ構成・メッセージ契約・ビルド手順) |
 | [Docs/BUILD_ON_BORROWED_MAC.md](Docs/BUILD_ON_BORROWED_MAC.md) | 借りたMac+無料Apple IDでの実機ビルド当日手順 |
 | [Docs/UNITY_AS_A_LIBRARY.md](Docs/UNITY_AS_A_LIBRARY.md) / [.ja](Docs/UNITY_AS_A_LIBRARY.ja.md) | **UaaL汎用ガイド**(英/日)。SwiftUIアプリへUnityを組み込む手順と落とし穴 |
@@ -85,8 +86,8 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 ## 3. 検証手段(再現手順)
 
-1. **コンパイル検証(Unity起動不要)**: README「更新履歴」参照のdotnetビルド手法
-2. **E2E自動検証(現在86項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
+1. **コンパイル検証(Unity起動不要)**: AGENTS.md §6「変更時の検証ワークフロー」のdotnetビルド手法
+2. **E2E自動検証**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
    — 開始→走行→バイタル警告→追い抜き→障害物停止→ルート逸脱復帰→離隔待機→**コーナー追従(半径36.5m)**→ゴール(お辞儀)→記録→ゴースト再走→GPS喪失/復帰→履歴→HUD抑制→ジェスチャー3種→フェイクシャドウ→60fps設定を自動判定(終了コード0=全PASS)
 3. **エディタ手動検証**: README「エディタ検証用ショートカットキー一覧」
    - POV一括デモ: `Tools → AR Pacesetter → POV Demo → Start Automatic 60m Run`
