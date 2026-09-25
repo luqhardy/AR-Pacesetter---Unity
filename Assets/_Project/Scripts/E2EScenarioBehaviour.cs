@@ -531,6 +531,10 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(devSnapshot.Contains("m2p.native") && devSnapshot.Contains("gps.autoLostHandling")
               && devSnapshot.Contains("render.targetFps"),
             "dev: snapshot carries the keys the field test needs");
+        // 実機の初回確認(FIELD_TEST_PLAN §0-A)で読む項目
+        Check(devSnapshot.Contains("render.maxFrameMs") && devSnapshot.Contains("render.longFrames")
+              && devSnapshot.Contains("avatar.footPlanting"),
+            "dev: snapshot carries frame-time and foot-planting keys for the device pre-check");
         // 改行・タブが混ざるとSwift側のJSON解釈が壊れる。エスケープ済みであること
         Check(devSnapshot.IndexOf((char)10) < 0 && devSnapshot.IndexOf((char)9) < 0,
             "dev: snapshot values are escaped so the JSON survives paths and reports");

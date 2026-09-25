@@ -24,7 +24,7 @@ Unityプロジェクト(本リポジトリのルート)+ SwiftUIホスト(`ios/`
 - グラス表示・画角・頭部姿勢 → [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
 - 屋外路面の分類(ARCore) → [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
 - 差し替えアバター(VRM) → [Docs/VRM_AVATARS.md](Docs/VRM_AVATARS.md)
-- 実地テストの計画 → [Docs/FIELD_TEST_PLAN.md](Docs/FIELD_TEST_PLAN.md)
+- 実地テストの計画・実機での初回確認 → [Docs/FIELD_TEST_PLAN.md](Docs/FIELD_TEST_PLAN.md)(実機で一度も見ていない項目は §0-A)
 - 走行ログCSVを解析する(T2 の M2P p95・記録レート・GPS途絶) → [tools/analyze-run-log](tools/analyze-run-log/README.md)
 - iOSビルド(Mac) → [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) ② / [Docs/BUILD_ON_BORROWED_MAC.md](Docs/BUILD_ON_BORROWED_MAC.md)
 - 過去の経緯(なぜそうなっているか) → [CHANGELOG.md](CHANGELOG.md) を検索する(全文は長いので読み通さない)

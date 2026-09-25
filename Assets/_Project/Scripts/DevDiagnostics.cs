@@ -121,6 +121,21 @@ public static class DevDiagnostics
         Add(rows, "render.screenPx", $"{Screen.width}x{Screen.height}");
         Add(rows, "render.targetFps", Application.targetFrameRate.ToString(CultureInfo.InvariantCulture));
         Add(rows, "render.currentFps", Num(Time.smoothDeltaTime > 0.0001f ? 1f / Time.smoothDeltaTime : -1f));
+
+        // 平均fpsはカクつきを隠すので、最悪値と「平滑化が飽和するほど長いフレーム」の数も出す
+        var engine = UnityEngine.Object.FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
+        if (engine != null)
+        {
+            Add(rows, "render.maxFrameMs", Num(engine.MaxObservedDeltaSeconds * 1000f));
+            Add(rows, "render.longFrames", engine.LongFrameCount.ToString(CultureInfo.InvariantCulture));
+
+            // 実機でメッシュから足裏の点を取れているか(FBXのRead/Writeがビルドに反映されたか)
+            var planting = engine.GetComponent<FootPlanting>();
+            if (planting != null)
+                Add(rows, "avatar.footPlanting", planting.UsesMeshSolePoints
+                    ? $"メッシュ {planting.SolePointCount}点 / 持ち上げ {Num(planting.CurrentLiftMeters)}m"
+                    : "骨からの概算(メッシュを読めない — FBXのRead/Writeを確認)");
+        }
         Add(rows, "app.persistentDataPath", Application.persistentDataPath);
 
         var sb = new StringBuilder();
