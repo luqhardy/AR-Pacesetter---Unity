@@ -38,15 +38,27 @@ public static class SessionDataStore
     private static string SessionDirectory =>
         Path.Combine(Application.persistentDataPath, "RunSessions");
 
-    /// <summary>Persists the record as JSON and queues HealthKit sync. Returns the file path.</summary>
+    /// <summary>
+    /// Persists the record as JSON and queues HealthKit sync. Returns the file path, or null if saving failed.
+    ///
+    /// <para>失敗しても例外を投げない。以前は書き込み失敗(容量不足等)が走行終了処理ごと中断し、
+    /// Swift へ SessionEnded が届かず走行画面から戻れなくなっていた。</para>
+    /// </summary>
     public static string SaveSession(RunSessionRecord record)
     {
-        Directory.CreateDirectory(SessionDirectory);
-
-        string fileName = $"run_{DateTime.Now:yyyyMMdd_HHmmss}.json";
-        string fullPath = Path.Combine(SessionDirectory, fileName);
-
-        File.WriteAllText(fullPath, JsonUtility.ToJson(record, prettyPrint: true));
+        string fullPath;
+        try
+        {
+            Directory.CreateDirectory(SessionDirectory);
+            string fileName = $"run_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+            fullPath = Path.Combine(SessionDirectory, fileName);
+            File.WriteAllText(fullPath, JsonUtility.ToJson(record, prettyPrint: true));
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[DATA STORE] 走行記録の保存に失敗: {e.Message}");
+            return null;
+        }
         Debug.Log($"[DATA STORE] Session saved: {fullPath}");
 
         QueueHealthKitSync(record);
@@ -117,12 +129,17 @@ public static class SessionDataStore
         try
         {
             var record = JsonUtility.FromJson<RunSessionRecord>(File.ReadAllText(InterruptedSnapshotPath));
-            File.Delete(InterruptedSnapshotPath);
-
-            if (record == null) return null;
+            if (record == null)
+            {
+                File.Delete(InterruptedSnapshotPath); // 壊れたスナップショットは次回も読めない
+                return null;
+            }
 
             record.wasInterrupted = true;
             savedPath = SaveSession(record);
+            // 保存できたときだけ消す。以前は保存前に消していたため、保存失敗で記録が失われた
+            if (savedPath == null) return null;
+            File.Delete(InterruptedSnapshotPath);
             Debug.Log($"[DATA STORE] 前回の走行が中断されていたため履歴へ復元: {record.distanceMeters:F0}m");
             return record;
         }

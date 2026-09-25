@@ -267,8 +267,12 @@ public class RunSessionController : MonoBehaviour
         _lastRecord = record;
         string savedPath = SessionDataStore.SaveSession(record);
 
-        // 通常終了したので、背面移行のたびに書いていた中断スナップショットは不要
-        SessionDataStore.ClearInterruptedSnapshot();
+        // 通常終了したので、背面移行のたびに書いていた中断スナップショットは不要。
+        // ただし保存に失敗したときは残す — 次回起動時に履歴へ復元される
+        if (savedPath != null)
+            SessionDataStore.ClearInterruptedSnapshot();
+        else
+            SessionDataStore.SaveInterruptedSnapshot(record); // 背面移行が無かった走行でも復元の対象にする
 
         if (!_externalUiMode)
             BuildResultPanel(record, savedPath);
@@ -467,7 +471,7 @@ public class RunSessionController : MonoBehaviour
         comment.textWrappingMode = TextWrappingModes.Normal;
 
         AddLabel(card, "Session saved to app database" +
-            "\n<size=11>" + savedPath + "</size>", 13, FontStyles.Normal, -352f,
+            "\n<size=11>" + (savedPath ?? "記録を保存できませんでした(次回起動時に復元を試みます)") + "</size>", 13, FontStyles.Normal, -352f,
             new Color(0.55f, 0.65f, 0.78f));
     }
 

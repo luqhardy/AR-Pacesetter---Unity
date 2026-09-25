@@ -132,7 +132,7 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
 | `PaceCalibrationController.cs` | ペースUI・START RUN |
 | `PeripheralHUDManager.cs` | HUD表示 |
 | `AnalyticsManager.cs` | 同期率・疲労・グレード |
-| `HeartRateReceiver.cs` | BLE心拍・ピッチ受信 |
+| `HeartRateReceiver.cs` | BLE心拍・ピッチ受信(第1期は既定OFF: `scanOnStart`。近くの1台にだけ接続) |
 | `AvatarVisualsAndActions.cs` | バイオルミネッセンス |
 | `SafetyAndSystemController.cs` | TTC・低バッテリー（**未配線**） |
 | `LatencyBenchmarkRunner.cs` | レイテンシベンチマーク |

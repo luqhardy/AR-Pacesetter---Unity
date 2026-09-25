@@ -203,6 +203,10 @@ stateDiagram-v2
 - グラスの画面モードは **Follow(固定)**。Anchor だと頭部補正が二重にかかる。iOSからグラスの頭部姿勢は取得できない
 - 屋外路面分類(ARCore)は `#if ARCORE_EXTENSIONS` の中だけで触る。**3D面分類を画像分類で上書きしない**
 - VRMアバターの受け入れ基準(三角形70,000・マテリアル8等)は 60fps と M2P 20ms のための値。`.vrca`(VRChat)は使えない
+- **第1期スコープ外のセンサーは既定OFF**: 心拍BLE(`HeartRateReceiver.scanOnStart`)とマイクによる音量自動調整
+  (`RunAudioEngine.adaptiveVolumeFromMicrophone`)。ONだと起動時に許可ダイアログが出て走行中ずっと無線/マイクを使う(§10 60分稼働)。
+  BLEは近く(-70dBm以上)の1台にだけ繋ぐ — トラックでは他の走者のストラップも同じサービスを広告している
+- `SessionDataStore.SaveSession` は失敗しても例外を投げず null を返す。走行終了処理(Swiftへの `SessionEnded`)を止めないため
 - `tools/prepare-free-signing.sh` の実行結果(Bundle ID・署名設定の一時改変)はコミットしない。CIが検知して落とす
 
 ### ペース単位の規約

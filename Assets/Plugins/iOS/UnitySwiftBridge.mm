@@ -13,7 +13,12 @@ void UnitySendMessageToSwift(const char* json)
 {
     if (json == NULL) return;
 
+    // 不正なUTF-8だと nil が返る。nil を @{...} へ入れると例外でアプリごと落ちるため捨てる
     NSString *message = [NSString stringWithUTF8String:json];
+    if (message == nil) {
+        NSLog(@"[UnitySwiftBridge] Dropped a Unity→Swift message that was not valid UTF-8");
+        return;
+    }
     dispatch_async(dispatch_get_main_queue(), ^{
         [[NSNotificationCenter defaultCenter]
             postNotificationName:@"UnityToSwiftMessage"

@@ -59,7 +59,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | TTC優先の危険警告(赤点滅+音+振動) | `SafetyAndSystemController.cs` | **未配線 — 実行時に存在しない**(§5参照) |
 | 特定音声＆優先度制御(赤信号/交差点のみ・TTC短優先で割込) | `VoiceAlertSpeaker.swift` + `VoiceAlert`イベント | 実機要(検知ソースの地図連携は未 — エディタはContextMenuで送信確認) |
 | 足音(路面連動)・心拍連動呼吸音 | `RunAudioEngine.cs`(全クリップ手続き生成) | エディタ試聴 |
-| 環境適応音響(45dB→自動音量、75dB上限) | 同上(実機マイク/エディタMキー) | エディタ |
+| 環境適応音響(45dB→自動音量、75dB上限) | 同上(実機マイク/エディタMキー)。**実機は既定OFF**(`adaptiveVolumeFromMicrophone`、第1期スコープ外) | エディタ |
 | サイレントルート復帰 | `SilentRouteRecoverer.cs` | **E2E自動**(逸脱→復帰+ログ) |
 | GPS喪失FSM(慣性5s→フェード→復帰粒子+頷き) | `GameStateController.cs` | **E2E自動** |
 

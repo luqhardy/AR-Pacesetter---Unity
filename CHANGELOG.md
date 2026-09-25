@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-09-25 — 監査の指摘5件: 他人の心拍センサー接続 / マイク常時ON / 保存失敗で終了不能 / ブリッジのnilクラッシュ / 古いコメント
+
+心拍BLEは既定OFF(`scanOnStart`)にし、近く(-70dBm以上)の1台だけに接続(以前は見つけた全センサーに接続し、トラックで他人の心拍がバイタル警告を点けうた)。マイク音量調整も既定OFF(`adaptiveVolumeFromMicrophone`)。
+`SaveSession` は失敗で例外を投げずnullを返し、失敗時は中断スナップショットに残して次回復元(以前はSessionEndedが届かず走行画面から戻れなかった。復元も保存前にスナップショットを消していた)。`UnitySwiftBridge.mm` の不正UTF-8でのnilクラッシュを防止。
+検証: tools/verify.sh 全通過(dotnet test 340/340、Swift 24、E2E 209/209)。.mm 2件はWindowsでコンパイル不可 — 次のUnityエクスポート後にiOS CIで要確認
+
 ### 2026-09-24 (8) — O/Pキーのリフレクション呼び出しを公開APIへ / Tests/README を現状へ
 
 `GameStateController` がリフレクションで `AvatarEngine` のprivateメソッドを呼んでいた(改名で無言で壊れる)ため `SimulateBeingOvertaken` / `SimulateOvertaking` を公開。プロジェクトのスクリプトからリフレクションが無くなった。

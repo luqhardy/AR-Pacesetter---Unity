@@ -16,13 +16,27 @@ public class HeartRateReceiver : MonoBehaviour
     private static extern void StopHeartRateBLEScan();
 #endif
 
+    // 第1期(iPhone + グラスのみ)は心拍BLEがスコープ外なので既定OFF。
+    // ONのまま起動するとBluetooth許可ダイアログが出て、走行中ずっと無線を使う(§10 60分稼働)。
+    [Tooltip("起動時に心拍/ケイデンスのBLEセンサーを探す(第1期スコープ外・既定OFF)")]
+    [SerializeField] private bool scanOnStart = false;
+
+    private bool _scanning;
+
     private void Start()
     {
+        if (scanOnStart) StartScan();
+    }
+
+    /// <summary>心拍/ケイデンスのBLEセンサー探索を始める。繋ぐのは近くの1台だけ(HeartRatePlugin.mm)。</summary>
+    public void StartScan()
+    {
+        if (_scanning) return;
+        _scanning = true;
 #if UNITY_IOS && !UNITY_EDITOR
-        // Boot up native Apple CoreBluetooth stack on app launch
         StartHeartRateBLEScan();
 #else
-        Debug.Log("[BLE SIMULATOR] Running on Windows Editor. Simulating Bluetooth hardware connection...");
+        Debug.Log("[BLE SIMULATOR] Running in the editor. Simulating Bluetooth hardware connection...");
 #endif
     }
 
@@ -76,6 +90,8 @@ public class HeartRateReceiver : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (!_scanning) return;
+        _scanning = false;
 #if UNITY_IOS && !UNITY_EDITOR
         StopHeartRateBLEScan();
 #endif
