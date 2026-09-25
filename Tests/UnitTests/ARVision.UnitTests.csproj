@@ -28,6 +28,8 @@
     <Compile Include="..\..\Assets\_Project\Scripts\GroundFloorTracker.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\CliffMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GroundContactMath.cs" />
+    <!-- 走行ログCSVの解析ツール(tools/analyze-run-log)の純ロジック -->
+    <Compile Include="..\..\tools\analyze-run-log\RunLogAnalysis.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\FrameSmoothing.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\VrmAvatarPolicy.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GlassOpticsMath.cs" />

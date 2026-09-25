@@ -33,6 +33,7 @@ dotnet build "$ROOT/tools/compile-check" -nologo -v:q || fail "C# compile"
 
 step "2/4 Unit tests (Tests/UnitTests)"
 dotnet test "$ROOT/Tests/UnitTests" -nologo -v:q || fail "unit tests"
+dotnet build "$ROOT/tools/analyze-run-log" -nologo -v:q || fail "run-log analyzer build"
 
 step "3/4 Swift syntax (ios/)"
 if [ -z "$SWIFTC" ] || { [ "$SWIFTC" != "xcrun-swiftc" ] && [ ! -x "$SWIFTC" ]; }; then

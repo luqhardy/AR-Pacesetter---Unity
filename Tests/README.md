@@ -54,3 +54,4 @@ Unityの型(`Vector3` 等)が要る処理はここではテストできない �
 | `GlassOpticsMathTests` | `GlassOpticsMath` | グラスの画角換算・全身が視野に入る距離 |
 | `GlassPoseAndProfileTests` | `GlassDisplayProfile` / `HeadPoseMath` | 表示プロファイルと頭部姿勢の供給元 |
 | `VrmAvatarPolicyTests` | `VrmAvatarPolicy` | 差し替えアバター(VRM)の受け入れ基準 |
+| `RunLogAnalysisTests` | `RunLogAnalysis`(tools/analyze-run-log) | 走行ログCSVの解析: T2 の M2P p95・記録レート・GPS途絶 |

@@ -50,6 +50,8 @@ ios/**/*.xcuserstate
 # コンパイル検証(tools/compile-check)の生成物
 /tools/compile-check/bin/
 /tools/compile-check/obj/
+/tools/analyze-run-log/bin/
+/tools/analyze-run-log/obj/
 
 # Visual Studio のローカル状態(ウィンドウ配置・Copilot索引・.suo)
 /.vs/
