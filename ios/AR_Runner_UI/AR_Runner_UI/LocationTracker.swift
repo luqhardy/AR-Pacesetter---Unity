@@ -45,7 +45,13 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         manager.activityType = .fitness
-        manager.distanceFilter = 2 // 2m毎に更新
+        // distanceFilter は None にする(以前は 2m)。
+        // UnityのGPSロスト判定(F-09 §8.1)は「更新が1.5秒途絶えたらロスト」で、
+        // 2m移動しないと測位が届かない設定だと、**1.33m/s(4.8km/h)より遅い歩行や
+        // 立ち止まり**で必ず「途絶」になる。5秒後にフェードアウト→スタンバイで
+        // アバターが消え、屋内の歩行検証では「壁があると消える」に見えていた。
+        // None なら CoreLocation は静止中でも約1Hzで測位を返し、途絶=本当の信号断だけになる
+        manager.distanceFilter = kCLDistanceFilterNone
     }
 
     func start() {

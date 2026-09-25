@@ -98,6 +98,34 @@ public class RunSessionController : MonoBehaviour
             audioEngine = FindFirstObjectByType<RunAudioEngine>(FindObjectsInactive.Include);
         if (telemetryLogger == null)
             telemetryLogger = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
+
+        // 前回の走行が「走行中にアプリを終了」で終わっていたら、その記録を履歴へ復元する。
+        // (通常終了なら FinishRun がスナップショットを消しているのでここは何もしない)
+        SessionDataStore.TryPromoteInterruptedSnapshot(out _);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // 走行中のアプリ終了(スワイプ)対策
+    //
+    // 記録は FinishRun でしか保存されないため、走行中にアプリを殺されると
+    // その走行はまるごと消えていた。iOSではアプリスイッチャからのスワイプ終了時に
+    // OnDestroy / OnApplicationQuit は呼ばれない保証が無い一方、**バックグラウンド移行の
+    // OnApplicationPause(true) は必ず呼ばれる**。そこで「背面に回った時点の現在値」を
+    // 毎回スナップショットしておき、次回起動時に履歴へ昇格させる。
+    // ════════════════════════════════════════════════════════════════════════
+
+    void OnApplicationPause(bool paused)
+    {
+        if (paused) PersistInterruptedSnapshot();
+    }
+
+    void OnApplicationQuit() => PersistInterruptedSnapshot();
+
+    /// <summary>走行中なら現在値を中断スナップショットとして保存する(走行外は何もしない)。</summary>
+    public void PersistInterruptedSnapshot()
+    {
+        if (!_runActive || _finished) return;
+        SessionDataStore.SaveInterruptedSnapshot(BuildSessionRecord());
     }
 
     void Update()
@@ -238,6 +266,13 @@ public class RunSessionController : MonoBehaviour
         RunSessionRecord record = BuildSessionRecord();
         _lastRecord = record;
         string savedPath = SessionDataStore.SaveSession(record);
+
+        // 通常終了したので、背面移行のたびに書いていた中断スナップショットは不要。
+        // ただし保存に失敗したときは残す — 次回起動時に履歴へ復元される
+        if (savedPath != null)
+            SessionDataStore.ClearInterruptedSnapshot();
+        else
+            SessionDataStore.SaveInterruptedSnapshot(record); // 背面移行が無かった走行でも復元の対象にする
 
         if (!_externalUiMode)
             BuildResultPanel(record, savedPath);
@@ -436,7 +471,7 @@ public class RunSessionController : MonoBehaviour
         comment.textWrappingMode = TextWrappingModes.Normal;
 
         AddLabel(card, "Session saved to app database" +
-            "\n<size=11>" + savedPath + "</size>", 13, FontStyles.Normal, -352f,
+            "\n<size=11>" + (savedPath ?? "記録を保存できませんでした(次回起動時に復元を試みます)") + "</size>", 13, FontStyles.Normal, -352f,
             new Color(0.55f, 0.65f, 0.78f));
     }
 

@@ -53,17 +53,12 @@ public class AvatarEngine : MonoBehaviour
     [Tooltip("Lateral step distance when avatar yields to the user (metres, rightward)")]
     [SerializeField] private float overtakenSidestepMeters = 0.8f;
 
-    // ── Native C++ Plugin Bridge ─────────────────────────────────────────────
-#if UNITY_IOS && !UNITY_EDITOR
-    [DllImport("__Internal")]
-    private static extern void InitKalmanFilter(float processNoise, float measurementNoise, float lteWeight);
-
-    [DllImport("__Internal")]
-    private static extern void UpdateKalmanFilter(float rawX, float rawY, float rawZ,
-        out float smoothX, out float smoothY, out float smoothZ);
-
-    private bool _isKalmanInitialized = false;
-#endif
+    // ── 空間平滑(カルマン) ───────────────────────────────────────────────────
+    // 以前は iOS 実機でだけ C++ プラグイン(KalmanFilterNative.mm)を通し、エディタは
+    // 素通しだった。実機だけが通る経路がテストに一度も掛かっていなかったため、
+    // 同じアルゴリズムの C# 実装(SpatialKalmanFilter・純ロジック)を全環境で使う。
+    // これでエディタの E2E がそのまま実機の平滑挙動を縛る
+    private readonly SpatialKalmanFilter _spatialFilter = new SpatialKalmanFilter();
 
     // ═══════════════════════════════════════════════════════════════════════
     // Private state
@@ -114,6 +109,12 @@ public class AvatarEngine : MonoBehaviour
     private float _overtakenTimer   = 0f;  // how long user has been faster
     private float _sprintTimer      = 0f;  // how long sprint has been held
     private Vector3 _sidestepOffset = Vector3.zero; // lateral shift when yielding
+
+    // 追従の定常遅れ補正用。アンカーの移動速度を平滑して先回り量を出す
+    private Vector3 _lastAnchorPosition;
+    private Vector3 _smoothedAnchorVelocity;
+    private bool _hasLastAnchor;
+    private const float AnchorVelocitySmoothing = 3.0f; // 時定数≒0.33秒
     
     private bool _hasStarted = false; // Start command state
     private bool _runMotionActive = false;
@@ -142,6 +143,16 @@ public class AvatarEngine : MonoBehaviour
     /// <summary>純化済みの進行方向(水平・単位ベクトル)。ペースシンクロ色の
     /// 符号付きリード距離算出などに使う。待機/停止中も直近の向きを保持する。</summary>
     public Vector3 CurrentHeading => _currentLinearDirection;
+
+    // ── フレーム時間の診断 (コーナーのワープ調査) ───────────────────────────
+    // 位置追従は Lerp(現在, 目標, Time.deltaTime * k)。Unityの Lerp は t を [0,1] へ
+    // 丸めるため、**1フレームが 1/k 秒(k=2.5 なら0.4秒)を超えると t が飽和し、
+    // アバターは補間ではなく目標へ「瞬間移動」する**。実機のGCヒッチやE2Eの
+    // timeScale=3 では現実的に起こりうる。まず起きているのかを数える。
+    /// <summary>走行中に観測した最大の Time.deltaTime(秒)。</summary>
+    public float MaxObservedDeltaSeconds { get; private set; }
+    /// <summary>平滑化の上限に掛かった(=クランプが無ければ瞬間移動していた)フレーム数。</summary>
+    public int LongFrameCount { get; private set; }
     public float LeadDistanceMeters => leadDistanceMeters;
 
     public void StartPacing()
@@ -185,10 +196,7 @@ public class AvatarEngine : MonoBehaviour
 
         CalculateVelocityMatrix(targetPaceMinutesPerKm);
 
-#if UNITY_IOS && !UNITY_EDITOR
-        InitKalmanFilter(0.05f, 0.8f, 0.12f);
-        _isKalmanInitialized = true;
-#endif
+        _spatialFilter.Reset();
         Debug.Log("[PACER ENGINE] Initialized and waiting for Start command.");
     }
 
@@ -211,6 +219,8 @@ public class AvatarEngine : MonoBehaviour
         // ── Pre-start logic ─────────────────────────────────────────────────
         if (!_hasStarted)
         {
+            RecordPreStartPosition();
+
             // Update purified heading but don't move forward yet
             UpdatePurifiedHeading();
             
@@ -330,8 +340,29 @@ public class AvatarEngine : MonoBehaviour
 
         // Blend position with elastic catchup speed (Feature #3)
         float posLerpSpeed = GetEffectivePositionLerpSpeed();
-        _targetPacingPosition = Vector3.Lerp(_targetPacingPosition, filtered,
-                                             Time.deltaTime * posLerpSpeed);
+
+        // ── 追従の定常遅れを打ち消す (§10 位置誤差1.0m / F-03 3.0m前方維持) ──
+        // 指数平滑は動き続ける目標を必ず v/k だけ取り残す。k=2.5・3.6m/s なら1.44mで、
+        // アバターは3.0m前方ではなく実質1.6m前方に居続ける(E2E実測でも平均1.51m)。
+        // 遅れる量は分かっているので、その分だけ目標を先回りさせる。
+        // 平滑の強さ(k)は変えないため手ブレ除去性能は落ちず、定常成分だけが消える
+        Vector3 feedForward = ComputeTrackingLagFeedForward(filtered, posLerpSpeed);
+
+        // 長いフレームで補間係数が1へ飽和すると、追従ではなく目標への瞬間移動になる
+        // (k=2.5 なら400ms超で発生)。平滑化に使う経過時間に上限を掛けて防ぐ。
+        // 遅れは次フレーム以降で自然に解消するので、ワープより常に望ましい
+        if (Time.deltaTime > MaxObservedDeltaSeconds) MaxObservedDeltaSeconds = Time.deltaTime;
+        if (FrameSmoothing.WouldSaturate(Time.deltaTime, posLerpSpeed))
+        {
+            LongFrameCount++;
+            Debug.LogWarning($"[PACER ENGINE] 長いフレームを検出 — " +
+                             $"deltaTime={Time.deltaTime * 1000f:F0}ms k={posLerpSpeed} " +
+                             $"(飽和閾値 {FrameSmoothing.SaturationThresholdSeconds(posLerpSpeed) * 1000f:F0}ms)。" +
+                             $"平滑化は{FrameSmoothing.MaxSmoothingDeltaSeconds * 1000f:F0}msで頭打ちにして瞬間移動を防ぎます");
+        }
+
+        _targetPacingPosition = Vector3.Lerp(_targetPacingPosition, filtered + feedForward,
+                                             FrameSmoothing.Factor(Time.deltaTime, posLerpSpeed));
         
         // Align our internal tracking position with GroundSnap's actual height to avoid Y drift fighting
         _targetPacingPosition.y = transform.position.y;
@@ -478,7 +509,8 @@ public class AvatarEngine : MonoBehaviour
 
         // Feature #7: Only update direction from GPS. If GPS is tiny, HOLD current direction.
         // Never fall back to userCamera.forward (that causes gaze-drift).
-        if (integratedGPS.magnitude > 0.02f)
+        // 手ブレ(数cm)では方位を更新しない — 歩き出し(1.5秒で0.5m)から
+        if (HeadingGateMath.IsArMotionUsableForHeading(integratedGPS.magnitude))
         {
             _hasMovementHeading = true;
             Vector3 gpsDir = integratedGPS.normalized;
@@ -540,7 +572,7 @@ public class AvatarEngine : MonoBehaviour
 
         // Smooth the multiplier so speed changes aren't abrupt
         _effectiveSpeedMultiplier = Mathf.Lerp(_effectiveSpeedMultiplier, targetMultiplier,
-                                               Time.deltaTime * 3.0f);
+                                               FrameSmoothing.Factor(Time.deltaTime, 3.0f));
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -602,6 +634,18 @@ public class AvatarEngine : MonoBehaviour
                 break;
         }
     }
+
+    /// <summary>
+    /// 「ユーザーに追い抜かれる」状態へ即座に入る(エディタのOキー・検証用)。
+    /// 通常は速度差の検知で自動的に入る。
+    /// (旧実装は GameStateController がリフレクションで private メソッドを呼んでいた — 型安全化)
+    /// </summary>
+    public void SimulateBeingOvertaken() => EnterBeingOvertakenState();
+
+    /// <summary>
+    /// 「アバターが抜き返してスプリントする」状態へ即座に入る(エディタのPキー・検証用)。
+    /// </summary>
+    public void SimulateOvertaking() => EnterOvertakingState();
 
     private void EnterBeingOvertakenState()
     {
@@ -702,7 +746,7 @@ public class AvatarEngine : MonoBehaviour
         get
         {
             // ① ヒューマノイドの足ボーンが最も正確(ポーズを含めた実際の足の位置)
-            var animator = GetComponentInChildren<Animator>(true);
+            var animator = AvatarRigLocator.FindBestAnimator(transform);
             if (animator != null && animator.isHuman)
             {
                 Transform lf = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
@@ -847,6 +891,12 @@ public class AvatarEngine : MonoBehaviour
     {
         _targetPacingPosition  = avatarWorldPosition;
         _lastFrameUserPosition = userWorldPosition;
+
+        // 位置を外部が飛ばした直後は差分が速度ではないので、遅れ補正を取り直す
+        _hasLastAnchor = false;
+        _smoothedAnchorVelocity = Vector3.zero;
+        // 平滑器も古い推定から新しい位置へ「引きずる」ので捨てる
+        _spatialFilter.Reset();
     }
 
     /// <summary>
@@ -872,6 +922,9 @@ public class AvatarEngine : MonoBehaviour
         _sidestepOffset = Vector3.zero;
         _effectiveSpeedMultiplier = 1.0f;
         _lastCleanKalmanVelocity = Vector3.zero;
+        _hasLastAnchor = false;
+        _smoothedAnchorVelocity = Vector3.zero;
+        _spatialFilter.Reset();
 
         if (userCamera != null)
         {
@@ -896,10 +949,56 @@ public class AvatarEngine : MonoBehaviour
     /// なる場合がある。開始時に限り現在の視線方向を初期アンカーへ使い、移動検出後は
     /// UpdatePurifiedHeadingだけが方位を更新する。従って走行中の見回しでは横揺れしない。
     /// </summary>
+    // 開始時の向き判断用: 走行前のカメラ位置の履歴(時刻つき)。
+    // 進行方向の供給元(RunnerTrackingState / ローカル計測)に依存せず「実際に動いたか」を測る
+    private readonly System.Collections.Generic.Queue<MovementFrame> _preStartPositions
+        = new System.Collections.Generic.Queue<MovementFrame>();
+
+    private void RecordPreStartPosition()
+    {
+        if (userCamera == null) return;
+        _preStartPositions.Enqueue(new MovementFrame(userCamera.position, Time.time));
+        while (_preStartPositions.Count > 0
+               && Time.time - _preStartPositions.Peek().time > StartHeadingPolicy.WindowSeconds + 0.1f)
+            _preStartPositions.Dequeue();
+    }
+
+    /// <summary>直前 <paramref name="windowSeconds"/> 秒の水平移動量(m)。記録が無ければ0。</summary>
+    private float RecentUserDisplacementMeters(float windowSeconds)
+    {
+        if (userCamera == null || _preStartPositions.Count == 0) return 0f;
+
+        Vector3 oldest = Vector3.zero;
+        bool found = false;
+        foreach (var f in _preStartPositions)
+        {
+            if (Time.time - f.time <= windowSeconds) { oldest = f.delta; found = true; break; }
+        }
+        if (!found) return 0f;
+
+        Vector3 moved = userCamera.position - oldest;
+        moved.y = 0f;
+        return moved.magnitude;
+    }
+
     private void AlignStartHeadingToUserView()
     {
-        if (_hasMovementHeading || userCamera == null)
+        if (userCamera == null)
             return;
+
+        // 「移動履歴があるか」ではなく「直前に実際に動いていたか」で判断する。
+        // 待機中の手ブレでも履歴は立つ(1.5秒で2cm)ため、履歴の有無を条件にすると
+        // ほぼランダムな方向の3m先にアバターが現れ、立ち止まっている限り
+        // 視線固定(F-08)でそこに留まる — 実機で「開始したのに見えない」の一因
+        float recent = RecentUserDisplacementMeters(StartHeadingPolicy.WindowSeconds);
+        if (!StartHeadingPolicy.ShouldAlignToView(recent))
+        {
+            Debug.Log($"[PACER ENGINE] Start heading kept from movement " +
+                      $"(moved {recent:F2}m in the last {StartHeadingPolicy.WindowSeconds:F1}s).");
+            return;
+        }
+        Debug.Log($"[PACER ENGINE] Start heading aligned to the user's view " +
+                  $"(moved only {recent:F2}m in the last {StartHeadingPolicy.WindowSeconds:F1}s).");
 
         Vector3 initialForward = userCamera.forward;
         initialForward.y = 0f;
@@ -938,6 +1037,48 @@ public class AvatarEngine : MonoBehaviour
         Debug.Log($"[SPEED CALCULATOR] Pace {pace:F2}/km → {_calculatedTargetSpeedMetersPerSecond:F2} m/s");
     }
 
+    /// <summary>
+    /// 追従の定常遅れを打ち消す先回りベクトルを作る。
+    ///
+    /// <para>速度は<b>ユーザー(カメラ)の移動</b>から取り、向きは進行方向に固定する。
+    /// 以前はアンカー(ユーザー + 進行方向×3m)の速度を使っていたが、アンカーは
+    /// 進行方向がわずかに揺れるだけで3mの腕の先で大きく動く(10°で0.5m)。
+    /// その「速度」を先回りに使うと、方位ノイズを最大3mまで増幅してアバターを
+    /// 振り回す — 実機で「不規則に飛び回る」の一因。ユーザー自身の速度なら
+    /// 手ブレは平滑で消え、方位の揺れは先回りに入らない。</para>
+    /// </summary>
+    private Vector3 ComputeTrackingLagFeedForward(Vector3 anchor, float lerpSpeed)
+    {
+        float dt = Mathf.Max(Time.deltaTime, 0.0001f);
+        Vector3 userPos = userCamera.position;
+
+        if (!_hasLastAnchor)
+        {
+            // 初回・再同期直後は速度が測れない(差分が飛ぶ)ので補正しない
+            _lastAnchorPosition = userPos;
+            _hasLastAnchor = true;
+            _smoothedAnchorVelocity = Vector3.zero;
+            return Vector3.zero;
+        }
+
+        Vector3 instantVelocity = (userPos - _lastAnchorPosition) / dt;
+        instantVelocity.y = 0f;
+        _lastAnchorPosition = userPos;
+
+        // ARの再localize等のテレポートは人間の移動ではない
+        if (instantVelocity.magnitude > 15f) instantVelocity = Vector3.zero;
+
+        _smoothedAnchorVelocity = Vector3.Lerp(_smoothedAnchorVelocity, instantVelocity,
+                                               Mathf.Clamp01(dt * AnchorVelocitySmoothing));
+
+        // 進行方向に沿った成分だけを使う(横揺れ・後退は先回りにしない)
+        float alongHeading = Vector3.Dot(_smoothedAnchorVelocity, _currentLinearDirection);
+        if (alongHeading < 0.3f) return Vector3.zero; // 立ち止まり・手ブレ域では補正しない
+
+        float meters = TrackingLagMath.FeedForwardMeters(alongHeading, lerpSpeed);
+        return _currentLinearDirection * meters;
+    }
+
     private float GetEffectivePositionLerpSpeed()
     {
         // Faster lerp during sprint, slower when waiting for user to catch up
@@ -946,14 +1087,7 @@ public class AvatarEngine : MonoBehaviour
 
     private Vector3 SmoothSpatialData(Vector3 raw)
     {
-#if UNITY_IOS && !UNITY_EDITOR
-        if (_isKalmanInitialized)
-        {
-            float ox, oy, oz;
-            UpdateKalmanFilter(raw.x, raw.y, raw.z, out ox, out oy, out oz);
-            return new Vector3(ox, oy, oz);
-        }
-#endif
-        return raw;
+        _spatialFilter.Update(raw.x, raw.y, raw.z, Time.deltaTime, out float ox, out float oy, out float oz);
+        return new Vector3(ox, oy, oz);
     }
 }

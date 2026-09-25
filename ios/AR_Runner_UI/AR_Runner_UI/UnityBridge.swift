@@ -26,10 +26,35 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var avatarSyncRate: Int = 0       // 0–100%
     @Published var avatarState: AvatarState = .idle
     @Published var gpsStatus: GPSStatus = .searching
-    @Published var motionToPhotonMs: Double = 0  // latency monitor
+    /// アバターが見えていない理由(Unity AvatarVisibilityDiagnostics)。見えていれば nil。
+    /// 実機で「消えた」を「どの経路で消えたか」に変えるための診断表示
+    @Published var avatarHiddenReason: String? = nil
+    @Published var motionToPhotonMs: Double = 0  // latency monitor (-1 = 未計測)
+    /// 区間のM2P最大値(ms)。1Hzの瞬時値では拾えない超過を捉えるため Unity から併せて届く
+    @Published var motionToPhotonMaxMs: Double = -1
+    /// 20ms予算(§10)を超えたサンプルの割合(0〜1)。-1 は未計測
+    @Published var motionToPhotonOverBudgetRatio: Double = -1
+    /// これまでに実測できたM2Pサンプル数
+    @Published var motionToPhotonSampleCount: Int = 0
     @Published var lastResult: SessionResult?    // EndSession後にUnityから届く
     @Published var history: [HistoryEntry] = []  // RequestHistory応答(新しい順)
     @Published var lowBatteryMode = false        // Unity側が低バッテリー退避したら true
+
+    // MARK: 開発者モード (Unityからのスナップショット)
+    /// `RequestDiagnostics` の応答。表示順を保つため配列で保持する
+    @Published var diagnostics: [DiagnosticRow] = []
+    /// `RequestLogFiles` の応答。F-11走行ログCSVの一覧(新しい順)
+    @Published var logFiles: [LogFile] = []
+    /// 走行ログの保存ディレクトリ(Unityの persistentDataPath 配下)
+    @Published var logDirectory: String = ""
+
+    // MARK: 差し替えアバター (VRM)
+    /// 選べるアバターの一覧(同梱 + 取り込み)
+    @Published var vrmAvatars: [VrmAvatar] = []
+    /// 現在適用中のアバター名。既定モデルのままなら空
+    @Published var currentVrmAvatar: String = ""
+    /// 直近の取り込み/選択の結果。UIはこれを見て成否と理由を出す
+    @Published var lastVrmResult: VrmImportResult?
 
     // MARK: Types
     enum AvatarState: String {
@@ -52,6 +77,56 @@ final class UnityBridge: NSObject, ObservableObject {
         let distanceKm: Double
         let elapsedSeconds: Double
         let calories: Double     // Unity側でオンボーディング体重から算出
+    }
+
+    struct VrmAvatar: Identifiable {
+        let id = UUID()
+        let name: String
+        let path: String
+    }
+
+    /// 取り込み結果。**断られた理由を必ず持つ** — VRChat向けアバターは三角形数の
+    /// 上限に掛かることが多く、「失敗しました」だけでは利用者が直しようがない。
+    struct VrmImportResult {
+        let accepted: Bool
+        let name: String
+        /// 実測値つきの説明(三角形数・マテリアル数・身長など)
+        let report: String
+        /// 断った理由。成功時は空
+        let reason: String
+    }
+
+    struct DiagnosticRow: Identifiable {
+        let id = UUID()
+        let key: String
+        let value: String
+    }
+
+    /// F-11走行ログCSVの1件。`url` は共有シートへそのまま渡せる
+    struct LogFile: Identifiable {
+        let id = UUID()
+        let name: String
+        let path: String
+        let bytes: Int
+        let modifiedIso: String
+
+        var url: URL { URL(fileURLWithPath: path) }
+
+        var sizeLabel: String {
+            ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+        }
+
+        /// "09/17 14:23" 形式(ファイル名の日時と突き合わせやすい形)
+        var modifiedLabel: String {
+            let parser = ISO8601DateFormatter()
+            parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let date = parser.date(from: modifiedIso)
+                ?? ISO8601DateFormatter().date(from: modifiedIso)
+            guard let date else { return modifiedIso }
+            let out = DateFormatter()
+            out.dateFormat = "MM/dd HH:mm"
+            return out.string(from: date)
+        }
     }
 
     struct HistoryEntry: Identifiable {
@@ -151,9 +226,34 @@ final class UnityBridge: NSObject, ObservableObject {
     }
 
     /// Connect XREAL glasses (triggers Unity AR initialization).
-    func connect() {
+    ///
+    /// 表示メトリクスを一緒に渡す。Unityはこれで「グラスの画角で描く」プロファイルを選ぶ —
+    /// iPhoneカメラの内部パラメータのまま出すと、3.0m前方のアバターが実寸の角度で見えない。
+    ///
+    /// - Note: 画角も機種名もグラスからは取得できない(XREALのSDKはAndroid専用で、
+    ///   USB-HIDもiOSアプリからは触れない)。iOSが知っているのは解像度とリフレッシュレートだけ。
+    ///   1920×1080 は One / One Pro / Air2 で共通のためUnity側は XREAL One を既定に落とす。
+    func connect(model: String? = nil, pixelWidth: Int = 0, pixelHeight: Int = 0, refreshHz: Double = 0) {
+        var payload: [String: Any] = ["command": "ConnectXREAL"]
+        if let model, !model.isEmpty { payload["model"] = model }
+        if pixelWidth > 0 { payload["pixelWidth"] = pixelWidth }
+        if pixelHeight > 0 { payload["pixelHeight"] = pixelHeight }
+        if refreshHz > 0 { payload["refreshHz"] = refreshHz }
+
+        sendToUnity(object: "DeviceManager", method: "OnSwiftCommand", payload: payload)
+    }
+
+    /// グラス実機の頭部姿勢をUnityへ渡す(度)。
+    ///
+    /// - Important: 現状 iOS には供給元が無い。将来グラス側の姿勢が取れるようになったときの
+    ///   受け口として契約だけ通してある。供給が途切れればUnity側は自動で
+    ///   §4.1 の移動平均済み進行方向へ落ちるため、欠測しても破綻しない。
+    ///   グラスの画面モードが Anchor のときはグラス自身が頭回転を打ち消すため、
+    ///   この値を送っても Unity 側は採用しない(二重補正の回避)。
+    func updateGlassPose(yaw: Double, pitch: Double, roll: Double, timestamp: Double) {
         sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
-                    payload: ["command": "ConnectXREAL"])
+                    payload: ["command": "UpdateGlassPose",
+                              "yaw": yaw, "pitch": pitch, "roll": roll, "timestamp": timestamp])
     }
 
     /// ARグラス切断 (§8.3): Unityをスタンバイへ移行させアバターを消去する。
@@ -168,6 +268,53 @@ final class UnityBridge: NSObject, ObservableObject {
     func resumeSession() {
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
                     payload: ["command": "ResumeSession"])
+    }
+
+    /// F-09/F-10(GPSロストでアバターを退避)の自動判定を実行時に切り替える。
+    ///
+    /// 既定はON(基本設計書どおり)。屋内デモで「掴んだ後に消えないでほしい」場面のための
+    /// 明示的なスイッチ。定数を書き換える運用は戻し忘れを生むため、実行時に切れるようにしてある。
+    /// なお「一度も良好な測位を得ていない間はロスト判定しない」はUnity側の既定動作なので、
+    /// 屋内で走り出す前にアバターが消えることは、この設定に関わらず起きない。
+    func setGpsLostHandling(enabled: Bool) {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "SetGpsLostHandling", "enabled": enabled])
+    }
+
+    /// 開発者モード: 現在の状態スナップショットを要求する(Diagnostics イベントで返る)。
+    func requestDiagnostics() {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "RequestDiagnostics"])
+    }
+
+    /// 開発者モード: F-11走行ログCSVの一覧を要求する(LogFiles イベントで返る)。
+    ///
+    /// CSVはUnityの persistentDataPath 配下にあり、これまでアプリからは存在すら見えなかった。
+    /// 第1期の成果物そのものなので、一覧とパスを受け取って共有シートで書き出せるようにする。
+    func requestLogFiles() {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "RequestLogFiles"])
+    }
+
+    /// 取り込んだ .vrm を適用する。`path` はアプリのサンドボックス内の**絶対パス**。
+    ///
+    /// Swift側でファイルをサンドボックスへコピーしてから呼ぶこと — ドキュメントピッカーが
+    /// 返すURLはセキュリティスコープ付きで、Unity側からはそのままでは読めない。
+    func importVrmAvatar(path: String) {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "ImportVrmAvatar", "path": path])
+    }
+
+    /// 一覧から既存のアバターを選び直す。
+    func selectVrmAvatar(path: String) {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "SelectVrmAvatar", "path": path])
+    }
+
+    /// 選べるアバターの一覧を要求する(VrmAvatarList イベントで返る)。
+    func requestVrmAvatars() {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "RequestVrmAvatars"])
     }
 
     /// Request past run history from Unity's session store (HistoryData event).
@@ -198,8 +345,50 @@ final class UnityBridge: NSObject, ObservableObject {
                 self.gpsStatus = .lost
             case "GPSRecovered":
                 self.gpsStatus = .recovered
+            case "AvatarVisibility":
+                // Unityが判定した「アバターが見えない経路」。見えていれば nil
+                let visible = dict["visible"] as? Bool ?? true
+                self.avatarHiddenReason = visible ? nil : (dict["reason"] as? String ?? "不明")
             case "LatencyReport":
+                // ms が -1 なら未計測。maxMs 等は実測サンプルがある時だけ載る(省略時は据え置き)
                 self.motionToPhotonMs = dict["ms"] as? Double ?? 0
+                if let maxMs = dict["maxMs"] as? Double { self.motionToPhotonMaxMs = maxMs }
+                if let ratio = dict["overBudgetRatio"] as? Double { self.motionToPhotonOverBudgetRatio = ratio }
+                if let count = dict["sampleCount"] as? Int { self.motionToPhotonSampleCount = count }
+            case "VrmAvatarList":
+                self.currentVrmAvatar = dict["current"] as? String ?? ""
+                let list = dict["avatars"] as? [[String: Any]] ?? []
+                self.vrmAvatars = list.map {
+                    VrmAvatar(name: $0["name"] as? String ?? "",
+                              path: $0["path"] as? String ?? "")
+                }
+            case "VrmImportResult":
+                let accepted = dict["accepted"] as? Bool ?? false
+                self.lastVrmResult = VrmImportResult(
+                    accepted: accepted,
+                    name: dict["name"] as? String ?? "",
+                    report: dict["report"] as? String ?? "",
+                    reason: dict["reason"] as? String ?? ""
+                )
+                if accepted {
+                    self.currentVrmAvatar = dict["name"] as? String ?? ""
+                    self.requestVrmAvatars()   // 一覧の「使用中」表示を更新する
+                }
+            case "Diagnostics":
+                let rows = dict["rows"] as? [[String: Any]] ?? []
+                self.diagnostics = rows.map {
+                    DiagnosticRow(key: $0["key"] as? String ?? "",
+                                  value: $0["value"] as? String ?? "")
+                }
+            case "LogFiles":
+                self.logDirectory = dict["directory"] as? String ?? ""
+                let files = dict["files"] as? [[String: Any]] ?? []
+                self.logFiles = files.map {
+                    LogFile(name: $0["name"] as? String ?? "",
+                            path: $0["path"] as? String ?? "",
+                            bytes: $0["bytes"] as? Int ?? 0,
+                            modifiedIso: $0["modifiedIso"] as? String ?? "")
+                }
             case "SessionEnded":
                 let result = SessionResult(
                     grade: dict["grade"] as? String ?? "D",

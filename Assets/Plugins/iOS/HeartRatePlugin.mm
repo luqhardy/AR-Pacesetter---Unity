@@ -9,6 +9,7 @@ extern "C" void UnitySendMessage(const char* obj, const char* method, const char
 @interface HeartRateBLEManager : NSObject <CBCentralManagerDelegate, CBPeripheralDelegate>
 @property(nonatomic, strong) CBCentralManager *centralManager;
 @property(nonatomic, strong) NSMutableArray<CBPeripheral *> *connectedPeripherals;
+@property(nonatomic, assign) BOOL scanningEnabled; // StopHeartRateBLEScan 後は探し直さない
 @end
 #endif
 
@@ -32,10 +33,12 @@ static HeartRateBLEManager *sharedInstance = nil;
 }
 
 - (void)startScan {
+    self.scanningEnabled = YES;
     self.centralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
 }
 
 - (void)stopScan {
+    self.scanningEnabled = NO;
     [self.centralManager stopScan];
     for (CBPeripheral *p in self.connectedPeripherals) {
         [self.centralManager cancelPeripheralConnection:p];
@@ -54,16 +57,49 @@ static HeartRateBLEManager *sharedInstance = nil;
     }
 }
 
+// 自分のセンサーだけに繋ぐための受信強度の下限(dBm)。胸ストラップ・フットポッドは
+// 身体に着けているので -70 より強い。陸上トラックでは他の走者のストラップも同じ
+// サービスを広告しているため、これが無いと他人の心拍が混ざる。
+static const int kMinOwnSensorRssi = -70;
+
 - (void)centralManager:(CBCentralManager *)central
  didDiscoverPeripheral:(CBPeripheral *)peripheral
      advertisementData:(NSDictionary<NSString *, id> *)advertisementData
                   RSSI:(NSNumber *)RSSI {
-    
-    // Check if we already have this peripheral in our connection array
-    if (![self.connectedPeripherals containsObject:peripheral]) {
-        [self.connectedPeripherals addObject:peripheral];
-        peripheral.delegate = self;
-        [self.centralManager connectPeripheral:peripheral options:nil];
+
+    // 繋ぐのは1台だけ。以前は見つけたセンサーを全部繋いでおり、他人の心拍が
+    // 自分の値と交互に届いてバイタル警告(深青)を誤って点けうる状態だった
+    if (self.connectedPeripherals.count > 0) return;
+
+    int rssi = RSSI.intValue;
+    if (rssi == 127 || rssi < kMinOwnSensorRssi) return; // 127 = 受信強度不明
+
+    [self.connectedPeripherals addObject:peripheral];
+    peripheral.delegate = self;
+    [self.centralManager stopScan];
+    [self.centralManager connectPeripheral:peripheral options:nil];
+}
+
+// 接続に失敗/切断したら、1台ぶんの枠を空けて探し直す
+- (void)centralManager:(CBCentralManager *)central
+didFailToConnectPeripheral:(CBPeripheral *)peripheral
+                 error:(NSError *)error {
+    [self forgetPeripheralAndRescan:peripheral];
+}
+
+- (void)centralManager:(CBCentralManager *)central
+didDisconnectPeripheral:(CBPeripheral *)peripheral
+                 error:(NSError *)error {
+    [self forgetPeripheralAndRescan:peripheral];
+}
+
+- (void)forgetPeripheralAndRescan:(CBPeripheral *)peripheral {
+    [self.connectedPeripherals removeObject:peripheral];
+    if (self.scanningEnabled && self.centralManager.state == CBManagerStatePoweredOn) {
+        [self.centralManager scanForPeripheralsWithServices:@[
+            [CBUUID UUIDWithString:@"180D"],
+            [CBUUID UUIDWithString:@"1814"]
+        ] options:nil];
     }
 }
 
@@ -154,8 +190,6 @@ extern "C" {
         [[HeartRateBLEManager sharedInstance] stopScan];
     }
 
-    // カルマンフィルタの実体は KalmanFilterNative.mm に一本化している。
-    // 以前はここにも同名の InitKalmanFilter / UpdateKalmanFilter があり、
-    // iOSリンク時に duplicate symbol (2件) になっていたため削除した。
-    // このファイルは心拍BLEの責務のみを持つ。
+    // このファイルは心拍BLEの責務のみを持つ。カルマンフィルタは C# の SpatialKalmanFilter
+    // (2026-09-11 にネイティブ実装を廃止)。以前ここにあった同名関数は duplicate symbol の原因だった。
 }

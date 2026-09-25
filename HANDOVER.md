@@ -12,8 +12,9 @@
 
 | ドキュメント | 内容 |
 |---|---|
-| [README.md](README.md) | 開発手順・数式・フローチャート・スクリプト一覧・**更新履歴**・E2E検証手順 |
-| [AGENTS.md](AGENTS.md) | 技術仕様の一次情報(数式・GPS FSM・レイテンシ予算 ≤20ms) |
+| [README.md](README.md) | 開発手順・フローチャート・スクリプト一覧・E2E検証手順 |
+| [CHANGELOG.md](CHANGELOG.md) | 更新履歴 |
+| [AGENTS.md](AGENTS.md) | 技術仕様の一次情報(数式・GPS FSM・レイテンシ予算 ≤20ms・検証手順) |
 | [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) | SwiftUI⇄Unity連携(モノレポ構成・メッセージ契約・ビルド手順) |
 | [Docs/BUILD_ON_BORROWED_MAC.md](Docs/BUILD_ON_BORROWED_MAC.md) | 借りたMac+無料Apple IDでの実機ビルド当日手順 |
 | [Docs/UNITY_AS_A_LIBRARY.md](Docs/UNITY_AS_A_LIBRARY.md) / [.ja](Docs/UNITY_AS_A_LIBRARY.ja.md) | **UaaL汎用ガイド**(英/日)。SwiftUIアプリへUnityを組み込む手順と落とし穴 |
@@ -58,7 +59,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | TTC優先の危険警告(赤点滅+音+振動) | `SafetyAndSystemController.cs` | **未配線 — 実行時に存在しない**(§5参照) |
 | 特定音声＆優先度制御(赤信号/交差点のみ・TTC短優先で割込) | `VoiceAlertSpeaker.swift` + `VoiceAlert`イベント | 実機要(検知ソースの地図連携は未 — エディタはContextMenuで送信確認) |
 | 足音(路面連動)・心拍連動呼吸音 | `RunAudioEngine.cs`(全クリップ手続き生成) | エディタ試聴 |
-| 環境適応音響(45dB→自動音量、75dB上限) | 同上(実機マイク/エディタMキー) | エディタ |
+| 環境適応音響(45dB→自動音量、75dB上限) | 同上(実機マイク/エディタMキー)。**実機は既定OFF**(`adaptiveVolumeFromMicrophone`、第1期スコープ外) | エディタ |
 | サイレントルート復帰 | `SilentRouteRecoverer.cs` | **E2E自動**(逸脱→復帰+ログ) |
 | GPS喪失FSM(慣性5s→フェード→復帰粒子+頷き) | `GameStateController.cs` | **E2E自動** |
 
@@ -85,8 +86,8 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 ## 3. 検証手段(再現手順)
 
-1. **コンパイル検証(Unity起動不要)**: README「更新履歴」参照のdotnetビルド手法
-2. **E2E自動検証(現在86項目)**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
+1. **一括検証**: `tools/verify.sh`(コンパイル → ユニットテスト → Swift構文 → E2E。詳細は AGENTS.md §6)。コンパイルだけなら `dotnet build tools/compile-check`(Unity起動不要)
+2. **E2E自動検証**: `Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log`
    — 開始→走行→バイタル警告→追い抜き→障害物停止→ルート逸脱復帰→離隔待機→**コーナー追従(半径36.5m)**→ゴール(お辞儀)→記録→ゴースト再走→GPS喪失/復帰→履歴→HUD抑制→ジェスチャー3種→フェイクシャドウ→60fps設定を自動判定(終了コード0=全PASS)
 3. **エディタ手動検証**: README「エディタ検証用ショートカットキー一覧」
    - POV一括デモ: `Tools → AR Pacesetter → POV Demo → Start Automatic 60m Run`
@@ -121,10 +122,20 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   **実測の作り方**: 真のM2Pは光子の射出時刻が要るのでソフトだけでは取れないが、
   「センサー時刻 → 提示時刻」なら iOS で実測できる(ARKitフレームのタイムスタンプ +
   `CADisplayLink.targetTimestamp`)。欠けるのはディスプレイのスキャンアウトのみで、
-  これはグラスの仕様値で補える定数。実装したら `ProvidesRealMotionToPhoton` を true にすれば
-  CSVが実測で埋まり、§11.2 の評価が成立する。**それまで §10 の20ms達成は主張できない。**
+  これはグラスの仕様値で補える定数。2026-09-16 に**Swiftへの報告経路も実測へ接続済み**:
+  `SensorTimingBridge` が唯一の実測元で、**CSVの `latency_m2p` と `LatencyReport` は同一の値**になる。
+  それ以前はCSVだけが実測で、Swift側は `LatencyBenchmarkRunner.ProvidesRealMotionToPhoton`
+  (常に false)を見ていたため**実機でも -1 しか流れていなかった** —
+  FIELD_TEST_PLAN T2 はこの経路で計測する計画だったので、そのままでは §10 の評価データが
+  1件も取れない状態だった。合成値は報告経路から完全に外れている(参照は残っていない)。
+  **実測値が出るのは iOS実機のみ**(エディタ・E2Eは -1)なので、
+  §10 の20ms達成の主張には実機でのCSV取得が必要。
 
-- **XREAL head-pose/IMU入力は未統合**: `ExternalDisplayManager.swift`はUnity画面をUSB-C外部ディスプレイへ移すところまで。`ConnectXREAL`もReady状態更新であり、グラス固有の姿勢/IMU値はUnityへ届かない。現状の`RunnerTrackingState`はiPhoneのARKit/XR Camera+CoreLocationを使うためiPhone POVデモは可能だが、グラスを自由に装着した状態の真のworld-lockにはXREAL SDKまたは対応するpose bridgeが必要
+- **XREAL head-pose/IMU入力は原理的に取得不能(2026-09-16 調査で確定)**: XREAL SDKはAndroid専用でiOS版が存在せず、Air系がUSB-HIDで出しているIMUもiOSアプリからは触れない(公開APIが無くMFi/DriverKit対象外)。**回避策は無い**ため、第1期の空間トラッキングはiPhoneのARKit単独で確定。グラスは「平面スクリーン1枚」として扱う。
+  受け口だけは通してある(`UpdateGlassPose` → `GlassViewRig.SetExternalHeadPose`。0.25秒途切れれば§4.1の進行方向ヨーへ自動復帰)。
+  **グラスの画面モードは Follow(固定) にすること** — Anchorだとグラス側X1が頭回転を打ち消すためUnity側と二重補正になる。
+  根拠・数値・設計判断は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
+- **F-03の3.0mとXREAL Oneの画角が両立しない(要チーム判断)**: 眼高1.55mから身長1.75mのアバターを3.0m前方に置くと垂直31.1°を占め、Oneの垂直画角25.7°に全身が入らない(全身には3.71m必要 / One Proでも3.16m)。俯角で中心へ寄せても接地点は3.38m先からしか見えないため、§7.2のオーラ(足元から放射)は事実上見えない。現実装は「欠けを許容」。`GlassViewRig.FullBodyFitsInFov` / `NearestVisibleGroundMeters` で実測でき、E2Eでも固定済み
 - **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
   - **未実施であることの確認方法と症状(重要)**: `ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj` に
     `UnityFramework` の文字列が1つも無い場合、リンクは未実施。このとき Swift 側は
@@ -144,6 +155,9 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 - **Mac側の残作業(コード修正では閉じられない)**: UnityFrameworkのEmbed & Sign と
   `Data`フォルダのTarget Membership変更(SWIFT_INTEGRATION.md ②-2/②-3)。
   これが済むまで Swift 側は `#if canImport(UnityFramework)` の偽実装で動き続ける
+- **ARCore Scene Semantics は受け口のみ(未導入・休眠)**: 屋外路面を Road/Sidewalk/Terrain で分類し、ARKitに road が無い穴を埋めるための実装は入っているが、パッケージ(`arcore-unity-extensions#arf6`)と定義シンボル `ARCORE_EXTENSIONS` が未設定のため休眠中。接地判定は従来のまま(E2Eで固定)。**陸上トラックのタータン路面が UNLABELED に落ちる可能性が高く、その場合トラックでは効果ゼロ**(安全側に倒れるだけ)。導入手順と実機確認5項目は [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
+- ~~**フレーム時間依存の平滑化**~~ → **全箇所移行済み**(2026-09-17)。`AvatarEngine`・`GroundSnap`・`SilentRouteRecoverer` は `FrameSmoothing.Factor` を経由し、`SpatialKalmanFilter` は時間単位化した。**新規コードで `Lerp(a, b, Time.deltaTime * k)` を書かないこと** — 1フレームが 1/k 秒を超えると 係数が1に飽和して瞬間移動になる(実機の走行中フレームは最大330msに達する)。`FrameSmoothing.Factor(Time.deltaTime, k)` を使う
+- ~~**§10の接地(±5cm)は未達: 立脚期の足が床へ約6cm沈む**~~ → **解消**(2026-09-24)。原因はMixamo走行クリップが立脚期に足をGroundSnapの原点平面より下げること(スキンメッシュ最下頂点で最大-0.104m)。`FootPlanting` がモデル読込時にバインドポーズのメッシュから足/つま先の足裏の点を選び、毎フレーム最下点が床より下ならモデルを持ち上げる(上げるだけ・空中局面は残す)。E2Eは焼いたメッシュの最下頂点(補正とは独立の真値)で1歩幅ぶん判定し **-0.011m**(持ち上げ最大0.096m)。**残作業: エディタ/実機で走りの見た目(立脚期の持ち上げによる上下動)を目視確認**
 - **実地フィールドテスト**: `Docs/FIELD_TEST_PLAN.md` の T1〜T9 を実施(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)
 - **ルート同期**: MapRouteView(Swift)で表示するコースがUnityの逸脱判定(`SilentRouteRecoverer.routeWaypoints`)へ未接続。実ルート運用時はStartSessionへポリライン(緯度経度→開始点基準のローカル座標変換)を追加する必要がある。現状の逸脱検知はシミュレーション(D キー/E2E)のみ
 - **`SafetyAndSystemController` が未配線(TTC危険警告・低バッテリー退避が実行時に不在)**: スクリプトは存在するが、
@@ -163,7 +177,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 解決済み(参考):
 - ~~HealthKit書き込み~~ → `HealthKitWorkoutSaver.swift` がSessionEnded受信時にHKWorkoutを保存
-- ~~C++カルマンフィルタの実体~~ → `Assets/Plugins/iOS/KalmanFilterNative.mm`(3軸スカラーKF+線形トレンド)。これが無いとiOSビルドはリンクエラーになるため必須部品。
+- ~~C++カルマンフィルタの実体~~ → **2026-09-11 に廃止**。同じアルゴリズムを C# `SpatialKalmanFilter`(純ロジック・ユニットテスト付き)へ移し全環境で使用。`KalmanFilterNative.mm` と `DllImport` は削除済みで、iOSビルドの必須部品ではなくなった(実機専用経路がテストに掛からない問題の解消)。
   **`InitKalmanFilter`/`UpdateKalmanFilter` の実体はこのファイルのみ**とすること — `HeartRatePlugin.mm` にも
   同名実装が残っており、実機リンク時に duplicate symbol 2件でビルドが落ちていた(2026-09-01に削除)。
   ネイティブプラグインの重複はC#コンパイルにもE2Eにも現れず、**実機リンクでしか検出できない**

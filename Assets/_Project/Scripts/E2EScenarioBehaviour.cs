@@ -60,6 +60,44 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(goalLine != null, "bootstrap: GoalLineController exists");
         Check(runnerTracking != null, "bootstrap: invisible RunnerTrackingState exists");
 
+        // 検出平面がアバターを隠さないこと(第1期の既定)。プレーンの材質は深度だけ書く
+        // ため、ONだと壁・机の向こうのアバターが描画されず「壁で消える」ことになる
+        var planeOcclusion = FindFirstObjectByType<ARPlaneOcclusionController>(FindObjectsInactive.Include);
+        Check(planeOcclusion != null, "bootstrap: ARPlaneOcclusionController exists");
+        Check(planeOcclusion != null && !planeOcclusion.OccludeAvatarBehindPlanes,
+            "occlusion: detected planes do not occlude the avatar by default");
+
+        var sceneScanner = FindFirstObjectByType<EnvironmentSceneScanner>(FindObjectsInactive.Include);
+        Check(sceneScanner != null, "bootstrap: EnvironmentSceneScanner exists under XROrigin");
+
+        // 屋外の画像分類(ARCore Scene Semantics)。パッケージ未導入のこの環境では休眠し、
+        // 接地判定が従来の幾何+ARKit面分類のまま変わらないことを縛る
+        var outdoorSemantics = FindFirstObjectByType<OutdoorSemanticClassifier>(FindObjectsInactive.Include);
+        Check(outdoorSemantics != null, "bootstrap: OutdoorSemanticClassifier auto-created");
+        if (outdoorSemantics != null)
+        {
+            Check(OutdoorSemanticClassifier.VerificationDefaultImageSemantics,
+                "verification: outdoor image semantics enabled by default");
+            Check(!outdoorSemantics.IsSupported,
+                $"semantics: dormant without ARCore Extensions (source: {outdoorSemantics.Source})");
+            Check(!outdoorSemantics.IsAvailable,
+                "semantics: no classification offered while dormant");
+            Check(outdoorSemantics.SampleCount == 0,
+                "semantics: no semantic image sampled (no ML cost on the 60fps path)");
+
+            // 休眠中に問い合わせても false を返すこと = 接地判定は1ミリも変わらない
+            Check(!outdoorSemantics.TryClassify(Vector3.zero, out SurfaceSemantic _),
+                "semantics: TryClassify refuses while dormant, so grounding is unchanged");
+
+            // ARKitに road が無い穴を埋める、という設計そのものの確認
+            Check(SurfaceSemanticMath.GroundPriority(SurfaceSemantic.Road)
+                  == SurfaceSemanticMath.GroundPriority(SurfaceSemantic.Floor),
+                "semantics: outdoor Road ranks as explicit ground, same as indoor Floor");
+            Check(SurfaceSemanticMath.Combine(SurfaceSemantic.Ceiling, SurfaceSemantic.Road)
+                  == SurfaceSemantic.Ceiling,
+                "semantics: a 3D face classification is never overridden by the image label");
+        }
+
         Camera cam = Camera.main;
         Check(cam != null, "scene: main camera exists");
         if (bridge == null || engine == null || session == null || cam == null)
@@ -69,6 +107,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
 
         _cameraMover = cam.transform.root != null ? cam.transform.root : cam.transform;
+
+        // エディタのリグはカメラが走行方向(+Z)と無関係な向きで保存されている。
+        // 実機ではARKitがカメラ姿勢を与え、走者は走る方向を向くので、E2Eでも
+        // 「カメラは進行方向を見ている」状態に揃える。これが無いと視野に基づく検証
+        // (アバターが見えているか)がリグの保存姿勢に左右され、意味を持たない
+        FaceRig(Vector3.forward);
+        Debug.Log("[E2E] rig aligned so the camera faces the run direction (+Z)");
 
         // ── Step 0b: 疲労補正係数 (企画書4.4 — 気温閾値。純関数なので走行前に検証) ──
         if (analytics != null)
@@ -101,7 +146,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             float camYBefore    = _cameraMover.position.y;
 
             // 端末を持ち上げる / グラスで上を向く動作の再現
-            _cameraMover.position += Vector3.up * 2.0f;
+            MoveRig(Vector3.up * 2.0f);
             yield return WaitScaled(0.6f);
 
             Check(Mathf.Abs(groundSnap.ResolvedFloorY - floorBefore) < 0.01f,
@@ -209,6 +254,85 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 "ground: measured-floor latch is released once the test colliders are gone");
         }
 
+        // ── Step 0d: 天井の下で「断崖」と誤判定しないこと (壁・天井でアバターが消える件) ──
+        // 断崖判定は「ユーザー真下の地面」と「3m先の地面」の落差で行うが、
+        // ユーザー真下は Physics.Raycast の**最初の1ヒット**を採るため、
+        // 頭上に天井コライダー(ARKitは天井も水平面としてコライダー付きで返す)が
+        // あると天井の高さが「地面」になる。3m先の天井がまだ未検出なら
+        // 「天井 − 床 ≒ 2m 以上の落差」= 断崖として停止し、ユーザーが追い越して
+        // アバターが視界から消える。天井は**ユーザーの上だけ**に置いて再現する
+        if (groundSnap != null && _cameraMover != null)
+        {
+            Transform camT2 = Camera.main != null ? Camera.main.transform : _cameraMover;
+            float camY2 = camT2.position.y;
+
+            GameObject floor2 = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            floor2.name = "E2E_CliffTestFloor";
+            floor2.transform.position   = new Vector3(camT2.position.x, camY2 - 1.2f - 0.05f, camT2.position.z);
+            floor2.transform.localScale = new Vector3(20f, 0.1f, 20f);
+            Destroy(floor2.GetComponent<MeshRenderer>());
+
+            // 天井パッチ: ユーザー頭上 1.3m、4m四方 = 3m先の判定点には届かない
+            GameObject ceil2 = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            ceil2.name = "E2E_CliffTestCeilingPatch";
+            ceil2.transform.position   = new Vector3(camT2.position.x, camY2 + 1.3f + 0.05f, camT2.position.z);
+            ceil2.transform.localScale = new Vector3(4f, 0.1f, 4f);
+            Destroy(ceil2.GetComponent<MeshRenderer>());
+
+            groundSnap.ResetFloor();
+            yield return WaitScaled(0.6f);
+
+            Check(groundSnap.HasMeasuredFloor,
+                "cliff: the floor collider is measured under the ceiling patch");
+            Check(!engine.IsHalted,
+                "cliff: a ceiling above the user is not mistaken for a cliff drop ahead (no halt)");
+
+            Destroy(floor2);
+            Destroy(ceil2);
+            yield return null;
+            yield return WaitScaled(0.1f);
+            groundSnap.ResetFloor();
+            yield return WaitScaled(0.6f);
+            Check(!groundSnap.HasMeasuredFloor && !engine.IsHalted,
+                "cliff: test colliders removed, latch released, not halted");
+        }
+
+        // ── Step 0e: 前方の壁 — §4.2の足踏み停止と第1期の既定(OFF) ──────────
+        // 室内では前方3m以内に必ず壁があり、停止するとユーザーが追い越して
+        // アバターが視界から消える。第1期(トラック検証)の既定はOFF。
+        // 仕様どおりの挙動(ON)も壊れていないことを同じ壁で確かめる
+        if (groundSnap != null && _cameraMover != null)
+        {
+            Transform camT3 = Camera.main != null ? Camera.main.transform : _cameraMover;
+            Vector3 flatForward = camT3.forward;
+            flatForward.y = 0f;
+            flatForward = flatForward.sqrMagnitude > 0.0001f ? flatForward.normalized : Vector3.forward;
+
+            GameObject wallAhead = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            wallAhead.name = "E2E_WallAhead";
+            wallAhead.transform.position = camT3.position + flatForward * 2.0f;
+            wallAhead.transform.rotation = Quaternion.LookRotation(flatForward);
+            wallAhead.transform.localScale = new Vector3(4f, 3f, 0.1f); // 進路を塞ぐ縦板
+            Destroy(wallAhead.GetComponent<MeshRenderer>());
+
+            bool defaultHalt = groundSnap.HaltOnObstacles;
+            yield return WaitScaled(0.3f);
+            Check(!defaultHalt && !engine.IsHalted,
+                "obstacle: a wall ahead does not halt the avatar by default (第1期トラック設定)");
+
+            // §4.2 の挙動自体は生きていること
+            groundSnap.HaltOnObstacles = true;
+            yield return WaitScaled(0.3f);
+            Check(engine.IsHalted,
+                "obstacle: the wall does halt the avatar when §4.2 halting is enabled");
+
+            groundSnap.HaltOnObstacles = defaultHalt;
+            Destroy(wallAhead);
+            yield return null;
+            yield return WaitScaled(0.3f);
+            Check(!engine.IsHalted, "obstacle: halting clears once the wall is gone");
+        }
+
         // ── Step 1: StartSession (目標60m — ゴール自動終了を早く踏むため) ──
         bridge.OnSwiftCommand(
             "{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":0.06," +
@@ -216,29 +340,88 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return WaitScaled(0.5f);
         Check(engine.HasStarted, "start: engine.HasStarted after StartSession");
 
+        // 開始の瞬間、アバターは走者の**正面**に出ること。
+        // 待機中の手ブレで立った移動履歴を優先すると、ほぼランダムな方向の3m先に現れ、
+        // 立ち止まっている限り視線固定(F-08)でそこに留まる = 「開始したのに見えない」
+        {
+            Transform camNow = Camera.main != null ? Camera.main.transform : _cameraMover;
+            Vector3 toAvatarStart = engine.transform.position - camNow.position; toAvatarStart.y = 0f;
+            Vector3 camFwd = camNow.forward; camFwd.y = 0f;
+            float startAngle = Vector3.Angle(camFwd, toAvatarStart);
+            Check(startAngle < 45f,
+                $"start: avatar is staged in front of the user's view ({startAngle:F0}° off, {toAvatarStart.magnitude:F1}m)");
+        }
+
         // 企画書 §4.1 実寸: StartSessionで175cmを指定しているので、実際の描画身長も
         // それに一致すること。旧実装は固定倍率(cm/175)で、モデルの素の大きさ次第で
         // 実物より大きく表示されていた(実機で報告された不具合)
         float avatarHeight = engine.MeasuredAvatarHeightMeters;
         Check(avatarHeight > 0.01f, $"scale: avatar height is measurable ({avatarHeight:F2}m)");
 
-        // 接地誤差 (§10: 上下5cm以内)。GroundSnap が床に合わせるのは「原点」なので、
-        // 原点が足裏に無いと床の推定が完璧でも足は浮く/沈む。見えるのは足裏なので、
-        // **足裏の実際の高さと床の差**を測る — これが「浮遊感」の正体かを切り分ける
-        var gs = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
-        if (gs != null)
-        {
-            float footOffset  = engine.FootOffsetMeters;
-            float soleY       = gs.transform.position.y + footOffset;
-            float contactErr  = soleY - gs.ResolvedFloorY;
-
-            Check(Mathf.Abs(contactErr) < 0.05f,
-                $"ground: soles meet the floor within ±5cm (§10) — error {contactErr:+0.000;-0.000}m " +
-                $"(pivot→sole {footOffset:F3}m, root {gs.transform.position.y:F3}, floor {gs.ResolvedFloorY:F3})");
-        }
+        // 接地誤差 (§10) は走行ループ内で1歩幅ぶん採取して判定する(Step 2 の後)
         if (avatarHeight > 0.01f)
             Check(Mathf.Abs(avatarHeight - 1.75f) < 0.15f,
                 $"scale: avatar renders at real-world height for 175cm (measured {avatarHeight:F2}m)");
+
+        // ── 差し替えアバター(VRM): 判定と入れ替え経路 ──────────────────────
+        // 一番壊れやすいのはVRMのパースではなく「差し替えた後の再配線」なので、
+        // UniVRM が無い環境でも、拒否経路と既定アバターの無事を常時縛る
+        var vrmLoader = FindFirstObjectByType<VrmAvatarLoader>(FindObjectsInactive.Include);
+        Check(vrmLoader != null, "bootstrap: VrmAvatarLoader auto-created");
+        if (vrmLoader != null)
+        {
+            Check(!VrmAvatarLoader.IsRuntimeLoadAvailable,
+                "vrm: runtime .vrm loading is dormant without UniVRM");
+            Check(!vrmLoader.TryLoadFromFile("nonexistent.vrm", out VrmRejectReason _),
+                "vrm: loading refuses cleanly when UniVRM is absent");
+
+            // 現在表示中のモデルを実測できること(計測はUniVRMに依存しない)
+            Animator shownRig = AvatarRigLocator.FindBestAnimator(engine.transform);
+            if (shownRig != null)
+            {
+                VrmAvatarProfile shown = VrmAvatarLoader.Measure(shownRig.gameObject, "scene");
+                Check(shown.RendererCount > 0,
+                    $"vrm: the live model is measurable ({shown.TriangleCount} tris, {shown.MaterialCount} materials)");
+            }
+
+            // リグの無いモデルは断り、**既定アバターには手を触れない**こと。
+            // 断ったついでに表示を壊すのが最悪の失敗なので、そこを縛る
+            float heightBefore = engine.MeasuredAvatarHeightMeters;
+            // コライダーを持たせないこと。CreatePrimitive は BoxCollider 付きの立方体を
+            // 原点に作るため、GroundSnap の真下レイがそれを「地面」として拾い、
+            // 接地判定(§10 ±5cm)が壊れる。描画だけの器で十分
+            var bogus = new GameObject("E2E_BogusAvatar",
+                                       typeof(MeshFilter), typeof(MeshRenderer));
+            bogus.transform.position = new Vector3(0f, -500f, 0f); // 走行空間から離す
+            var bogusPrimitive = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            bogus.GetComponent<MeshFilter>().sharedMesh = bogusPrimitive.GetComponent<MeshFilter>().sharedMesh;
+            DestroyImmediate(bogusPrimitive);
+            bool adopted = vrmLoader.TryAdopt(bogus, "bogus", out VrmRejectReason why);
+
+            Check(!adopted, "vrm: a model without a humanoid rig is rejected");
+            Check(why == VrmRejectReason.NoHumanoidRig,
+                $"vrm: rejection names the real reason (got {why})");
+            Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - heightBefore) < 0.01f,
+                "vrm: a rejected model leaves the running avatar untouched");
+            DestroyImmediate(bogus); // 次のフレームまで残すと接地レイに拾われる
+            yield return null;
+
+            // Swiftからの取り込み経路。UniVRM未導入でも「黙って失敗」せず理由を返すこと —
+            // ここで無言だと利用者にはアプリが壊れたようにしか見えない
+            VrmAvatarCatalog.EnsureImportedDirectory();
+            Check(System.IO.Directory.Exists(VrmAvatarCatalog.ImportedDirectory),
+                "vrm: the import directory is created for Swift to copy into");
+
+            bridge.OnSwiftCommand("{\"command\":\"RequestVrmAvatars\"}");
+            yield return null;
+            bridge.OnSwiftCommand(
+                "{\"command\":\"ImportVrmAvatar\",\"path\":\"" +
+                DevDiagnostics.Escape(System.IO.Path.Combine(VrmAvatarCatalog.ImportedDirectory, "sample.vrm")) +
+                "\"}");
+            yield return null;
+            Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - heightBefore) < 0.01f,
+                "vrm: an import attempt without UniVRM leaves the running avatar untouched");
+        }
         // StartSession first arms the 3-2-1-START presentation. Movement,
         // analytics, telemetry, clock and distance must still be paused here.
         var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
@@ -246,6 +429,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
         if (countdown != null)
             Check(countdown.IsShowing, $"countdown: visible right after start (showing '{countdown.CurrentText}')");
         Check(!engine.IsRunMotionActive, "countdown: runner motion remains paused before START");
+
+        // ── Step 1b: ノイズ下の静止 — iPhone 15 Pro Max「アバターが不規則に飛び回る」の再現 ──
+        // エディタには手ブレも測位ノイズも無いので、実機だけが持つ2つの入力をブリッジ経由で注入する:
+        //   ① 手ブレ: カメラ位置に毎フレーム ±2cm の白色ノイズ
+        //   ② 測位ノイズ: 精度8mの GPS fix を1Hzで、真位置から ±4m ずれた座標で送る
+        // カウントダウン中はペース採点が止まっている一方、アバターは同じ進行方向推定で
+        // 3m前方に「置かれ続ける」ので、方位が揺れればここで振り回される(修正前: 3.56m ずれ)
+        yield return StartCoroutine(RunNoiseStationaryTest(engine, bridge));
 
         float startWait = 0f;
         while (!engine.IsRunMotionActive && startWait < 6f)
@@ -278,9 +469,84 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         // H5: IMUの供給元。エディタにはジャイロが無いので近似にフォールバックするのが正。
         // 実機では "device"(CoreMotion)、Swift供給時は "external" になる
+        // CSVのtimestamp列がどの時間軸かを明示できること。解析側がこれを知らないと
+        // 「合成100Hzの等間隔タイムライン」を実時間として読んでしまう
+        Check(telemetry != null && telemetry.TimelineSource == "synthetic 100Hz",
+            $"telemetry: editor CSV declares the synthetic timeline (got {telemetry?.TimelineSource})");
+        // ドリフトの符号は環境依存(合成タイムラインはスケール時間で進むため、
+        // timeScale=3 のE2Eでは壁時計より先行する)。ここでは「測れていること」だけを縛り、
+        // 値そのものは開発者モードで実機の timeScale=1 のときに読む
+        if (telemetry != null)
+            Debug.Log($"[E2E TELEMETRY] timeline={telemetry.TimelineSource} " +
+                      $"logged={telemetry.LoggedSpanSeconds:F2}s wall={telemetry.WallClockSpanSeconds:F2}s " +
+                      $"drift={telemetry.TimelineDriftSeconds:F2}s (timeScale={Time.timeScale})");
+        Check(telemetry != null && telemetry.LoggedSpanSeconds > 0.0
+              && telemetry.WallClockSpanSeconds > 0.0,
+            "telemetry: both the CSV timeline span and the wall-clock span are measurable");
+
         Check(telemetry != null && telemetry.ImuSource == "approximated",
             "telemetry: IMU source falls back to approximation in editor (device/external on hardware)");
+
+        // ── M2P実測(§10)の窓口。エディタにはネイティブが無いので「未計測」を貫くこと ──
+        // ここが緩むと、合成値が実測として記録され §11.2 の評価が意味を失う
+        var timing = FindFirstObjectByType<SensorTimingBridge>(FindObjectsInactive.Include);
+        Check(timing != null, "bootstrap: SensorTimingBridge exists");
+        Check(!SensorTimingBridge.NativeAvailable,
+            "m2p: native timing is reported unavailable in the editor");
+        Check(timing != null && timing.IsMeasuring,
+            "m2p: measurement is started together with the run");
+        Check(timing != null && !timing.TryGetLatencyMs(out double _),
+            "m2p: no latency is reported while there is no real measurement");
+        Check(timing != null && timing.Stats.SampleCount == 0,
+            "m2p: nothing synthetic leaks into the run statistics");
+        Check(timing != null && !timing.IsImuStreaming,
+            "m2p: native 100Hz IMU is not claimed in the editor");
+        Check(telemetry != null && telemetry.NativeImuRowCount == 0,
+            "telemetry: editor rows come from the frame-synced fallback, not native samples");
+
+        // Swiftへ報告するM2Pが、CSVと同じ SensorTimingBridge から来ていること。
+        // 以前ここは LatencyBenchmarkRunner.ProvidesRealMotionToPhoton (常にfalse) を見ており、
+        // 実測経路が出来た後も Swift へは -1 しか流れていなかった。
+        // FIELD_TEST_PLAN T2 はこの経路の1Hz LatencyReport で §10 を評価する計画なので、
+        // 「実測があれば実測が流れる / 無ければ -1」の両側を縛る
+        if (bridge != null)
+        {
+            bool timingHasMeasurement = timing != null && timing.TryGetLatencyMs(out double _);
+            Check(!timingHasMeasurement,
+                "m2p: editor has no real measurement to report (native timing is iOS-only)");
+            Check(bridge.LastReportedMotionToPhotonMs == MotionToPhotonMath.Unmeasured,
+                $"m2p: Swift is told -1 rather than a fabricated latency " +
+                $"(got {bridge.LastReportedMotionToPhotonMs:F2})");
+            Check(!MotionToPhotonMath.MeetsBudget(bridge.LastReportedMotionToPhotonMs),
+                "m2p: an unmeasured report never counts as meeting the 20ms budget");
+        }
         string telemetryPath = telemetry != null ? telemetry.CurrentFilePath : null;
+
+        // ── 開発者モード: 第1期の成果物(CSV)を端末から取り出せること ──────────
+        // CSVは persistentDataPath 配下にあり、これまでアプリからは存在すら見えなかった。
+        // 一覧と状態スナップショットが壊れていないことをここで縛る
+        string devSnapshot = DevDiagnostics.BuildSnapshotJson();
+        Check(devSnapshot.StartsWith("{\"event\":\"Diagnostics\""),
+            "dev: diagnostics snapshot is a Diagnostics event");
+        Check(devSnapshot.Contains("m2p.native") && devSnapshot.Contains("gps.autoLostHandling")
+              && devSnapshot.Contains("render.targetFps"),
+            "dev: snapshot carries the keys the field test needs");
+        // 実機の初回確認(FIELD_TEST_PLAN §0-A)で読む項目
+        Check(devSnapshot.Contains("render.maxFrameMs") && devSnapshot.Contains("render.longFrames")
+              && devSnapshot.Contains("avatar.footPlanting"),
+            "dev: snapshot carries frame-time and foot-planting keys for the device pre-check");
+        // 改行・タブが混ざるとSwift側のJSON解釈が壊れる。エスケープ済みであること
+        Check(devSnapshot.IndexOf((char)10) < 0 && devSnapshot.IndexOf((char)9) < 0,
+            "dev: snapshot values are escaped so the JSON survives paths and reports");
+
+        string devLogs = DevDiagnostics.BuildLogFilesJson();
+        Check(devLogs.StartsWith("{\"event\":\"LogFiles\"") && devLogs.EndsWith("]}"),
+            "dev: log listing is a well-formed LogFiles event");
+        Check(devLogs.Contains(DevDiagnostics.Escape(DevDiagnostics.LogDirectory)),
+            "dev: log listing reports the RunLogs directory so Swift can show where files live");
+        if (!string.IsNullOrEmpty(telemetryPath))
+            Check(devLogs.Contains(DevDiagnostics.Escape(System.IO.Path.GetFileName(telemetryPath))),
+                $"dev: the run in progress appears in the log listing ({System.IO.Path.GetFileName(telemetryPath)})");
 
         // ── F-07 現在ペース表示 / F-10 安全警告 ────────────────────────────
         var hud = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
@@ -314,15 +580,96 @@ public class E2EScenarioBehaviour : MonoBehaviour
         {
             Check(passthrough.IsPassthroughEnabled, "passthrough: camera feed shown on the phone by default");
 
-            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");
+            // ── ARグラス出力リグ: グラスの画角・眼の位置で描く ──────────────
+            var glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+            Check(glassRig != null, "glass: GlassViewRig auto-created by bootstrap");
+            Check(glassRig != null && !glassRig.IsGlassOutputActive,
+                "glass: output rig dormant while the phone screen is the display");
+
+            Camera phoneCamera = Camera.main;
+            int phoneCullingMask = phoneCamera != null ? phoneCamera.cullingMask : 0;
+
+            deviceBridge.OnSwiftCommand(
+                "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
             yield return null;
             Check(!passthrough.IsPassthroughEnabled,
                 "passthrough: camera feed off while output goes to see-through glasses");
+
+            if (glassRig != null)
+            {
+                Check(GlassViewRig.VerificationDefaultGlassOutput,
+                    "verification: glass output rig is enabled by default");
+                Check(glassRig.IsGlassOutputActive, "glass: output rig takes over rendering on connect");
+                Check(glassRig.ActiveProfile != null && glassRig.ActiveProfile.Model == "XREAL One",
+                    $"glass: 1920x1080 resolves to the XREAL One profile (got {glassRig.ActiveProfile?.Model})");
+
+                Camera outCam = glassRig.OutputCamera;
+                Check(outCam != null, "glass: output camera created at runtime");
+                if (outCam != null)
+                {
+                    // 垂直画角はビューポートのアスペクトで変わるので、不変量である水平画角で縛る
+                    float hFov = 2f * Mathf.Atan(Mathf.Tan(outCam.fieldOfView * 0.5f * Mathf.Deg2Rad) * outCam.aspect)
+                                 * Mathf.Rad2Deg;
+                    Check(Mathf.Abs(hFov - 44.2f) < 0.6f,
+                        $"glass: projection matches the glass optics, not the iPhone camera (H-FoV {hFov:F1}°)");
+                    Check(outCam.backgroundColor == Color.black && outCam.clearFlags == CameraClearFlags.SolidColor,
+                        "glass: output camera clears to black (see-through glasses treat black as transparent)");
+                    Check(!ReferenceEquals(Camera.main, outCam),
+                        "glass: output camera does not steal Camera.main from the AR camera");
+
+                    // 描画面がグラスの縦横比と一致しているかを機械的に判定できること。
+                    // 実機で「グラスを埋めているか」はこの値で判断する(バッチモードの
+                    // ビューポートは16:9ではないので、ここでは判定が機能することだけを縛る)
+                    Check(glassRig.ViewportAspect > 0f,
+                        $"glass: viewport aspect is measurable ({glassRig.ViewportAspect:F3})");
+                    Check(glassRig.ViewportMatchesGlass ==
+                          (Mathf.Abs(glassRig.ViewportAspect - (float)glassRig.ActiveProfile.Aspect) <= 0.01f),
+                        "glass: fills-the-screen check agrees with the measured aspect");
+                }
+
+                Check(phoneCamera == null || phoneCamera.cullingMask == 0,
+                    "glass: AR camera stops drawing but stays enabled for ARKit tracking");
+
+                Check(glassRig.OrientationSource == HeadOrientationSource.TravelHeading,
+                    $"glass: orientation comes from the smoothed travel heading (got {glassRig.OrientationSource})");
+                Check(glassRig.AppliedDownPitchDegrees > 1f && glassRig.AppliedDownPitchDegrees <= 15f,
+                    $"glass: camera pitches down to fit the avatar into the narrow FoV ({glassRig.AppliedDownPitchDegrees:F1}°)");
+
+                // 第1期の要判断事項を数値で固定する(基本設計書 F-03 の 3.0m と光学系の衝突)
+                Check(!glassRig.FullBodyFitsInFov,
+                    "glass: a 1.75m avatar at 3.0m does NOT fit in the XREAL One FoV (design decision pending)");
+                Check(glassRig.NearestVisibleGroundMeters > 3.0f,
+                    $"glass: the avatar's ground contact at 3.0m is outside the FoV " +
+                    $"(ground visible from {glassRig.NearestVisibleGroundMeters:F2}m)");
+
+                if (hud != null)
+                    Check(Mathf.Abs(hud.EdgeInsetFraction - 0.90f) < 0.001f,
+                        $"glass: HUD pulled into the glass safe area (got {hud.EdgeInsetFraction:F2})");
+
+                // 将来のグラス実姿勢供給。来れば採用し、途切れれば進行方向ヨーへ自動で戻る
+                deviceBridge.OnSwiftCommand(
+                    "{\"command\":\"UpdateGlassPose\",\"yaw\":30,\"pitch\":0,\"roll\":0,\"timestamp\":0}");
+                yield return null;
+                Check(glassRig.OrientationSource == HeadOrientationSource.ExternalGlassPose,
+                    "glass: a fresh external head pose is adopted while the screen mode is Follow(locked)");
+            }
 
             deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
             yield return null;
             Check(passthrough.IsPassthroughEnabled,
                 "passthrough: camera feed restored when back on the phone");
+
+            if (glassRig != null)
+            {
+                Check(!glassRig.IsGlassOutputActive, "glass: output rig stops on disconnect");
+                Check(glassRig.OutputCamera == null || !glassRig.OutputCamera.enabled,
+                    "glass: output camera disabled on disconnect");
+                Check(phoneCamera == null || phoneCamera.cullingMask == phoneCullingMask,
+                    "glass: AR camera rendering restored on disconnect");
+                if (hud != null)
+                    Check(Mathf.Abs(hud.EdgeInsetFraction - 1f) < 0.001f,
+                        "glass: HUD returns to the full phone screen on disconnect");
+            }
 
             // 切断はスタンバイへ遷移させるため、後続シナリオのために通常へ戻す
             if (stateController != null)
@@ -332,6 +679,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         var visualsForColor = FindFirstObjectByType<AvatarVisualsAndActions>(FindObjectsInactive.Include);
 
+        // ── Step 1c: ノイズ下の直進 — 目標ペースで走りながら手ブレ+測位ノイズを注入 ──
+        // (静止フェーズはカウントダウン中に実施済み。ここは走行中に飛ばないことを縛る。
+        //  目標ペースどおりに走るので、後続のシンクロ率検証を汚さない)
+        yield return StartCoroutine(RunNoiseMovingTest(engine, bridge));
+
         // ── Step 2: 走行シミュレーション(カメラを前進させる) ────────────────
         float elapsed = 0f;
         bool syncObserved = false;
@@ -339,10 +691,25 @@ public class E2EScenarioBehaviour : MonoBehaviour
         bool livePaceObserved = false;   // F-07: 実際の数値が出ること
         bool paceGreenObserved = false;  // F-07: 目標を保っている間は緑
         bool goalLineObserved = false;
+
+        // 接地誤差 (§10: 上下5cm以内)。GroundSnap が床に合わせるのは「原点」なので、
+        // 原点が足裏に無いと床の推定が完璧でも足は浮く/沈む。見えるのは足裏なので、
+        // **足裏の実際の高さと床の差**を測る — これが「浮遊感」の正体かを切り分ける。
+        // 1フレームだと歩幅の位相で値が動く(遊脚期は両足が浮く)ため、走行中に1歩幅ぶん
+        // 毎フレーム採取し、立脚期(=最下点)で判定する(GroundContactMath)。
+        // 足裏は**スキンメッシュを焼いた最下頂点**で測る — 補正(FootPlanting)が使う足裏の点とは
+        // 独立した真値なので、補正の推定が外れていればここで落ちる
+        var gs = FindFirstObjectByType<GroundSnap>(FindObjectsInactive.Include);
+        var planting = engine.GetComponent<FootPlanting>();
+        var soleSamples = new List<float>();
+        float maxLift = 0f;
+        var bakedMesh = new Mesh();
+        const float SoleSampleStart = 2f;   // 走り出しの加速が落ち着いてから
+
         Vector3 runDirection = Vector3.forward;
         while (!engine.IsSessionEnded && elapsed < StepTimeoutSeconds)
         {
-            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
             elapsed += Time.deltaTime;
 
             if (!syncObserved && analytics != null && analytics.GetLiveSyncRate() > 30f)
@@ -365,6 +732,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
             if (!goalLineObserved && goalLine != null && goalLine.IsVisible)
                 goalLineObserved = true;
+
+            if (gs != null && elapsed >= SoleSampleStart
+                && elapsed < SoleSampleStart + GroundContactMath.StrideWindowSeconds)
+            {
+                float lowestVertex = LowestSkinnedVertexY(engine.transform, bakedMesh);
+                if (!float.IsNaN(lowestVertex)) soleSamples.Add(lowestVertex - gs.ResolvedFloorY);
+                if (planting != null) maxLift = Mathf.Max(maxLift, planting.CurrentLiftMeters);
+            }
 
             // 途中でSwiftメトリクスも1回注入(実機経路の確認)
             if (!_metricsSent && elapsed > 3f)
@@ -389,6 +764,20 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(goalAudio != null && !string.IsNullOrEmpty(goalAudio.LastGoalJingleName),
             "goal: imported win jingle started playing");
         Check(syncObserved, "run: live sync rate exceeded 30% during run");
+
+        Destroy(bakedMesh);
+        Check(planting != null, "bootstrap: FootPlanting auto-attached to avatar");
+        Check(planting != null && planting.UsesMeshSolePoints,
+            $"ground: foot planting found sole points on the mesh ({(planting != null ? planting.SolePointCount : 0)} points)");
+        if (gs != null)
+        {
+            bool measured = GroundContactMath.TryContactError(soleSamples, out float contactErr);
+            float swingPeak = soleSamples.Count > 0 ? Mathf.Max(soleSamples.ToArray()) : 0f;
+            Check(measured && GroundContactMath.IsWithinTolerance(contactErr),
+                $"ground: soles meet the floor within ±5cm (§10) — stance error {contactErr:+0.000;-0.000}m " +
+                $"(lowest mesh vertex over {soleSamples.Count} frames, swing peak {swingPeak:+0.000;-0.000}m, " +
+                $"max lift {maxLift:F3}m, floor {gs.ResolvedFloorY:F3})");
+        }
         Check(justColorObserved, "color: pace-sync GREEN (just) while on target pace (§7.1)");
         Check(livePaceObserved, "hud: live pace value rendered during run (not '--')");
         if (countdown != null)
@@ -405,6 +794,27 @@ public class E2EScenarioBehaviour : MonoBehaviour
         var goalGestures = FindFirstObjectByType<ProceduralGestureDriver>(FindObjectsInactive.Include);
         Check(goalGestures != null && goalGestures.ActiveGesture == "Goodbye",
             "goal: procedural goodbye gesture playing");
+
+        // ── §10 非機能要件の実測 (位置誤差1.0m / 60分連続稼働) ────────────────
+        // 実証(§11.2)でCSVを解析するまで分からない、という状態を避けるための計測。
+        // 位置誤差は「目標リード距離(3.0m)と実際の水平距離の差」で定義している
+        var nonFunctional = FindFirstObjectByType<NonFunctionalRequirementsMonitor>(FindObjectsInactive.Include);
+        Check(nonFunctional != null, "bootstrap: NonFunctionalRequirementsMonitor exists");
+        if (nonFunctional != null)
+        {
+            Check(nonFunctional.Position.SampleCount > 0,
+                $"§10: position error was actually sampled during the run ({nonFunctional.Position.SampleCount} samples)");
+            Check(nonFunctional.Position.MeetsRequirement,
+                $"§10: average lead error stays within 1.0m — {nonFunctional.Position.Summarize()}");
+
+            // 短い走行から「60分もつ」と断定しないこと。
+            // (バッテリー残量が取れるかは環境次第 — ノートPCのエディタでは取れる。
+            //  取れる/取れないに関わらず、外挿に足りない計測で達成を名乗らないのが不変条件)
+            Check(nonFunctional.SummarizeEndurance().Contains("判定不能"),
+                $"§10: endurance is reported as undecidable rather than passing ({nonFunctional.SummarizeEndurance()})");
+            Check(!nonFunctional.SummarizeEndurance().Contains("§10達成"),
+                "§10: a short run never claims the 60-minute endurance requirement is met");
+        }
 
         // F-11 テレメトリCSV: 終了後にファイルが生成され、正しいヘッダーと
         // 100Hz相当の行数を持つこと(§5.2)
@@ -491,7 +901,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 少し走ってゴーストペース追従を確認
         for (float t = 0; t < 3f; t += Time.deltaTime)
         {
-            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
         Check(engine.GetTargetSpeed() > 0.5f, "ghost: avatar moving at ghost pace");
@@ -522,7 +932,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         while (otElapsed < 6f)
         {
             otElapsed += Time.deltaTime;
-            _cameraMover.position += runDirection * 9f * Time.deltaTime; // 全力疾走
+            MoveRig(runDirection * 9f * Time.deltaTime); // 全力疾走
             if (engine.CurrentOvertakeState != AvatarEngine.OvertakeState.None)
             {
                 sawOvertakeReaction = true;
@@ -537,7 +947,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         while (engine.CurrentOvertakeState != AvatarEngine.OvertakeState.None && otElapsed < 8f)
         {
             otElapsed += Time.deltaTime;
-            _cameraMover.position += runDirection * 9f * Time.deltaTime;
+            MoveRig(runDirection * 9f * Time.deltaTime);
             yield return null;
         }
         Check(engine.CurrentOvertakeState == AvatarEngine.OvertakeState.None,
@@ -546,7 +956,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // 通常速度へ戻して体勢回復
         for (float t = 0; t < 1.5f; t += Time.deltaTime)
         {
-            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
 
@@ -558,7 +968,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(engine.IsHalted, "obstacle: avatar halts at simulated wall");
 
             // 停止中にユーザーが追い越す状況を作る(実機で「アバターが消えた」ケース)
-            _cameraMover.position += _cameraMover.forward * 4.0f;
+            MoveRig(CamForwardFlat() * 4.0f);
             yield return WaitScaled(0.3f);
 
             groundSnap.SimulateObstacle = false;
@@ -571,9 +981,36 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Vector3 toAvatar = engine.transform.position - _cameraMover.position;
             toAvatar.y = 0f;
             float leadAfterClear = toAvatar.magnitude;
-            bool inFront = Vector3.Dot(toAvatar.normalized, _cameraMover.forward) > 0f;
+            bool inFront = Vector3.Dot(toAvatar.normalized, CamForwardFlat()) > 0f;
             Check(inFront && leadAfterClear < 6.0f,
                 $"obstacle: avatar returns in front after the wall clears (lead {leadAfterClear:F1}m, inFront={inFront})");
+        }
+
+        // ── Step 3c2: 走行中にアプリを終了(スワイプ)されても記録が消えないこと ──
+        // 記録は FinishRun でしか保存されないため、走行中に殺されるとその走行は
+        // まるごと消えていた。背面移行のたびにスナップショットを書き、次回起動で昇格する
+        {
+            int historyBefore = SessionDataStore.LoadAllSessions().Count;
+
+            session.PersistInterruptedSnapshot(); // = OnApplicationPause(true) と同じ経路
+            Check(SessionDataStore.HasInterruptedSnapshot(),
+                "interrupt: a snapshot is written when the app backgrounds mid-run");
+            Check(SessionDataStore.LoadAllSessions().Count == historyBefore,
+                "interrupt: the snapshot stays out of the history until promoted");
+
+            RunSessionRecord restored = SessionDataStore.TryPromoteInterruptedSnapshot(out string promotedPath);
+            Check(restored != null && restored.wasInterrupted,
+                "interrupt: the snapshot is promoted into the history on the next launch");
+            Check(restored != null && restored.distanceMeters > 0f,
+                $"interrupt: the restored run keeps its distance ({(restored != null ? restored.distanceMeters : 0f):F0}m)");
+            Check(!SessionDataStore.HasInterruptedSnapshot(),
+                "interrupt: the snapshot is consumed by the promotion");
+            Check(SessionDataStore.LoadAllSessions().Count == historyBefore + 1,
+                "interrupt: the interrupted run now appears in the history");
+
+            // 検証で作った履歴を残さない
+            if (!string.IsNullOrEmpty(promotedPath) && System.IO.File.Exists(promotedPath))
+                System.IO.File.Delete(promotedPath);
         }
 
         // 地面判定は上向きの面のみを採用する(壁を床と誤認するとアバターが跳ね上がる)。
@@ -596,7 +1033,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             while (walked < 6.0f)
             {
                 float step = RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f);
-                _cameraMover.position += _cameraMover.forward * step;
+                MoveRig(CamForwardFlat() * step);
                 walked += step;
 
                 if (Mathf.Abs(groundSnap.ResolvedFloorY - floorBeforeWalk) > 0.01f)
@@ -649,7 +1086,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             while (!engine.IsWaitingForUser && waitElapsed < 15f)
             {
                 waitElapsed += Time.deltaTime;
-                _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+                MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
                 yield return null;
             }
             Check(engine.IsWaitingForUser, "wait: avatar holds & beckons at 10m separation");
@@ -667,7 +1104,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 Vector3 toAvatar = engine.transform.position - _cameraMover.position;
                 toAvatar.y = 0;
                 if (toAvatar.sqrMagnitude > 0.01f)
-                    _cameraMover.position += toAvatar.normalized * 6f * Time.deltaTime;
+                    MoveRig(toAvatar.normalized * 6f * Time.deltaTime);
                 yield return null;
             }
             Check(!engine.IsWaitingForUser, "wait: pacing resumes when user catches up (7m)");
@@ -676,7 +1113,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // コーナー前に直進で体勢を整える(待機解除直後の過渡を収束させる)
         for (float t = 0; t < 4.0f; t += Time.deltaTime)
         {
-            _cameraMover.position += runDirection * RunSpeedMetersPerSecond * Time.deltaTime;
+            MoveRig(runDirection * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
 
@@ -697,10 +1134,41 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
 
         // ── Step 4: GPS喪失→復帰 FSM ──────────────────────────────────────
+        // 併せて「なぜ見えないか」の診断が症状ではなく経路を報告することを縛る。
+        // 実機で「消えた」と言われても、この行を見れば7つある非表示経路のどれかが分かる
+        var visibility = FindFirstObjectByType<AvatarVisibilityDiagnostics>(FindObjectsInactive.Include);
+        Check(visibility != null, "bootstrap: AvatarVisibilityDiagnostics exists");
+        if (visibility != null)
+        {
+            yield return null;
+            Check(visibility.IsVisible,
+                $"visibility: avatar reported visible during normal pacing ({visibility.CurrentReason})");
+        }
+
         if (stateController != null)
         {
             stateController.TransitionToState(GameStateController.ARVisionState.InertialMovement);
             yield return WaitScaled(0.5f);
+
+            if (visibility != null)
+            {
+                yield return null;
+                Check(visibility.CurrentReason.Contains("GPS"),
+                    $"visibility: inertial movement is attributed to GPS loss ({visibility.CurrentReason})");
+            }
+
+            // 5秒でフェードアウト→1秒後にスタンバイ(SetActive(false))。
+            // この「消えた」が GPS 経路として報告されること
+            stateController.TransitionToState(GameStateController.ARVisionState.FadeOut);
+            yield return WaitScaled(1.5f);
+            Check(stateController.currentState == GameStateController.ARVisionState.Standby,
+                "gps: fade-out completes into Standby (F-10)");
+            if (visibility != null)
+            {
+                yield return null;
+                Check(!visibility.IsVisible && visibility.CurrentReason.Contains("GPSロスト"),
+                    $"visibility: standby is attributed to GPS loss, not left unexplained ({visibility.CurrentReason})");
+            }
 
             // F-10: ロスト中はHUD下部に赤字の減速警告が出ること。
             // 実機で「アバターが理由も分からず消える」状態だったのを塞ぐ回帰テスト
@@ -722,6 +1190,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
             if (hud != null)
                 Check(!hud.IsSafetyWarningVisible,
                     "hud: safety warning cleared after GPS recovery (F-10)");
+            if (visibility != null)
+            {
+                yield return null;
+                Check(visibility.IsVisible,
+                    $"visibility: avatar reported visible again after GPS recovery ({visibility.CurrentReason})");
+            }
         }
 
         // ── Step 4b: GPSロスト自動判定 (F-09 / 基本設計書§8.1) ────────────────
@@ -729,8 +1203,26 @@ public class E2EScenarioBehaviour : MonoBehaviour
         var gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
         if (gpsMonitor != null && stateController != null && !engine.IsSessionEnded)
         {
+            // 既定は基本設計書どおりON。屋内検証のための一時OFF(2026-09-11〜09-16)は
+            // 「良好な初回測位まではロスト判定しない」で恒久化したので戻してある
+            Check(GpsSignalMonitor.VerificationDefaultAutoLostHandling && gpsMonitor.AutoLostHandlingEnabled,
+                "verification: GPS-lost auto handling is ON by default (F-09/F-10 armed for the track test)");
+            Check(gpsMonitor.RequireInitialFixBeforeLost,
+                "verification: lost detection waits for the first usable fix by default");
+
             stateController.TransitionToState(GameStateController.ARVisionState.Normal);
             yield return null;
+
+            // 屋内の再現: 良好な測位を一度も得ないまま精度25mが続いても、アバターは消えない。
+            // 「掴んでいない信号は失えない」— これが無いと屋内では走り出す前に消える
+            gpsMonitor.ResetSession();
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 25.0f);
+            yield return WaitScaled(0.3f);
+            Check(!gpsMonitor.HasHadGoodFix, "gps-auto: a 25m fix never counts as acquiring the signal");
+            Check(!gpsMonitor.IsSignalLost,
+                "gps-auto: indoors (no usable fix yet) is not reported as signal loss");
+            Check(stateController.currentState == GameStateController.ARVisionState.Normal,
+                "gps-auto: the avatar survives indoors where accuracy never gets below 10m");
 
             // 良好サンプル(精度3m)ではロストしない
             gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
@@ -754,6 +1246,32 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
             // 後続ステップへ影響しないよう監視を解除(未受信状態=非介入へ戻す)
             gpsMonitor.ResetSession();
+
+            // 実行時スイッチ(SetGpsLostHandling)がコード変更なしで効くこと。
+            // 定数を書き換えて戻し忘れる運用を無くすためのスイッチなので、経路ごと縛る
+            bridge.OnSwiftCommand("{\"command\":\"SetGpsLostHandling\",\"enabled\":false}");
+            yield return null;
+            Check(!gpsMonitor.AutoLostHandlingEnabled,
+                "gps-auto: SetGpsLostHandling(false) disarms F-09/F-10 at runtime");
+
+            // OFFなら、良好な測位を掴んだ後に悪化してもFSMは Normal のまま
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
+            yield return null;
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 25.0f);
+            yield return WaitScaled(0.3f);
+            Check(gpsMonitor.HasHadGoodFix, "gps-auto: a 3m fix counts as acquiring the signal");
+            Check(stateController.currentState == GameStateController.ARVisionState.Normal,
+                "gps-auto: with handling off, a 25m fix after acquisition still does not hide the avatar");
+
+            bridge.OnSwiftCommand("{\"command\":\"SetGpsLostHandling\",\"enabled\":true}");
+            yield return null;
+            Check(gpsMonitor.AutoLostHandlingEnabled,
+                "gps-auto: SetGpsLostHandling(true) re-arms F-09/F-10 at runtime");
+
+            gpsMonitor.ResetSession();
+            gpsMonitor.AutoLostHandlingEnabled = GpsSignalMonitor.VerificationDefaultAutoLostHandling;
+            stateController.TransitionToState(GameStateController.ARVisionState.Normal);
+            yield return null;
         }
 
         // ── Step 4c: ARグラス切断→再スタート (§8.3) ──────────────────────────
@@ -791,9 +1309,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // ── Step 6: HUD自動抑制 (首振り検知で四隅表示をフェード) ──────────────
         if (hud != null)
         {
+            // フレーム数でも下限を切る: バッチモードでは1フレームが330msに達することがあり、
+            // 経過時間だけで回すとループが2回しか回らずに抑制を観測し損ねる
+            // (2026-09-17に1回だけ落ちたのはこれ)
             bool sawSuppressed = false;
-            for (float t = 0; t < 0.7f; t += Time.deltaTime)
+            int hudFrames = 0;
+            for (float t = 0; t < 0.7f || hudFrames < 20; t += Time.deltaTime)
             {
+                hudFrames++;
                 _cameraMover.Rotate(0f, 300f * Time.deltaTime, 0f); // 素早い首振り(>120°/s)
                 if (hud.CurrentHudVisibility < 0.85f) sawSuppressed = true;
                 yield return null;
@@ -808,6 +1331,198 @@ public class E2EScenarioBehaviour : MonoBehaviour
     }
 
     private bool _metricsSent = false;
+
+    /// <summary>
+    /// リグを動かし、実走者と同じく移動方向を向かせる。
+    /// 位置だけ動かすとカメラが保存姿勢のまま横や後ろを向いて走ることになり、
+    /// 視野に基づく検証(アバターが見えているか)が成立しない。
+    /// 垂直移動(上下)では向きを変えない
+    /// </summary>
+    private void MoveRig(Vector3 delta)
+    {
+        _cameraMover.position += delta;
+        Vector3 flat = delta; flat.y = 0f;
+        if (flat.sqrMagnitude > 1e-8f)
+            FaceRig(flat);
+    }
+
+    /// <summary>
+    /// **カメラの**水平前方が <paramref name="direction"/> を向くようにリグのルートを回す。
+    /// ルートを LookRotation で向けるだけでは足りない — このシーンではカメラがルートに
+    /// 対してローカル回転(約50°)を持っており、ルートの向き ≠ カメラの向きになる。
+    /// 視野に基づく検証で見るのはカメラの向きなので、必ずカメラ基準で揃える
+    /// </summary>
+    // ── ノイズ注入の共通部 ────────────────────────────────────────────────
+    private const double NoiseBaseLat = 34.6937, NoiseBaseLon = 135.5023;
+    private const float  NoiseGpsAccuracy = 8f;        // 屋内〜街中の典型
+    private const float  NoiseGpsMeters = 4f;          // 精度8mなら ±4m のふらつきは普通
+    private const float  NoiseHandJitterMeters = 0.02f; // 手ブレ ±2cm
+    private readonly System.Random _noiseRng = new System.Random(20260911);
+    private float Noise(float amp) => (float)(_noiseRng.NextDouble() * 2.0 - 1.0) * amp;
+    private Vector3 _noiseOrigin;      // GPS座標の原点に対応するAR位置
+    private bool _noiseOriginSet;
+
+    /// <summary>AR の +Z を北、+X を東として緯度経度へ写し、UpdateMetrics として送る。</summary>
+    private void SendNoisyGpsFix(ARSessionManagerBridge bridge, Vector3 truePos,
+                                 double distanceKm, double paceKmH, bool speedValid)
+    {
+        if (!_noiseOriginSet) { _noiseOrigin = truePos; _noiseOriginSet = true; }
+        Vector3 posFromStart = truePos - _noiseOrigin;
+        double north = posFromStart.z + Noise(NoiseGpsMeters);
+        double east  = posFromStart.x + Noise(NoiseGpsMeters);
+        double lat = NoiseBaseLat + north / 111320.0;
+        double lon = NoiseBaseLon + east / (111320.0 * System.Math.Cos(NoiseBaseLat * System.Math.PI / 180.0));
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        bridge.OnSwiftCommand(
+            "{\"command\":\"UpdateMetrics\"," +
+            $"\"paceKmH\":{paceKmH.ToString("F1", ci)}," +
+            "\"heartRate\":140," +
+            $"\"distanceKm\":{distanceKm.ToString("F4", ci)}," +
+            $"\"gpsLatitude\":{lat.ToString("F7", ci)}," +
+            $"\"gpsLongitude\":{lon.ToString("F7", ci)}," +
+            $"\"gpsAccuracy\":{NoiseGpsAccuracy.ToString("F1", ci)}," +
+            "\"locationSampleFresh\":true," +
+            $"\"speedSampleValid\":{(speedValid ? "true" : "false")}}}");
+    }
+
+    /// <summary>
+    /// 手ブレ + 測位ノイズ下で静止6秒(最初の2秒は収束待ち)。
+    /// アバター位置の重心からの最大ずれ / フレーム間ジャンプ / リード距離を縛る。
+    /// </summary>
+    private IEnumerator RunNoiseStationaryTest(AvatarEngine engine, ARSessionManagerBridge bridge)
+    {
+        Vector3 truePos = _cameraMover.position; // 手ブレを載せる前の「本当の」位置
+        Transform camT = Camera.main != null ? Camera.main.transform : _cameraMover;
+        float nextFix = 0f, elapsed = 0f;
+        var samples = new List<Vector3>();
+        float maxJump = 0f;
+        Vector3 lastAvatar = engine.transform.position;
+
+        while (elapsed < 6f)
+        {
+            elapsed += Time.deltaTime;
+            _cameraMover.position = truePos + new Vector3(Noise(NoiseHandJitterMeters), Noise(NoiseHandJitterMeters), Noise(NoiseHandJitterMeters));
+
+            if (elapsed >= nextFix) { SendNoisyGpsFix(bridge, truePos, 0.0, 0.0, false); nextFix += 1f; }
+
+            if (elapsed > 2f)
+            {
+                Vector3 a = engine.transform.position; a.y = 0f;
+                samples.Add(a);
+                Vector3 l = lastAvatar; l.y = 0f;
+                maxJump = Mathf.Max(maxJump, Vector3.Distance(a, l));
+            }
+            lastAvatar = engine.transform.position;
+            yield return null;
+        }
+
+        Vector3 centroid = Vector3.zero;
+        foreach (var v in samples) centroid += v;
+        if (samples.Count > 0) centroid /= samples.Count;
+        float maxSpread = 0f;
+        foreach (var v in samples) maxSpread = Mathf.Max(maxSpread, Vector3.Distance(v, centroid));
+
+        Vector3 toAvatarStill = engine.transform.position - camT.position; toAvatarStill.y = 0f;
+        Check(maxSpread < 0.5f,
+            $"noise: avatar stays put while the user stands still under hand jitter + 8m GPS noise " +
+            $"(max drift from centroid {maxSpread:F2}m, max frame jump {maxJump:F2}m)");
+        Check(maxJump < 0.3f,
+            $"noise: no frame-to-frame jumps while stationary (max {maxJump:F2}m)");
+        Check(Mathf.Abs(toAvatarStill.magnitude - engine.LeadDistanceMeters) < 1.0f,
+            $"noise: lead distance holds near 3.0m while stationary ({toAvatarStill.magnitude:F2}m)");
+
+        _cameraMover.position = truePos; // ノイズを外して後続へ
+        // 測位の供給を止めるので監視も未受信へ戻す。
+        // F-09 は既定でONなので、供給を止めたまま放置すると 1.5秒後に「更新途絶=ロスト」が
+        // 正しく成立してしまい、以降のステップが慣性移動から始まる。E2Eは測位を必要な
+        // ステップだけへ注入する作りなので、ここで「一度も受信していない」状態へ戻す
+        // (GpsSignalMonitor は未受信の間は一切介入しない)
+        ResetGpsMonitor();
+    }
+
+    /// <summary>
+    /// 手ブレ + 測位ノイズ下で目標ペースの直進5秒。
+    /// リード距離誤差の平均(§10 位置誤差 1.0m)とフレーム間ジャンプを縛る。
+    /// </summary>
+    private IEnumerator RunNoiseMovingTest(AvatarEngine engine, ARSessionManagerBridge bridge)
+    {
+        Vector3 truePos = _cameraMover.position;
+        Transform camT = Camera.main != null ? Camera.main.transform : _cameraMover;
+        float elapsed = 0f, nextFix = 0f, maxJump = 0f;
+        double leadErrSum = 0; int leadN = 0;
+        Vector3 lastAvatar = engine.transform.position;
+        Vector3 dir = Vector3.forward;
+        double distKm = 0;
+
+        while (elapsed < 5f)
+        {
+            float dt = Time.deltaTime;
+            elapsed += dt;
+            truePos += dir * RunSpeedMetersPerSecond * dt;
+            distKm  += RunSpeedMetersPerSecond * dt / 1000.0;
+            MoveRig(Vector3.zero); // 向きだけ維持
+            _cameraMover.position = truePos + new Vector3(Noise(NoiseHandJitterMeters), Noise(NoiseHandJitterMeters), Noise(NoiseHandJitterMeters));
+            FaceRig(dir);
+
+            if (elapsed >= nextFix) { SendNoisyGpsFix(bridge, truePos, distKm, RunSpeedMetersPerSecond * 3.6, true); nextFix += 1f; }
+
+            if (elapsed > 2f)
+            {
+                Vector3 toAvatar = engine.transform.position - camT.position; toAvatar.y = 0f;
+                leadErrSum += Mathf.Abs(toAvatar.magnitude - engine.LeadDistanceMeters); leadN++;
+                Vector3 a = engine.transform.position; a.y = 0f; Vector3 l = lastAvatar; l.y = 0f;
+                maxJump = Mathf.Max(maxJump, Vector3.Distance(a, l));
+            }
+            lastAvatar = engine.transform.position;
+            yield return null;
+        }
+
+        float meanLeadErr = leadN > 0 ? (float)(leadErrSum / leadN) : 99f;
+        Check(meanLeadErr < 1.0f,
+            $"noise: lead error stays within §10 1.0m while running under noise (mean {meanLeadErr:F2}m)");
+        Check(maxJump < 0.5f,
+            $"noise: no frame-to-frame jumps while running under noise (max {maxJump:F2}m)");
+
+        _cameraMover.position = truePos; // ノイズを外して後続へ
+        // 測位の供給を止めるので監視も未受信へ戻す。
+        // F-09 は既定でONなので、供給を止めたまま放置すると 1.5秒後に「更新途絶=ロスト」が
+        // 正しく成立してしまい、以降のステップが慣性移動から始まる。E2Eは測位を必要な
+        // ステップだけへ注入する作りなので、ここで「一度も受信していない」状態へ戻す
+        // (GpsSignalMonitor は未受信の間は一切介入しない)
+        ResetGpsMonitor();
+        yield return WaitScaled(0.5f);
+    }
+
+    /// <summary>
+    /// GPS監視を「実測サンプル未受信」へ戻す。測位を注入したステップの後始末。
+    /// </summary>
+    private void ResetGpsMonitor()
+    {
+        var monitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        if (monitor != null) monitor.ResetSession();
+    }
+
+    /// <summary>走者(カメラ)の水平前方。ルートの forward はカメラの向きと一致しないので使わない。</summary>
+    private Vector3 CamForwardFlat()
+    {
+        Camera cam = Camera.main;
+        Vector3 f = (cam != null ? cam.transform : _cameraMover).forward;
+        f.y = 0f;
+        return f.sqrMagnitude > 1e-8f ? f.normalized : Vector3.forward;
+    }
+
+    private void FaceRig(Vector3 direction)
+    {
+        Camera cam = Camera.main;
+        Transform camT = cam != null ? cam.transform : _cameraMover;
+        Vector3 camFlat = camT.forward; camFlat.y = 0f;
+        Vector3 dirFlat = direction;   dirFlat.y = 0f;
+        if (camFlat.sqrMagnitude < 1e-8f || dirFlat.sqrMagnitude < 1e-8f) return;
+
+        float yaw = Vector3.SignedAngle(camFlat.normalized, dirFlat.normalized, Vector3.up);
+        if (Mathf.Abs(yaw) > 0.01f)
+            _cameraMover.Rotate(0f, yaw, 0f, Space.World);
+    }
 
     private static bool HasFloatParam(Animator animator, string name)
     {
@@ -843,6 +1558,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Vector3 lastAvatarPos = engine.transform.position;
         Vector3 tangent = forward;
 
+        // ワープが出たフレームの文脈を残す。コーナーのフレークは再現が1/3程度で、
+        // 「最大何m跳んだか」だけでは原因が特定できない
+        var trackingForCorner = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
+        Vector3 lastEngineHeading = engine.CurrentHeading;
+        string worstJumpContext = "";
+
         while (theta < quarterTurnRadians)
         {
             // フレームヒッチ時に Time.deltaTime(timeScale=3で更に増幅)をそのまま使うと、
@@ -858,6 +1579,9 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Quaternion rotation = Quaternion.AngleAxis(theta * Mathf.Rad2Deg, Vector3.up);
             _cameraMover.position = center + rotation * startOffset;
             tangent = rotation * forward;
+            // 実走者はコーナーでも進行方向を向く。カメラも接線を向かせないと、
+            // 曲線部でアバターが「視野外」になり可視性の検証が成立しない
+            FaceRig(tangent);
 
             // ① 先行距離チェック
             // 注: 移動中の定常先行距離はアンカーラグ(速度/補間率≒1.4m)の分だけ
@@ -872,20 +1596,53 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
             // ② ワープチェック(フレーム間のアバター移動量)
             float jump = Vector3.Distance(engine.transform.position, lastAvatarPos);
-            maxJump = Mathf.Max(maxJump, jump);
+            if (jump > maxJump)
+            {
+                maxJump = jump;
+                float headingSwing = Vector3.Angle(lastEngineHeading, engine.CurrentHeading);
+                worstJumpContext =
+                    $"θ={theta * Mathf.Rad2Deg:F1}° dt={dt * 1000f:F1}ms jump={jump:F2}m lead={lead:F2}m " +
+                    $"engineHeadingSwing={headingSwing:F1}° engineHeading={engine.CurrentHeading} " +
+                    $"trackHeading={(trackingForCorner != null ? trackingForCorner.CurrentHeading.ToString() : "n/a")} " +
+                    $"src={(trackingForCorner != null ? trackingForCorner.CurrentHeadingSource.ToString() : "n/a")} " +
+                    $"halted={engine.IsHalted} waiting={engine.IsWaitingForUser} " +
+                    $"overtake={engine.CurrentOvertakeState} recovery={engine.IsOverriddenByRecovery}";
+            }
             if (jump > maxFrameJump)
                 noWarp = false;
             lastAvatarPos = engine.transform.position;
+            lastEngineHeading = engine.CurrentHeading;
 
             yield return null;
         }
 
         Check(leadOk, $"corner: lead distance stayed 1-9m (min {minLead:F1}m / max {maxLead:F1}m)");
-        Check(noWarp, $"corner: no warp — max frame jump {maxJump:F2}m");
+        Debug.Log($"[E2E CORNER] worst frame — {worstJumpContext}");
+        Debug.Log($"[E2E CORNER] frame timing — maxDeltaTime={engine.MaxObservedDeltaSeconds * 1000f:F0}ms " +
+                  $"longFrames={engine.LongFrameCount} " +
+                  $"(飽和閾値 {1f / 2.5f * 1000f:F0}ms @k=2.5)");
+        Check(noWarp, $"corner: no warp — max frame jump {maxJump:F2}m ({worstJumpContext})");
 
         // ③ 接線追従: アバターの向きと進行方向の角度差
         float headingError = Vector3.Angle(engine.transform.forward, tangent);
         Check(headingError < 60f, $"corner: avatar heading tracks tangent (error {headingError:F0}°)");
+    }
+
+    /// <summary>
+    /// 表示中のスキンメッシュを現在の姿勢で焼き、最も低い頂点のワールド高さを返す(足裏の真値)。
+    /// </summary>
+    private static float LowestSkinnedVertexY(Transform root, Mesh scratch)
+    {
+        float lowest = float.PositiveInfinity;
+        foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>())
+        {
+            if (!smr.enabled || smr.sharedMesh == null) continue;
+            smr.BakeMesh(scratch, true);
+            Matrix4x4 toWorld = Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one);
+            foreach (Vector3 v in scratch.vertices)
+                lowest = Mathf.Min(lowest, toWorld.MultiplyPoint3x4(v).y);
+        }
+        return float.IsPositiveInfinity(lowest) ? float.NaN : lowest;
     }
 
     private static IEnumerator WaitScaled(float seconds)

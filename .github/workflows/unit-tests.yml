@@ -1,0 +1,32 @@
+# 純ロジックのユニットテスト (PR・push毎)
+#
+# Tests/UnitTests は Unity 非依存(Assets/_Project/Scripts の純ロジックをソース直コンパイル)なので、
+# Unityライセンス無しの ubuntu ランナーで数十秒で回る。E2E(e2e.yml)は UNITY_LICENSE が要るため手動のまま。
+name: Unit tests
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: dotnet test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build run-log analyzer
+        run: dotnet build tools/analyze-run-log
+
+      - name: Test
+        working-directory: Tests/UnitTests
+        run: dotnet test --logger "console;verbosity=normal"

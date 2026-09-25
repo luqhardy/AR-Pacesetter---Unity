@@ -82,9 +82,28 @@ XREAL One は iPhone(USB-C)に対して**外部ディスプレイ**として振�
 - 切断 → 走行画面の`UnityContainerView`が自動でiPhone側へ回収
 - 接続検知は DeviceConnectView のARグラス行に自動反映され、Unityの`ConnectXREAL`も送信される
 - グラス出力中、iPhoneの走行画面は「ARビューはグラスに出力中」表示+HUD操作に切替
+- **移設時は描画面(CAMetalLayer)のスケールも移設先へ合わせる**。`contentScaleFactor` を
+  iPhoneの@3xのままにするとグラスで縦横比が合わず、描画面積も最大9倍になって60fps/M2Pを壊す。
+  `ExternalDisplayManager.matchRenderScale` が移設・回収の両方で処理する。
+  埋まっているかは開発者モードの `glass.fillsScreen`(期待値: 一致)で確認する
+
+**前提(重要)**: 外部ディスプレイ用のシーンは、アプリが**マルチシーンに対応している場合のみ**
+iOSが生成する。`UIApplicationSupportsMultipleScenes` が false だと `ExternalSceneDelegate` は
+一度も呼ばれず、グラスには**ただのミラーリング**(iPhoneの縦画面)が出る。この場合
+`ConnectXREAL` も飛ばないため `GlassViewRig` が起動せず、パススルーも切れない
+(=現実の上にカメラ映像が重なって二重像になる)。
+Xcodeの該当項目は **General → Deployment Info → Supports multiple windows**。
+ビルド設定 `INFOPLIST_KEY_UIApplicationSupportsMultipleScenes = YES` を追加済み(2026-09-18)。
+
+**接続は直挿しでよい**: XREAL One は USB-C の DisplayPort Alt Mode で受けるため、
+iPhone 15以降なら**ハブ無しで直結**できる(グラスはiPhoneからバスパワー給電される)。
+ハブが要るのは (a) DP Alt Mode 非対応のホスト (b) 使用中にiPhoneを充電したいとき。
+**§10の60分連続稼働の計測は、給電しながらの方が条件を満たしやすい**点に注意。
 
 実機確認: iPhone 15以降(USB-C) + XREAL One を接続し、走行画面でグラス側に
 Unityの映像が出ること。3DoF頭部追従はグラス側X1チップのネイティブ機能で行われる。
+**グラスの画面モードは Follow(固定)にすること** — Anchorだと二重補正になる
+([Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) §2-3)。
 
 ### ③ SwiftUIからUnityを表示
 
@@ -123,6 +142,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 > `imu_accel_x/y/z` 列は実機では **CoreMotion の実測値**(`Input.gyro.userAcceleration` を
 > 100Hzで取得し m/s² へ換算)。エディタはジャイロが無いためカメラ速度差分の近似になる。
 > 供給元は `RunTelemetryLogger.ImuSource`(`device` / `external` / `approximated`)で判別できる。
+> `external` は C# の `SetImuAcceleration` 呼び出し時のみで、Swift からこれを呼ぶブリッジコマンドは無い。
 > GPS列(`gps_latitude`/`gps_longitude`)は`UpdateMetrics`経由で実測値が入る。
 
 ## アーキテクチャ
@@ -151,8 +171,14 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
 | `ARSessionManager` | `ResumeSession` | — | §8.3: グラス再接続後、**準備画面からの再スタート操作**でスタンバイ中の表示のみ復帰(新規セッションは開始せず記録は継続) |
-| `DeviceManager` | `ConnectXREAL` | — | ReadyチェックのARグラスをConnectedへ |
+| `ARSessionManager` | `SetGpsLostHandling` | `enabled` (bool) | F-09/F-10の自動判定を実行時に切替。**既定はON**(基本設計書どおり)。屋内デモで「掴んだ後に消えないでほしい」場面用の明示的スイッチで、定数を書き換える運用(戻し忘れる)を無くすために用意した。なお**良好な初回測位まではロスト判定しない**のはUnity側の既定動作なので、屋内で走り出す前に消えることはこの設定に関わらず起きない |
+| `ARSessionManager` | `RequestDiagnostics` | — | 開発者モード用の状態スナップショット(M2Pの実測有無・IMU供給元・グラスの画角と光学適合・GPS判定・§10統計・FSM・fps)を `Diagnostics` イベントで返す。**未計測は -1 のまま返す** |
+| `ARSessionManager` | `RequestLogFiles` | — | F-11走行ログCSVの一覧(新しい順・最大30件)を `LogFiles` イベントで返す。CSVは `persistentDataPath/RunLogs/` にあり**アプリからは他に取り出す手段が無い**ため、開発者モードの共有シートで書き出す |
+| `ARSessionManager` | `ImportVrmAvatar` / `SelectVrmAvatar` | `path` (string) | 差し替えアバター(VRM)を適用する。`path` は**サンドボックス内の絶対パス** — ドキュメントピッカーが返すURLはセキュリティスコープ付きでUnityからは読めないため、Swift側で `Documents/Avatars/` へコピーしてから渡す。結果は `VrmImportResult` で返る |
+| `ARSessionManager` | `RequestVrmAvatars` | — | 選べるアバターの一覧(同梱 + 取り込み)を `VrmAvatarList` で返す |
+| `DeviceManager` | `ConnectXREAL` | `model`(任意), `pixelWidth`(任意), `pixelHeight`(任意), `refreshHz`(任意) | ReadyチェックのARグラスをConnectedへ。併せて**グラスの画角で描く出力リグ**(`GlassViewRig`)を起動する — iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えないため。画角はグラスから取得できないので解像度・リフレッシュレートから機種を推定し、1920×1080(One/One Pro/Air2で共通)は **XREAL One** を既定とする。`model`があればそれが優先。詳細は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) |
 | `DeviceManager` | `DisconnectXREAL` | — | §8.3: スタンバイ移行でアバターを消去。**走行セッションは終了させない**ためF-11のCSVログはBG継続。再接続だけではアバターを復帰させない(安全のため`ResumeSession`が必要) |
+| `DeviceManager` | `UpdateGlassPose` | `yaw`, `pitch`, `roll`, `timestamp` | グラス実機の頭部姿勢(度)。**現状iOSに供給元は無い**(XREAL SDKはAndroid専用・USB-HIDはiOSから触れない)ため将来用の受け口。0.25秒途切れれば自動で §4.1 の移動平均済み進行方向へ戻る。グラスの画面モードが Anchor のときはグラス自身が頭回転を打ち消すためUnity側は採用しない(二重補正の回避) |
 
 `StartSession`は前セッションが終了済みの場合、全コンポーネント(エンジン・集計・HUD・
 セーフティログ・音響)を自動リセットしてから開始する — **同一起動内での再走行に対応**。
@@ -166,7 +192,11 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 | `SyncRateUpdated` | `value` (int 0-100) | 走行中 1Hz |
 | `AvatarStateChanged` | `state` = Idle/Run/Slow/Fast/Goal/Lost | 状態変化時 |
 | `GPSLost` / `GPSRecovered` | — | GPS FSM遷移時 |
-| `LatencyReport` | `ms` (double) | 走行中 1Hz(平滑化フレーム時間) |
+| `VrmImportResult` | `accepted`, `name`, `report`(実測値つき説明), `reason`(断った理由) | 取り込み/選択の結果。**断った理由を必ず持つ** — VRChat向けアバターは三角形数の上限に掛かることが多く、「失敗しました」だけでは利用者が直しようがない |
+| `VrmAvatarList` | `current`, `avatars`: `{name, path}` の配列 | 選べるアバターの一覧 |
+| `Diagnostics` | `rows`: `{key, value}` の配列(表示順を保つ) | 開発者モードの要求時のみ |
+| `LogFiles` | `directory`, `files`: `{name, path, bytes, modifiedIso}` の配列 | 開発者モードの要求時のみ |
+| `LatencyReport` | `ms` (double), `maxMs`・`overBudgetRatio`・`sampleCount`(実測サンプルがある時のみ) | 走行中 1Hz。**F-11のCSV `latency_m2p` と同じ `SensorTimingBridge` の実測値**(ARKitフレームのセンサー時刻と `CADisplayLink.targetTimestamp` の差)。`ms = -1` は未計測で、合成値は一切入らない。`maxMs`/`overBudgetRatio` は1Hzの瞬時値では拾えない超過を捉えるための区間統計 |
 | `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答 |
 | `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
 | `LowBattery` | — | **現在発火しない** — 唯一の送出元 `SafetyAndSystemController` が実行時に生成されないため(HANDOVER.md §5)。Swift側の購読は将来の有効化に備えて残置。※HUDのバッテリー黄色点滅(`PeripheralHUDManager`)は別実装で正常動作 |
@@ -225,7 +255,7 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 |---|---|---|
 | 距離・ペース | `LocationTracker.swift`(CoreLocation、精度20m以下のサンプルのみ採用・GPS飛び棄却) | 設定ペースからの推定 |
 | 心拍 | `HeartRateMonitor.swift`(HealthKit・Apple Watch。HKAnchoredObjectQueryでリアルタイム購読) | ランダム仮値 |
-| LatencyReport | Unity `LatencyBenchmarkRunner` のローリング平均M2P(走行中バックグラウンド計測) | 平滑化フレーム時間 |
+| LatencyReport | Unity `SensorTimingBridge` のM2P実測(ARKitフレーム時刻 → 提示予定時刻)。CSVと同一の供給元 | `-1`(未計測。もっともらしい値を返さない) |
 
 権限まわり(設定済み): カメラ・位置情報・モーション・Bluetooth・ヘルスケアの使用目的文をビルド設定(INFOPLIST_KEY)に、HealthKit entitlementを `AR_Runner_UI.entitlements` に追加済み。
 **初回のみXcodeで**: Signing & Capabilities → + Capability → **HealthKit** を追加(entitlementsファイルは同梱済みなので追加するだけ)。
@@ -240,8 +270,9 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 ## 既知の制約 / TODO
 
 - 初回のみ UnityFramework の Embed & Sign と Data フォルダの Target Membership 変更が手動(上記②)
-- `ConnectXREAL` は実際のXREAL SDK初期化ではなくReadyチェック状態の更新のみ(SDK導入後にDeviceManagerBridgeへ実装)。DeviceConnectViewのARグラス行タップで送信される
-- 外部ディスプレイへのUnity描画は実装済みだが、XREAL固有のhead-pose/IMU入力は未接続。現在の空間姿勢はiPhone ARKit/XR Camera由来であり、グラスでのworld-lock完成にはpose bridgeが別途必要
+- `ConnectXREAL` はXREAL SDKの初期化ではない(**iOS版SDKは存在しない**)。Readyチェックの更新と、表示メトリクスに基づく出力リグ(画角・視点・HUDセーフエリア)の起動を行う。DeviceConnectViewのARグラス行タップでも送信される
+- **グラス固有のhead-pose/IMUはiOSからは取得できない**(原理的制約。根拠は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) §2-1)。空間トラッキングはiPhoneのARKitが担い、グラスへ出す向きは §4.1 の移動平均済み進行方向(ヨーのみ)から作る。グラス側は**画面モードを Follow(固定)**にしておくこと — Anchorだと二重補正になる
+- **F-03の3.0mとXREAL Oneの画角は両立しない**: 身長1.75mのアバターは3.0m前方で垂直31.1°を占め、Oneの垂直画角25.7°に全身が入らない(全身には3.7m必要)。足元のオーラ(§7.2)・接地の見えにも影響するためチーム判断が要る
 - バックグラウンド中はUnity(AR描画)は停止する — 計測のみ継続し、復帰時にHUD/アバターが追いつく
 
 ## 走行画面の配線(実装済み)

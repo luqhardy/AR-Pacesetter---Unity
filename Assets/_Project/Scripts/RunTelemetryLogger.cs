@@ -12,9 +12,9 @@ using UnityEngine;
 /// 列(§5.2): timestamp, gps_latitude, gps_longitude, imu_accel_x/y/z,
 ///           avatar_pos_x, avatar_pos_z, latency_m2p
 ///
-/// GPS緯度経度・IMU加速度は実機ではSwift(CoreLocation/CoreMotion)から
-/// SetGpsCoordinates/SetImuAcceleration で供給する。エディタではIMUを
-/// カメラ速度差分で近似し、GPSは0とする。
+/// GPS緯度経度は Swift の UpdateMetrics → GpsSignalMonitor → SetGpsCoordinates で入る。
+/// IMU加速度は実機では端末IMU(Input.gyro.userAcceleration)を直接読み、エディタでは
+/// カメラ速度差分で近似する。SetImuAcceleration は C# 側の受け口で、Swift からの経路は無い。
 /// AvatarEngineと同じGameObjectに置く(Bootstrapが自動装着)。
 /// </summary>
 public class RunTelemetryLogger : MonoBehaviour
@@ -28,7 +28,7 @@ public class RunTelemetryLogger : MonoBehaviour
     [Header("References (auto-found if empty)")]
     [SerializeField] private AvatarEngine avatarEngine;
     [SerializeField] private Transform userCamera;
-    [SerializeField] private LatencyBenchmarkRunner latencyRunner;
+    [SerializeField] private SensorTimingBridge sensorTiming;
 
     private bool _logging;
     private string _filePath;
@@ -50,6 +50,13 @@ public class RunTelemetryLogger : MonoBehaviour
     // 100Hzサンプルとして解析(§11.2 CSV解析による遅延評価)できなくなる
     private long _logStartEpochMs;
     private long _sampleIndex;
+
+    // ネイティブ100Hzサンプルの受け皿(毎フレーム使い回す)と、時刻の基準点
+    private readonly double[] _imuSampleTimes = new double[SensorTimingBridge.MaxDrainPerFrame];
+    private readonly float[]  _imuSampleXyz   = new float[SensorTimingBridge.MaxDrainPerFrame * 3];
+    private double _mediaTimeAtLogStart;
+    private float _logStartRealtime;
+    private long _lastWrittenTsMs;
 
     // 実機供給値(未供給時は下記のエディタ近似/0)
     private double _gpsLat, _gpsLon;
@@ -77,8 +84,8 @@ public class RunTelemetryLogger : MonoBehaviour
             avatarEngine = GetComponent<AvatarEngine>() ?? FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
         if (userCamera == null && Camera.main != null)
             userCamera = Camera.main.transform;
-        if (latencyRunner == null)
-            latencyRunner = FindFirstObjectByType<LatencyBenchmarkRunner>(FindObjectsInactive.Include);
+        if (sensorTiming == null)
+            sensorTiming = FindFirstObjectByType<SensorTimingBridge>(FindObjectsInactive.Include);
     }
 
     // ── 実機(Swift)からの供給API ─────────────────────────────────────────
@@ -90,7 +97,7 @@ public class RunTelemetryLogger : MonoBehaviour
     }
 
     /// <summary>
-    /// 外部(Swift/CoreMotion)からIMU加速度を供給する。呼ばれた時点で
+    /// 外部からIMU加速度を供給する(C#専用。Swiftからのブリッジコマンドは無い)。呼ばれた時点で
     /// 端末IMU・エディタ近似の両方より優先される。
     /// </summary>
     public void SetImuAcceleration(Vector3 accelMetersPerSec2)
@@ -101,7 +108,40 @@ public class RunTelemetryLogger : MonoBehaviour
 
     /// <summary>IMUの取得元。CSVの信頼性判断とE2E検証に使う。</summary>
     public string ImuSource =>
-        _imuExternal ? "external" : (_deviceImuActive ? "device" : "approximated");
+        _imuExternal ? "external"
+        : (sensorTiming != null && sensorTiming.IsImuStreaming) ? "native100hz"
+        : (_deviceImuActive ? "device" : "approximated");
+
+    /// <summary>ネイティブ100Hzサンプルから書いた行数(0ならフレーム同期の擬似100Hz)。</summary>
+    public long NativeImuRowCount { get; private set; }
+
+    /// <summary>
+    /// CSVの <c>timestamp</c> 列がどの時間軸か。解析側はこれを知らないと誤読する。
+    ///
+    /// <para><b>native sample times</b>: 実機のCoreMotionサンプル自身の観測時刻。実時間と一致する。</para>
+    /// <para><b>synthetic 100Hz</b>: サンプル番号×10msの合成タイムライン(エディタ・ネイティブ非対応時)。
+    /// 行は等間隔だが、フレームがヒッチした分だけ<b>実時間から遅れる</b> —
+    /// 1フレームで書ける行数に上限(50行)があり、残りは次フレームへ繰り越されるため。
+    /// 総経過時間の絶対値をこの列から読んではいけない。</para>
+    /// </summary>
+    public string TimelineSource => NativeImuRowCount > 0 ? "native sample times" : "synthetic 100Hz";
+
+    /// <summary>CSVのtimestamp列が示す経過秒(最後の行 − 開始)。</summary>
+    public double LoggedSpanSeconds => _logging && _lastWrittenTsMs > 0
+        ? (_lastWrittenTsMs - _logStartEpochMs) / 1000.0 : 0.0;
+
+    /// <summary>
+    /// 実時間(壁時計)の経過秒。<see cref="LoggedSpanSeconds"/> との差がタイムラインのずれ。
+    ///
+    /// <para><b>注意</b>: 合成タイムラインは <c>Time.deltaTime</c>(=Unityのスケール時間)で
+    /// 進むため、<c>Time.timeScale != 1</c> の環境(E2Eは3倍)では壁時計より<b>先に</b>進む。
+    /// 実機は timeScale=1 なので、そこでの差はフレームヒッチによる繰り越し遅れだけを表す。</para>
+    /// </summary>
+    public double WallClockSpanSeconds => _logging
+        ? Mathf.Max(0f, Time.realtimeSinceStartup - _logStartRealtime) : 0.0;
+
+    /// <summary>合成タイムラインが実時間からどれだけ遅れているか(秒)。</summary>
+    public double TimelineDriftSeconds => WallClockSpanSeconds - LoggedSpanSeconds;
 
     /// <summary>
     /// 端末のIMU(iOSではCoreMotion)を100Hzで起動する。F-11のCSVの
@@ -141,11 +181,18 @@ public class RunTelemetryLogger : MonoBehaviour
 
         if (!_logging) return;
 
-        // 優先順位: Swift供給 > 端末IMU(CoreMotion) > カメラ速度差分の近似
+        // ① ネイティブの100Hz IMU があれば **1サンプル=1行**で書く。
+        //    行数だけでなく中身も本物の100Hzになり、タイムスタンプもサンプル自身の
+        //    観測時刻になる(下の擬似100Hzは同じ値を複数行に複製してしまう)
+        if (!_imuExternal && TryAppendNativeImuRows()) return;
+
+        // ② ネイティブが無い場合(エディタ・Swift供給時)の擬似100Hz。
+        //    優先順位: Swift供給 > 端末IMU(CoreMotion) > カメラ速度差分の近似
         if (!_imuExternal && !TryReadDeviceImu())
             UpdateImuApproximation();
 
-        // 100Hz サンプリング: 経過時間分の行をまとめて書き出す
+        // 経過時間分の行をまとめて書き出す。**同一フレーム内の行は同じ値の複製**で、
+        // 独立した100Hzサンプルではない(解析時はこの前提で読むこと)
         _sampleAccumulator += Time.deltaTime;
         int guard = 0; // 1フレームで書きすぎない安全弁(低fps時)
         while (_sampleAccumulator >= SampleIntervalSeconds && guard++ < 50)
@@ -174,26 +221,61 @@ public class RunTelemetryLogger : MonoBehaviour
         _lastCamVel = vel;
     }
 
+    /// <summary>
+    /// ネイティブ(CoreMotion)に貯まった100Hzサンプルを引き取り、1件1行で書く。
+    /// 実機でのみ成立する。書けたら true。
+    /// </summary>
+    private bool TryAppendNativeImuRows()
+    {
+        if (sensorTiming == null || !sensorTiming.IsImuStreaming) return false;
+        if (_mediaTimeAtLogStart <= 0.0) return false; // 時刻の基準が取れていない
+
+        int count = sensorTiming.DrainImuSamples(_imuSampleTimes, _imuSampleXyz);
+        if (count <= 0) return false;
+
+        for (int i = 0; i < count; i++)
+        {
+            _imuAccel = new Vector3(_imuSampleXyz[i * 3],
+                                    _imuSampleXyz[i * 3 + 1],
+                                    _imuSampleXyz[i * 3 + 2]);
+
+            // サンプル自身の観測時刻(CACurrentMediaTime軸)を、開始時に取った
+            // 基準点でepoch msへ写す
+            double offsetSeconds = _imuSampleTimes[i] - _mediaTimeAtLogStart;
+            if (offsetSeconds < 0.0) continue; // ログ開始前に貯まっていた古いサンプル
+
+            AppendRowAt(_logStartEpochMs + (long)(offsetSeconds * 1000.0));
+            NativeImuRowCount++;
+        }
+
+        return true;
+    }
+
     private void AppendRow()
     {
-        var ci = CultureInfo.InvariantCulture;
         // 100Hz固定間隔のサンプル時刻(単調増加・10ms刻み)
         long tsMs = _logStartEpochMs + (long)(_sampleIndex * (SampleIntervalSeconds * 1000f));
         _sampleIndex++;
+        AppendRowAt(tsMs);
+    }
+
+    private void AppendRowAt(long tsMs)
+    {
+        var ci = CultureInfo.InvariantCulture;
+        _lastWrittenTsMs = tsMs; // TimelineSource / ドリフト診断用
 
         Vector3 avatarPos = avatarEngine != null ? avatarEngine.transform.position : Vector3.zero;
 
         // latency_m2p は「実測できたときだけ」書く。-1 = 未計測。
         //
-        // 以前はここで LatencyBenchmarkRunner の合成値を使い、それも無ければ
-        // フレーム時間で埋めていた。どちらもM2Pの実測ではないのに、60fpsでは
-        // 約16msという「20ms要求を満たしているように見える」値が全行に並ぶ。
-        // 基本設計書 §11.2 はこのCSVでM2Pを評価するとしているため、
-        // 測定ではなく構造によって合格してしまう状態だった。
-        // 実測経路ができるまでは -1 を書き、解析側に「無い」と分からせる
-        double latency = LatencyBenchmarkRunner.ProvidesRealMotionToPhoton && latencyRunner != null
-            ? latencyRunner.AverageSyntheticTotalMs
-            : -1.0;
+        // 実測の中身は SensorTimingBridge が持つ:
+        //   ARKitフレームのタイムスタンプ(センサー時刻) → CADisplayLink.targetTimestamp
+        //   (提示予定時刻)。どちらも CACurrentMediaTime 軸なので直接引ける。
+        // 合成値(実質フレーム時間)を書いていた頃は、60fpsなら約16msが全行に並び、
+        // §11.2 の「CSV解析で20msを評価」が測定ではなく構造によって合格していた。
+        double latency = MotionToPhotonMath.Unmeasured;
+        if (sensorTiming != null && sensorTiming.TryGetLatencyMs(out double measuredMs))
+            latency = measuredMs;
 
         _buffer.Append(tsMs).Append(',')
             .Append(_gpsLat.ToString("F7", ci)).Append(',')
@@ -212,7 +294,11 @@ public class RunTelemetryLogger : MonoBehaviour
 
     private void StartLogging()
     {
-        // 走行開始と同時に端末IMUを起動する(F-11のimu_accel列を実測で埋める)
+        // 走行開始と同時にネイティブ計測(M2P + 100Hz IMU)を起動する。
+        // 常時走らせないのは§10の60分稼働・バッテリー要件のため
+        if (sensorTiming != null) sensorTiming.StartMeasuring();
+
+        // ネイティブが無い環境のための端末IMU(Input.gyro)も従来どおり起動する
         EnableDeviceImu();
 
         string dir = Path.Combine(Application.persistentDataPath, "RunLogs");
@@ -235,7 +321,16 @@ public class RunTelemetryLogger : MonoBehaviour
         DroppedRowCount = 0;
         _sampleAccumulator = 0f;
         _logStartEpochMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        _logStartRealtime = Time.realtimeSinceStartup;
+        _lastWrittenTsMs = 0;
         _sampleIndex = 0;
+        NativeImuRowCount = 0;
+
+        // ネイティブのサンプル時刻(端末起動からの秒)をepochへ写すための基準点。
+        // 実機以外では0が返り、ネイティブ経路は使われない
+        _mediaTimeAtLogStart = sensorTiming != null ? sensorTiming.CurrentMediaTime : 0.0;
+        if (_mediaTimeAtLogStart > 0.0)
+            sensorTiming.DrainImuSamples(_imuSampleTimes, _imuSampleXyz); // 開始前の滞留を捨てる
         _camInit = false;
         _logging = true;
 
@@ -247,6 +342,7 @@ public class RunTelemetryLogger : MonoBehaviour
         Flush();
         CloseWriter();
         _logging = false;
+        if (sensorTiming != null) sensorTiming.StopMeasuring();
         if (DroppedRowCount > 0)
             Debug.LogError($"[TELEMETRY] CSVログ終了 — 不完全 ({DroppedRowCount} 行欠落): {_filePath}");
         else
@@ -300,6 +396,19 @@ public class RunTelemetryLogger : MonoBehaviour
         _bufferedRows = 0;
         _sampleAccumulator = 0f;
         _camInit = false;
+    }
+
+    // F-11のCSVは200行(≒2秒)毎にしかディスクへ渡していないため、走行中に
+    // アプリをスワイプ終了されると末尾がまるごと消える。背面へ回る時点で必ず
+    // 吐き出す(OnApplicationPause はスワイプ終了前に必ず呼ばれる)
+    void OnApplicationPause(bool paused)
+    {
+        if (paused && _logging) Flush();
+    }
+
+    void OnApplicationQuit()
+    {
+        if (_logging) Flush();
     }
 
     void OnDestroy()

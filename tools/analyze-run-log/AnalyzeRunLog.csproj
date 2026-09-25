@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    走行ログCSV(F-11)の解析ツール。Unity不要。
+    実行方法は tools/analyze-run-log/README.md を参照(dotnet run でCSVかフォルダを渡す)
+    解析ロジック(RunLogAnalysis.cs)は Tests/UnitTests でテストしている。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>analyze-run-log</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 20ms / 30ms の基準と「未計測」の定義はゲーム本体と同じものを使う -->
+    <Compile Include="../../Assets/_Project/Scripts/MotionToPhotonMath.cs" Link="MotionToPhotonMath.cs" />
+  </ItemGroup>
+</Project>

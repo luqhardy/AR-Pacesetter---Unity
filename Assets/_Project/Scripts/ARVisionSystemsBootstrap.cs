@@ -1,4 +1,5 @@
 using UnityEngine;
+using Unity.XR.CoreUtils;
 
 /// <summary>
 /// シーンに手動配置しなくても新規マネージャー群が動作するよう、
@@ -49,6 +50,13 @@ public static class ARVisionSystemsBootstrap
             Debug.Log("[BOOTSTRAP] ProceduralGestureDriver auto-attached to avatar.");
         }
 
+        // 足のめり込み補正(§10 接地誤差±5cm — 走行クリップは立脚期に足を原点より下げる)
+        if (engine.GetComponent<FootPlanting>() == null)
+        {
+            engine.gameObject.AddComponent<FootPlanting>();
+            Debug.Log("[BOOTSTRAP] FootPlanting auto-attached to avatar.");
+        }
+
         // サイレントルート復帰はアバターのtransformを操作するため同居必須。
         // シーンに未配置だと逸脱復帰機能が丸ごと不在になる(E2Eで検出)
         if (Object.FindFirstObjectByType<SilentRouteRecoverer>(FindObjectsInactive.Include) == null)
@@ -67,7 +75,18 @@ public static class ARVisionSystemsBootstrap
         Ensure<GpsSignalMonitor>(); // F-09 GPSロスト自動判定(§8.1)
         Ensure<CountdownDisplay>(); // 走行開始カウントダウンのAR表示(音のカウントと同期)
         Ensure<ARPassthroughController>(); // 光学シースルー時のカメラ映像抑止
+        Ensure<GlassViewRig>(); // ARグラス接続中の描画をグラスの画角・眼の位置へ切り替える
+        Ensure<ARPlaneOcclusionController>(); // 検出平面がアバターを隠さないようにする(既定OFF)
+        EnsureEnvironmentSceneScanner(); // LiDAR密メッシュ + 面分類。非対応端末はARPlaneへ自動フォールバック
+        Ensure<OutdoorSemanticClassifier>(); // 屋外路面の画像分類(ARCore Scene Semantics)。未導入なら休眠
+        Ensure<VrmAvatarLoader>(); // 差し替えアバター(VRM)の計測・判定・入れ替え
         Ensure<GoalLineController>(); // 目標距離接近時のARゴールライン(実行時生成)
+
+        // M2P実測(§10)と100Hz IMU(§5.2)のネイティブ窓口。
+        // RunTelemetryLogger より先に用意する(Awakeで参照を取りにいくため)
+        Ensure<SensorTimingBridge>();
+        Ensure<NonFunctionalRequirementsMonitor>(); // §10 位置誤差・連続稼働の実測
+        Ensure<AvatarVisibilityDiagnostics>(); // 「なぜ見えないか」を経路で報告(ログ+Swiftバナー)
 
         // F-11: 100Hz テレメトリCSVロガー(基本設計書§5.2 — PoCの核)。
         // アバターtransformを読むためエンジンと同居させる
@@ -91,5 +110,25 @@ public static class ARVisionSystemsBootstrap
         var go = new GameObject(gameObjectName ?? $"[Auto] {typeof(T).Name}");
         go.AddComponent<T>();
         Debug.Log($"[BOOTSTRAP] {typeof(T).Name} auto-created as '{go.name}'.");
+    }
+
+    private static void EnsureEnvironmentSceneScanner()
+    {
+        if (Object.FindFirstObjectByType<EnvironmentSceneScanner>(FindObjectsInactive.Include) != null)
+            return;
+
+        XROrigin origin = Object.FindFirstObjectByType<XROrigin>(FindObjectsInactive.Include);
+        if (origin == null)
+        {
+            Debug.LogWarning("[BOOTSTRAP] XROrigin not found; EnvironmentSceneScanner was not created.");
+            return;
+        }
+
+        // ARMeshManager は XROrigin の子でなければ動作しない。シーン配線を増やさず、
+        // 既存のAR Rigへ実行時に安全に追加する。
+        var go = new GameObject("[Auto] EnvironmentSceneScanner");
+        go.transform.SetParent(origin.transform, false);
+        go.AddComponent<EnvironmentSceneScanner>();
+        Debug.Log("[BOOTSTRAP] EnvironmentSceneScanner attached under XROrigin.");
     }
 }

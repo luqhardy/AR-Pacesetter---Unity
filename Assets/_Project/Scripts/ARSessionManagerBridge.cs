@@ -38,6 +38,12 @@ public class ARSessionManagerBridge : MonoBehaviour
         // 未送信(false)なら従来どおりUnityがHUDを描く — エディタ/E2Eは影響を受けない
         public bool hideUnityHud;
 
+        // SetGpsLostHandling: F-09/F-10 の自動判定を実行時に切る(屋内デモ・可視性検証用)
+        public bool enabled;
+
+        // ImportVrmAvatar / SelectVrmAvatar: 差し替えアバターの絶対パス
+        public string path;
+
         // true only when CoreLocation delivered a genuinely new fix. Cached timer
         // retransmissions must not refresh Unity's 5-second freshness windows.
         public bool locationSampleFresh;
@@ -53,10 +59,19 @@ public class ARSessionManagerBridge : MonoBehaviour
     [SerializeField] private GameStateController gameStateController;
     [SerializeField] private PeripheralHUDManager hudManager;
     [SerializeField] private LatencyBenchmarkRunner latencyRunner;
+    [Tooltip("M2Pの実測元(§10)。CSVと同じ値をSwiftへ報告するための唯一の供給元")]
+    [SerializeField] private SensorTimingBridge sensorTiming;
+
     [SerializeField] private GhostPaceDriver ghostDriver;
     [SerializeField] private GpsSignalMonitor gpsMonitor;
     [SerializeField] private GoalLineController goalLineController;
     [SerializeField] private RunnerTrackingState runnerTracking;
+
+    /// <summary>
+    /// 直近にSwiftへ報告したM2P(ms)。<see cref="MotionToPhotonMath.Unmeasured"/>(-1)は未計測。
+    /// 「捏造値が混ざっていないこと」をE2Eで縛るための検証用。
+    /// </summary>
+    public double LastReportedMotionToPhotonMs { get; private set; } = MotionToPhotonMath.Unmeasured;
 
     private const float ReportIntervalSeconds = 1.0f;
     private const float BaselineAvatarHeightCm = 175f; // 企画書 §4.1
@@ -105,6 +120,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (gameStateController == null) gameStateController = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
         if (hudManager == null) hudManager = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
         if (latencyRunner == null) latencyRunner = FindFirstObjectByType<LatencyBenchmarkRunner>(FindObjectsInactive.Include);
+        if (sensorTiming == null) sensorTiming = FindFirstObjectByType<SensorTimingBridge>(FindObjectsInactive.Include);
         if (ghostDriver == null) ghostDriver = FindFirstObjectByType<GhostPaceDriver>(FindObjectsInactive.Include);
         if (gpsMonitor == null) gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
         if (goalLineController == null) goalLineController = FindFirstObjectByType<GoalLineController>(FindObjectsInactive.Include);
@@ -134,6 +150,12 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "EndSession": HandleEndSession(); break;
             case "RequestHistory": HandleRequestHistory(); break;
             case "ResumeSession": HandleResumeSession(); break;
+            case "SetGpsLostHandling": HandleSetGpsLostHandling(cmd); break;
+            case "RequestDiagnostics": SwiftMessageSender.SendRaw(DevDiagnostics.BuildSnapshotJson()); break;
+            case "RequestLogFiles": SwiftMessageSender.SendRaw(DevDiagnostics.BuildLogFilesJson()); break;
+            case "ImportVrmAvatar": HandleVrmAvatar(cmd.path); break;
+            case "SelectVrmAvatar": HandleVrmAvatar(cmd.path); break;
+            case "RequestVrmAvatars": HandleRequestVrmAvatars(); break;
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown command: {cmd.command}");
                 break;
@@ -325,6 +347,70 @@ public class ARSessionManagerBridge : MonoBehaviour
     /// §8.3: グラス切断でスタンバイ中の走行を、準備画面での再スタート操作後に再開する。
     /// 新規セッションは開始せず(記録・CSVログは継続)、表示状態のみNormalへ戻す。
     /// </summary>
+    /// <summary>
+    /// F-09/F-10 の自動判定を実行時に切り替える(既定はON = 基本設計書どおり)。
+    ///
+    /// <para>屋内デモや可視性の目視確認では、精度が常に10m超でロスト判定が成立しアバターが
+    /// 消えてしまう。その主因は <c>RequireInitialFixBeforeLost</c> で恒久的に解消してあるが、
+    /// 「掴んだ後に意図的に消えないでほしい」場面のための明示的なスイッチとして残す。
+    /// <b>コード変更なしで戻せる</b>ことが要点 — 定数を書き換える運用は戻し忘れを生む。</para>
+    /// </summary>
+    private void HandleSetGpsLostHandling(SwiftCommand cmd)
+    {
+        if (gpsMonitor == null)
+            gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        if (gpsMonitor == null)
+        {
+            Debug.LogWarning("[SWIFT BRIDGE] SetGpsLostHandling ignored — GpsSignalMonitor not found.");
+            return;
+        }
+
+        gpsMonitor.AutoLostHandlingEnabled = cmd.enabled;
+        Debug.Log($"[SWIFT BRIDGE] SetGpsLostHandling — F-09/F-10 自動判定を{(cmd.enabled ? "ON" : "OFF")}へ");
+    }
+
+    /// <summary>
+    /// 差し替えアバターを読み込んで適用する。取り込み(Swiftがコピーしたファイル)も
+    /// 一覧からの選択も、やることは同じ「絶対パスを読む」なので1つの経路に閉じる。
+    /// </summary>
+    private void HandleVrmAvatar(string path)
+    {
+        var loader = FindFirstObjectByType<VrmAvatarLoader>(FindObjectsInactive.Include);
+        if (loader == null)
+        {
+            SwiftMessageSender.SendVrmImportResult(false, "", "", "VrmAvatarLoader がシーンにありません");
+            return;
+        }
+        if (string.IsNullOrEmpty(path))
+        {
+            SwiftMessageSender.SendVrmImportResult(false, "", "", "パスが空です");
+            return;
+        }
+
+        string name = VrmAvatarCatalog.DisplayName(path);
+
+        if (!VrmAvatarLoader.IsRuntimeLoadAvailable)
+        {
+            // ここで黙って失敗すると「壊れている」と誤解される。原因を名指しする
+            SwiftMessageSender.SendVrmImportResult(false, name, "",
+                "UniVRM が未導入のビルドです。アバターの読み込みにはUniVRMを含めた再ビルドが必要です");
+            return;
+        }
+
+        bool ok = loader.TryLoadFromFile(path, out VrmRejectReason reason);
+        SwiftMessageSender.SendVrmImportResult(ok, name, loader.LastReport,
+            ok ? "" : VrmAvatarPolicy.ReasonText(reason));
+    }
+
+    /// <summary>選べるアバターの一覧をSwiftへ返す。</summary>
+    private void HandleRequestVrmAvatars()
+    {
+        var loader = FindFirstObjectByType<VrmAvatarLoader>(FindObjectsInactive.Include);
+        VrmAvatarCatalog.EnsureImportedDirectory();
+        SwiftMessageSender.SendVrmAvatarList(VrmAvatarCatalog.ListAllFiles(),
+                                             loader != null ? loader.CurrentAvatarName : "");
+    }
+
     private void HandleResumeSession()
     {
         if (avatarEngine == null || !avatarEngine.HasStarted || avatarEngine.IsSessionEnded)
@@ -369,14 +455,24 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         // M2Pは実測できたときだけ送る。-1 = 未計測。
         //
-        // 以前は LatencyBenchmarkRunner の合成値を「実測M2P」として送り、
-        // 無ければ平滑化フレーム時間で埋めていた。どちらもM2Pではないのに、
-        // 受け手(Swiftの motionToPhotonMs)には実測として届いていた。
-        // 合成値の中身と、実測経路の作り方は LatencyBenchmarkRunner を参照
-        double measuredM2p = LatencyBenchmarkRunner.ProvidesRealMotionToPhoton && latencyRunner != null
-            ? latencyRunner.AverageSyntheticTotalMs
-            : -1.0;
-        SwiftMessageSender.SendLatency(measuredM2p);
+        // 供給元は F-11 のCSVと同じ SensorTimingBridge(ARKitフレームのセンサー時刻と
+        // CADisplayLink.targetTimestamp の差)。**CSVとSwiftで同じ値が出ることが重要** —
+        // 片方だけが実測だと、§11.2 ③ の評価をどちらで行ったのかが後から判らなくなる。
+        //
+        // かつてはここが LatencyBenchmarkRunner の合成値を「実測M2P」として送っていた。
+        // その捏造は 2026-09-08 に止めたが、代わりに置かれた
+        // ProvidesRealMotionToPhoton が常に false のため、実測経路が出来た後も
+        // **Swiftへは -1 しか流れていなかった**(FIELD_TEST_PLAN T2 はこの経路で
+        // 1HzのLatencyReportを記録する計画なので、そのままでは何も取れない)
+        double measuredM2p = MotionToPhotonMath.Unmeasured;
+        if (sensorTiming != null)
+            sensorTiming.TryGetLatencyMs(out measuredM2p);
+        LastReportedMotionToPhotonMs = measuredM2p;
+
+        // 1Hzの瞬時値だけでは、サンプルの谷間で起きた超過を取りこぼす。
+        // 区間の最大値と超過率を併せて送り、p95評価(T2)が実態を外さないようにする
+        MotionToPhotonStats stats = sensorTiming != null ? sensorTiming.Stats : null;
+        SwiftMessageSender.SendLatency(measuredM2p, stats);
         SendAvatarStateIfChanged(DeriveAvatarState());
 
         // エディタ/スタンドアロン走行ではUnity自身の距離計測でもゴール判定する

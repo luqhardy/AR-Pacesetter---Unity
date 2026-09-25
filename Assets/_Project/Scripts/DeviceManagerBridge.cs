@@ -4,9 +4,13 @@ using UnityEngine;
 /// <summary>
 /// Swift → Unity デバイス管理ブリッジ (AR-runner の UnityBridge.swift 契約)。
 /// GameObject名は必ず "DeviceManager"。
-///   ConnectXREAL {}    — XREALグラス接続 → ReadyチェックをConnectedへ
+///   ConnectXREAL {model?, pixelWidth?, pixelHeight?, refreshHz?}
+///                      — XREALグラス接続 → ReadyチェックをConnectedへ。
+///                        表示メトリクスがあればグラスの画角で描くプロファイルを選ぶ
 ///   DisconnectXREAL {} — グラス切断(§8.3) → スタンバイ移行(アバター消去)。
 ///                        走行セッションは終了させず、CSVログ書き出しは継続する
+///   UpdateGlassPose {yaw, pitch, roll, timestamp}
+///                      — グラス実機の頭部姿勢(将来用。iOSでは現状供給元が無い)
 /// </summary>
 public class DeviceManagerBridge : MonoBehaviour
 {
@@ -16,6 +20,18 @@ public class DeviceManagerBridge : MonoBehaviour
     private class SwiftCommand
     {
         public string command;
+
+        // ConnectXREAL の表示メトリクス (iOSが知っている値のみ。画角はグラスから取得できない)
+        public string model;
+        public int pixelWidth;
+        public int pixelHeight;
+        public float refreshHz;
+
+        // UpdateGlassPose (度)
+        public float yaw;
+        public float pitch;
+        public float roll;
+        public float timestamp;
     }
 
     [SerializeField] private ReadyCheckController readyCheck;
@@ -58,6 +74,10 @@ public class DeviceManagerBridge : MonoBehaviour
                 // 現実の上に「現実の動画」を重ねると二重像になり全体が濁るため
                 SetPassthrough(false);
 
+                // グラスの画角・眼の位置で描く出力リグへ切り替える。
+                // iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えない
+                EnableGlassOutput(cmd);
+
                 // §8.3: 再接続でも即座にアバターを出現させない。Swiftが準備画面へ戻り、
                 // ユーザー操作後に ResumeSession/StartSession が来てから復帰する
                 Debug.Log("[SWIFT BRIDGE] ConnectXREAL — glass Connected (アバター復帰は再スタート操作を待つ)。");
@@ -66,7 +86,12 @@ public class DeviceManagerBridge : MonoBehaviour
             case "DisconnectXREAL":
                 // iPhone表示へ戻るのでカメラ映像を復帰させる(ビデオシースルー)
                 SetPassthrough(true);
+                DisableGlassOutput();
                 HandleGlassDisconnected();
+                break;
+
+            case "UpdateGlassPose":
+                ApplyGlassPose(cmd);
                 break;
 
             default:
@@ -81,6 +106,50 @@ public class DeviceManagerBridge : MonoBehaviour
         var passthrough = FindFirstObjectByType<ARPassthroughController>(FindObjectsInactive.Include);
         if (passthrough != null)
             passthrough.SetPassthroughEnabled(enabled);
+    }
+
+    /// <summary>
+    /// 接続ペイロードから表示プロファイルを決めて出力リグを起動する。
+    ///
+    /// <para>解像度・リフレッシュレートはiOSが知っているが、<b>機種名も画角もグラスからは取得できない</b>
+    /// (XREALのSDKはAndroid専用)。メトリクスが無い場合や未知の解像度の場合は、本プロジェクトの
+    /// 実機である XREAL One として扱う — 画角を上書きしない方が確実に見え方を外すため。</para>
+    /// </summary>
+    private void EnableGlassOutput(SwiftCommand cmd)
+    {
+        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (rig == null) return;
+
+        GlassDisplayProfile profile =
+            GlassDisplayProfile.Resolve(cmd.model, cmd.pixelWidth, cmd.pixelHeight, cmd.refreshHz);
+
+        if (profile == null)
+        {
+            profile = GlassDisplayProfile.XrealOne.WithDisplayMode(cmd.pixelWidth, cmd.pixelHeight, cmd.refreshHz);
+            Debug.Log($"[SWIFT BRIDGE] 表示メトリクスから機種を特定できないため既定プロファイルを使用: {profile}");
+        }
+
+        rig.EnableGlassOutput(profile);
+    }
+
+    private void DisableGlassOutput()
+    {
+        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (rig != null) rig.DisableGlassOutput();
+    }
+
+    /// <summary>
+    /// グラス実機の頭部姿勢を出力リグへ渡す(将来用)。
+    /// 供給が途切れれば自動で §4.1 の進行方向ヨーへ落ちるので、欠測しても破綻しない。
+    /// </summary>
+    private void ApplyGlassPose(SwiftCommand cmd)
+    {
+        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (rig == null) return;
+
+        // 鮮度判定はUnityの時間軸で行う。Swiftの timestamp は CACurrentMediaTime 系で
+        // 起点が違うためそのまま渡すと必ず「古い」と判定される — 到着時刻で刻む(0を渡す)
+        rig.SetExternalHeadPose(Quaternion.Euler(cmd.pitch, cmd.yaw, cmd.roll), 0f);
     }
 
     /// <summary>

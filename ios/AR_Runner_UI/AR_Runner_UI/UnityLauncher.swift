@@ -243,6 +243,12 @@ struct UnityContainerView: UIViewRepresentable {
                 unityView.frame = container.bounds
                 unityView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 container.addSubview(unityView)
+
+                // グラスから戻ってきた直後はレンダリング面がグラスのスケール(@1x)・
+                // 横長のままなので、iPhoneの画面に合わせて作り直させる
+                let screen = container.window?.windowScene?.screen ?? UIScreen.main
+                ExternalDisplayManager.shared.matchRenderScale(of: unityView, to: screen,
+                                                               label: "phone")
             }
             placeholder?.isHidden = true
         }

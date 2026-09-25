@@ -1,68 +1,10 @@
-# AR Vision (AR Pacesetter) — プロジェクト指針
+# CLAUDE.md
 
-ARランニング支援システム。3.0m前方を走る半透明アバターとの「距離感」でペーシングする。
-Unityプロジェクト(本リポジトリ)+ SwiftUIホスト(`ios/`)のUaaLモノレポ。
+このリポジトリの指針は全エージェント共通で [AGENTS.md](AGENTS.md) にある(下で読み込む)。
+ルールの追加・変更は AGENTS.md に対して行い、ここには Claude Code 固有のことだけを書く。
 
-## 仕様の優先順位(一次情報)
+@AGENTS.md
 
-1. **Aチーム基本設計書 v1**(2025/06/09 梁・PDF、下記に要点転記)— 第1期検証フェーズの正式仕様
-2. [AGENTS.md](AGENTS.md) — 数式・FSM・レイテンシ予算・**検証ワークフロー・実装不変条件**(変更時は必読)
-3. [HANDOVER.md](HANDOVER.md) — 機能→実装→検証の対応表 / [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) — ブリッジ契約
+## Claude Code 固有
 
-## 第1期検証フェーズのスコープ(基本設計書 §1.2 — 重要)
-
-**iPhone単体 + ARグラス(USB-C有線)の2デバイスに特化。Apple Watch等の外部デバイス連携・
-外部サーバー・バイタルセンサー連携はあえてスコープ外**(通信ボトルネック排除とM2P 20ms死守のため)。
-第1期ゴール =「陸上トラックにおけるARペーシング技術の完全確立」。PoCとして技術限界データの
-計測・蓄積(CSV出力)がソラド社への譲渡基盤となる。
-
-※現リポジトリにはWatch/HealthKit/ゴースト等のフェーズ外機能も実装済み(企画書由来)。
-これらは削除不要だが、**第1期の検証・デモ・実装優先度は上記スコープ内機能(F-01〜F-11)が最優先**。
-
-## 機能一覧(F-01〜F-11)
-
-| ID | 機能 | 要点 |
-|---|---|---|
-| F-01 | 走行条件設定 | 目標ペース・トラック距離(400m等)の入力・保持 |
-| F-02 | レディチェック | グラス接続+GPS測位精度の確認、全緑で走行開始活性化 |
-| F-03 | 3.0m前方維持 | 進行方向3.0m前方へ配置・追従 |
-| F-04 | 曲線部接線維持 | コーナーで向きを接線方向へ100%一致(前後フレーム座標から逆算) |
-| F-05 | グラウンドスナップ | LiDAR/空間認識で接地。異常値(断崖等)は前フレーム高さを維持 |
-| F-06 | アニメーション制御 | Idle(0)/Walk(0.1〜5.0km/h・再生速度同期)/Run(5.0km/h+)のブレンド |
-| F-07 | 周辺視野レイアウト | 左上=時間・距離 / 右上=現在ペース(遅れ=赤・維持=緑) / 中央=完全透過(アバターのみ) / 下部=警告時のみ |
-| F-08 | 視覚的安定化 | 1.5秒移動平均(IMU 150フレーム)で首振りブレを排除 |
-| F-09 | GPSロスト慣性移動 | 判定: 更新1.5秒途絶 or 水平精度10m超。直前1秒の平均速度・方向で最大5秒慣性。復帰時は1秒かけて同期 |
-| F-10 | フェードアウト | ロスト5秒継続で1秒(60f)かけてα100→0%。HUD下部に赤字警告「GPS信号を探索中：安全のため減速してください」 |
-| F-11 | リアルタイムログ保存 | 位置・IMU・描画遅延をローカルCSVへ100Hz出力(下記) |
-
-## 主要仕様値
-
-- **アバター色(ペースシンクロ・カラーエフェクト §7.1)**: ジャスト(±1.5m)=**緑** / 遅延(3.0m以上離れ)=**橙→赤**グラデ / 超過(追い抜き)=**青**
-- **オーラエフェクト(§7.2)**: 5.0m以上遅れで足元からランナー側へ光のライン放射
-- **非機能(§10)**: M2P **20ms以内(最大許容30ms)** / 位置誤差**1.0m以内**・接地誤差**上下5cm以内** / 連続稼働**60分**(バッテリー30%以上維持)
-- **描画**: 60fps、映像はDisplayPort Alt Mode(USB-C有線・無圧縮1080p)、グラスへはバスパワー給電
-- **グラス切断時(§8.3)**: ログ書き出しはBG継続+スタンバイ移行。再接続時は即出現でなく準備画面から再スタート
-- **設定データ(§5.1)**: `targetPaceMinutesPerKm`(**秒**で保持、例270=4分30秒)・`trackLength`(m)・`avatarDistance`(3.0)・`isGlassConnected`・`gpsAccuracyStatus`(0=圏外/1=低/2=高)
-- **走行ログCSV(§5.2)**: `Log_YYYYMMDD_HHMMSS.csv`、100Hz、列=`timestamp, gps_latitude, gps_longitude, imu_accel_x/y/z, avatar_pos_x, avatar_pos_z, latency_m2p`
-- **開発環境(§11)**: Unity LTS / C#+Swift / iOS 26+ / NRSDK等公式Unity SDK / iPhone 12 Pro以上
-- **テスト3フェーズ(§11.2)**: ①室内ベンチ(センサー100Hz+CSV出力確認) → ②歩行・低速(3m追従・ワープなし) → ③400mトラック実証(旋回・HUD・フェードアウト+CSV解析で20ms評価)
-
-## 現実装と基本設計書の既知の差分(要対応 or 要チーム判断)
-
-1. ~~**アバター色**~~ → **移行済み**(`AvatarPaceColor.cs` + `AvatarVisualsAndActions.cs`)。§7.1のペースシンクロ色を実装: ジャスト(目標リード±1.5m)=緑 / 遅延(前方へ離隔)=橙→赤グラデ / 超過(追い抜き)=青。符号付きリード距離で判定。バイタル警告(深青・第1期スコープ外)は優先オーバーライドとして温存。**視覚反映にはアバターmaterialが発光(Emission)対応であること**
-2. ~~**F-11 CSVログ(100Hz)**~~ → **実装済み**(`RunTelemetryLogger.cs`)。`<persistentDataPath>/RunLogs/Log_YYYYMMDD_HHMMSS.csv`へ§5.2の9列を100Hz出力。GPS緯度経度は`GpsSignalMonitor`経由でSwiftから供給済み(ブリッジ配線完了)。IMU加速度は**実機では`Input.gyro.userAcceleration`(iOSではCoreMotionが実体)を100Hzで取得**して実測で埋まる。Swiftから`SetImuAcceleration`を呼べばそちらが優先。エディタ(ジャイロ無し)はカメラ速度差分で近似 — 供給元は`RunTelemetryLogger.ImuSource`で判別できる
-3. ~~**モーション閾値**~~ → **調整済み**(`AvatarAnimatorControllerGenerator.cs`)。§7.3のkm/h基準へ換算: Idle=0 / Walk=0.0278(0.1km/h) / Run=1.3889(5.0km/h) / Sprint=4.1667(15km/h)m/s。歩行は`PlaybackSpeed`(既定1.0)で再生速度を同期。**同時に既存バグを発見・修正**: BlendTreeが`AddObjectToAsset`未登録で保存時に破棄され、Locomotionの`m_Motion`が空=ロコモーションが一切再生されない状態だった。加えて`useAutomaticThresholds`が閾値を[0,1]へ均等再配置していたため無効化
-4. ~~**GPSロスト判定条件**~~ → **実装済み**(`GpsSignalMonitor.cs`)。§8.1の「更新1.5秒途絶 or 水平精度10m以上」でFSMを自動遷移、精度5m以内で復帰。Swift `LocationTracker`の生サンプル(精度不良も含む)を`UpdateMetrics`のgpsLatitude/gpsLongitude/gpsAccuracyで供給。**実測サンプル未受信時は非介入**なのでエディタのG/R/Aキー検証は従来どおり
-5. ~~**オーラエフェクト(§7.2)**~~ → **実装済み**(`AvatarAuraEffect.cs` + `AuraFeedback.cs`)。目標より5.0m以上遅れるとアバター足元からランナー側へ光のラインを地面に放射。遅れが大きいほど密度(3→7本)と流速(3→9m/s)が上がり、12mで最大。実行時生成のLineRenderer(ワールド空間)でアセット不要。**発動時の見た目はエディタ/実機での目視確認が必要**(E2Eは非発動側=誤発火しないことを検証)
-6. ~~**グラス切断→準備画面リセット(§8.3)**~~ → **実装済み**。切断で`DisconnectXREAL`→スタンバイ移行(アバター消去)、走行セッションは終了させずF-11のCSVログはBG継続。Swiftは準備画面(デバイス接続)へ戻る。**再接続だけではアバターを復帰させず**、準備画面からの再スタート操作(`ResumeSession`)で通常追従へ復帰
-7. Watch/HealthKit/ゴースト等は実装済みだが第1期スコープ外 — 触る際は影響を最小に
-8. **`SafetyAndSystemController`(企画書4.3のTTC危険警告・低バッテリー退避)は実行時に生成されない** —
-   シーン/プレハブ未配置かつ`ARVisionSystemsBootstrap`未登録、`AddComponent`も皆無。第1期スコープ外のため
-   意図的に休眠。有効化には(a)障害物検知ソースの接続 (b)非検出時にTTCを`ttcScanRange`で計算する誤りの修正
-   が必要(そのまま配線すると19.2km/h超で誤警報)。詳細と根拠は [HANDOVER.md](HANDOVER.md) §5
-
-## 作業規約(要約 — 詳細はAGENTS.md)
-
-- 変更時の検証: `dotnet build`(コンパイル) → `Tests/UnitTests`で`dotnet test` → E2E(`-executeMethod E2EScenarioRunner.Run`、終了コード0) → Swiftは`swiftc -parse`
-- 純ロジックは`PaceMath`のような依存ゼロ静的クラスへ書き、MonoBehaviourは委譲
-- コミット前にREADME更新履歴へ1エントリ。コミットは日本語、検証結果を明記
+- E2E(`tools/verify.sh` の4ステップ目)は数分かかるので、バックグラウンドで実行し完了通知を待つ。

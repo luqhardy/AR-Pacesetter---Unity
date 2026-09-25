@@ -42,3 +42,16 @@ ios/**/*.xcuserstate
 # 検証時の生成物 (E2E/エクスポートのログ)
 /e2e.log
 /export.log
+
+# Unityのクラッシュ復旧シーン(自動生成物)
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
+
+# コンパイル検証(tools/compile-check)の生成物
+/tools/compile-check/bin/
+/tools/compile-check/obj/
+/tools/analyze-run-log/bin/
+/tools/analyze-run-log/obj/
+
+# Visual Studio のローカル状態(ウィンドウ配置・Copilot索引・.suo)
+/.vs/

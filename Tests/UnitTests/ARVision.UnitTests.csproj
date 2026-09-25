@@ -26,6 +26,23 @@
     <Compile Include="..\..\Assets\_Project\Scripts\AvatarPaceColor.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\AuraFeedback.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GroundFloorTracker.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\CliffMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\GroundContactMath.cs" />
+    <!-- 走行ログCSVの解析ツール(tools/analyze-run-log)の純ロジック -->
+    <Compile Include="..\..\tools\analyze-run-log\RunLogAnalysis.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\FrameSmoothing.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\VrmAvatarPolicy.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\GlassOpticsMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\GlassDisplayProfile.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\HeadPoseMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\SurfaceSemanticMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\MotionToPhotonMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\NonFunctionalStats.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\TrackingLagMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\AvatarVisibilityReason.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\StartHeadingPolicy.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\HeadingGateMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\SpatialKalmanFilter.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\PaceHudDisplay.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\AvatarScale.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GoalLineMath.cs" />

@@ -1,31 +1,40 @@
 # AR Pacesetter
 
-ARランニングペーサー — iPhone + XREAL AR Glass + Apple Watch 連携型ランニングコンパニオン。
+ARランニングペーサー — 3.0m前方を走る半透明アバターとの距離感でペースを保つ。
+**第1期(検証フェーズ)は iPhone + XREAL ARグラス(USB-C有線)の2台構成**。Apple Watch 連携等は実装済みだがスコープ外。
+
+| 知りたいこと | 読む場所 |
+|---|---|
+| 第1期スコープ・機能一覧(F-01〜F-11)・仕様値 | [AGENTS.md](AGENTS.md) §2 |
+| 数式・GPS FSM・レイテンシ予算・検証手順(`tools/verify.sh`)・実装の約束 | [AGENTS.md](AGENTS.md) |
+| AIエージェント(Claude Code / Codex / Cursor / Copilot / Gemini)の使い方 | [Docs/AI_AGENTS.md](Docs/AI_AGENTS.md) |
+| 機能→実装→検証の対応表 | [HANDOVER.md](HANDOVER.md) |
+| Swift⇄Unity 連携 | [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) |
+| 変更の経緯 | [CHANGELOG.md](CHANGELOG.md) |
+| 発表用の素材 | [Docs/PRESENTATION.md](Docs/PRESENTATION.md) |
 
 ---
 
 ## 目次
 
 1. [開発の手順](#1-開発の手順)
-2. [コードに使った物理演算・数式](#2-コードに使った物理演算数式)
-3. [コード実行のフローチャート](#3-コード実行のフローチャート)
-4. [発表資料に使えそうなネタ](#4-発表資料に使えそうなネタ)
-5. [Swift UI連携（AR-runner）](#5-swift-ui連携ar-runner)
-6. [更新履歴](#6-更新履歴)
+2. [コード実行のフローチャート](#2-コード実行のフローチャート)
+3. [Swift UI連携（AR-runner）](#3-swift-ui連携ar-runner)
 
 ---
 
 ## 1. 開発の手順
 
-### 全体アーキテクチャ（3デバイス構成）
+### 全体アーキテクチャ
 
 | デバイス | 役割 | 技術 |
 |---|---|---|
-| **iPhone** | 空間処理・センサー融合・状態管理・描画命令生成 | Swift / ARKit / Metal |
-| **XREAL One/Eye（ARグラス）** | アバター＋HUD投影、IMUデータ返送 | USB-C（≥100Hz） |
-| **Apple Watch** | 心拍数（BPM）・ランニングピッチ（SPM） | BLE |
+| **iPhone** | 空間処理・センサー融合・状態管理・描画命令生成 | Swift / ARKit + Unity (UaaL) |
+| **XREAL One/Eye（ARグラス）** | アバター＋HUD投影 | USB-C（DisplayPort Alt Mode） |
+| Apple Watch（第1期スコープ外） | 心拍数（BPM）・ランニングピッチ（SPM） | BLE |
 
-Unity側（本リポジトリ）は **プロトタイプ／エディタ検証レイヤー** として、本番iOS向けC++カルマンフィルタ・BLEブリッジと連携する設計です。
+Unity側（本リポジトリ）は空間エンジン・FSM・描画を担い、SwiftUIアプリ（`ios/`）に Unity as a Library として組み込まれる。
+カルマンフィルタは C# の `SpatialKalmanFilter` で、エディタと実機で共通。
 
 ### 開発フェーズ（推奨順序）
 
@@ -60,7 +69,7 @@ flowchart TD
 - `PaceCalibrationController.cs`：ペーススライダー（3:30〜7:00/km）
 - **START RUN** ボタン：開始前はその場ジョグ＋ユーザー向き
 
-#### Phase 5 — バイオメトリクス連携
+#### Phase 5 — バイオメトリクス連携（第1期スコープ外）
 
 - `HeartRateReceiver.cs` → `AvatarVisualsAndActions.cs`（バイオルミネッセンス）
 - `PeripheralHUDManager.cs`：BPM / SPM / 距離 / 時間表示
@@ -74,7 +83,7 @@ flowchart TD
 
 #### Phase 7 — 実機統合（本番）
 
-- C++カルマンフィルタ（`DllImport("__Internal")`）
+- カルマンフィルタ（`SpatialKalmanFilter.cs`・C#純ロジック。旧C++版は 2026-09-11 に廃止）
 - Swift側 ARKit/CoreLocation からGPS精度・位置を供給
 - USB-C IMU 100Hz パイプライン接続
 
@@ -110,6 +119,7 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
   Unity.exe -batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log
   ```
   終了コード 0=全PASS / 1=FAILあり。ログの `[E2E] SUMMARY` を参照。
+- 一括(コンパイル → ユニットテスト → Swift構文 → E2E、Windows Git Bash / macOS 共通): `tools/verify.sh`(E2Eを省くなら `--fast`)
 
 ### 主要スクリプト一覧
 
@@ -122,7 +132,7 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
 | `PaceCalibrationController.cs` | ペースUI・START RUN |
 | `PeripheralHUDManager.cs` | HUD表示 |
 | `AnalyticsManager.cs` | 同期率・疲労・グレード |
-| `HeartRateReceiver.cs` | BLE心拍・ピッチ受信 |
+| `HeartRateReceiver.cs` | BLE心拍・ピッチ受信(第1期は既定OFF: `scanOnStart`。近くの1台にだけ接続) |
 | `AvatarVisualsAndActions.cs` | バイオルミネッセンス |
 | `SafetyAndSystemController.cs` | TTC・低バッテリー（**未配線**） |
 | `LatencyBenchmarkRunner.cs` | レイテンシベンチマーク |
@@ -136,158 +146,27 @@ Swiftコマンドのシミュレート: Hierarchyで `ARSessionManager` を選�
 | `UserProfile.cs` | オンボーディング身体情報（身長・体重・性別） |
 | `AvatarVFXController.cs` | VFX演出（起動粒子集積・終了挨拶消滅・接地サイバーパルス） |
 | `GhostPaceDriver.cs` | ゴースト機能（過去セッションの速度プロファイル再生） |
-| `ARSessionManagerBridge.cs` / `DeviceManagerBridge.cs` | Swift⇄Unityメッセージブリッジ |
-| `SwiftMessageSender.cs` | Unity→Swift送信（SyncRate/状態/GPS/履歴/結果） |
 | `AvatarRigLocator.cs` | 有効なAnimatorの優先解決 |
 | `ARVisionSystemsBootstrap.cs` | 新規マネージャーのシーン自動生成 |
 | `ARSessionManagerBridge.cs` | Swift→Unity受信（StartSession/UpdateMetrics/EndSession）＋1Hz状態レポート |
-| `DeviceManagerBridge.cs` | Swift→Unity受信（ConnectXREAL） |
+| `DeviceManagerBridge.cs` | Swift→Unity受信（ConnectXREAL / DisconnectXREAL / UpdateGlassPose） |
+| `GlassViewRig.cs` | ARグラス接続中の描画をグラスの画角・眼の位置・進行方向ヨーへ切り替える |
+| `GlassDisplayProfile.cs` / `GlassOpticsMath.cs` | グラスの機種テーブルと光学計算（画角換算・視野適合） |
+| `HeadPoseMath.cs` | 描画カメラの向きの供給元を決める（Anchorモードでの二重補正を回避） |
+| `DevDiagnostics.cs` | 開発者モードの状態スナップショットと走行ログCSV一覧の組み立て |
+| `FrameSmoothing.cs` | フレーム時間依存の平滑化を「長いフレームで瞬間移動しない」形にする |
+| `VrmAvatarPolicy.cs` / `VrmAvatarLoader.cs` / `VrmAvatarCatalog.cs` | 差し替えアバター(VRM)の受け入れ判定・計測・入れ替え |
+| `OutdoorSemanticClassifier.cs` | 屋外路面の画像分類（ARCore Scene Semantics）。未導入時は休眠 |
 | `SwiftMessageSender.cs` | Unity→Swift送信（SyncRate/AvatarState/GPS/Latency/SessionEnded） |
 
 > Swift UI（[kyainna/AR-runner](https://github.com/kyainna/AR-runner)）との連携手順は [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) を参照。
 
----
 
-## 2. コードに使った物理演算・数式
-
-### A. ペース → 速度変換
-
-`AvatarEngine.CalculateVelocityMatrix()`：
-
-```
-v_target = 1000 / (P × 60)   [m/s]
-```
-
-（P = 分/km。例：5:00/km → 3.33 m/s）
-
-### B. アバター位置（Vector Forward Purification）
-
-```
-P_avatar = P_user + 3.0 × V_forward
-```
-
-- 直近 **1.5秒** のGPS移動ベクトルを積算
-- **指数重み付き移動平均**（新しいフレームほど重い）：
-
-```
-w_i = e^(-2.5 × age_i)
-V_forward = Σ(w_i × d_i) / Σ(w_i)
-```
-
-- **Gaze Lock**：GPS移動が微小（< 0.02m）のとき、視線（`userCamera.forward`）は使わず方向を保持 → 首振りによる酔い防止
-
-### C. エラスティックバンド速度維持（Feature #3）
-
-| 条件 | 速度倍率 |
-|---|---|
-| ユーザーが遅れ（リード超過） | 0.5× まで減速 |
-| ユーザーが接近 | 1.2× 加速 |
-| スプリント追い抜き | 1.25× |
-
-### D. ジッターガード（Motion-to-Photon）
-
-- 閾値：± 5 ms
-- スパイク時：前フレームのKalman速度で **予測補間**
-
-### E. 地形追従（Ground Snap）
-
-**Raycast（垂直）**：
-
-```csharp
-Physics.RaycastAll(origin, Vector3.down, 20m, environmentLayerMask)
-```
-
-**SmoothDamp（±15cm超の高さ変化）**：
-
-```csharp
-Mathf.SmoothDamp(currentY, targetY, ref velocity, smoothTime=0.3s)
-```
-
-**SphereCast（水平・崖検知）**：
-
-```csharp
-Physics.SphereCastAll(origin, radius=0.4m, forward, distance=3.0m)
-```
-
-- 障害物高さ ≥ 1.5m、前方3m以内 → 停止
-
-### F. カルマンフィルタ（C++ / エディタ近似）
-
-本番（iOS）：
-
-```csharp
-UpdateKalmanFilter(rawX, rawY, rawZ, out smoothX, out smoothY, out smoothZ)
-```
-
-エディタ近似（`LatencyBenchmarkRunner`）：
-
-```
-K = P / (P + R)
-x̂ = z × K
-P ← (1 - K)(P + Q)
-```
-
-（Q = 0.05, R = 0.80）
-
-### G. Synchronicity Rate（同期率）
-
-```
-S = 100 × (1 - d/10)   (d < 10m)
-S = 0%                 (d ≥ 10m)
-```
-
-**グレード判定**（S〜D）：平均同期率 90 / 80 / 65 / 50% 閾値
-
-### H. 疲労補正係数 C_f
-
-```
-C_f = 1.0   (T < 28°C)
-C_f = 1.5   (28°C ≤ T < 31°C)
-C_f = 2.0   (T ≥ 31°C)
-
-Fatigue += (100 - S) × 0.01 × Δt × C_f
-```
-
-### I. バイオルミネッセンス（心拍連動グロー）
-
-```
-pulseFrequency = (heartRate / 60) × 2π
-intensity = baseIntensity + sin(t × pulseFrequency/2) × amplitude
-finalColor = baseColor × intensity
-```
-
-- 10m以上離れると **アンバー警告色** に切替
-
-### J. TTC（Time-To-Collision）
-
-```
-TTC = d_obstacle / v_closing
-```
-
-TTC ≤ 1.5s → 赤フラッシュ＋警告音
-
-> **注意**: この式を実装する `SafetyAndSystemController` は現在シーンにもBootstrapにも登録されておらず、
-> 実行時に生成されない（HANDOVER.md §5）。有効化前に「非検出時のTTC」の扱いを修正すること。
-
-### K. ルート逸脱（Cross-Track Error）
-
-点 P から線分 AB への最短距離（射影 clamp）：
-
-```
-t = clamp(dot(AP, AB) / |AB|², 0, 1)
-closest = A + t × AB
-distance = |P - closest|
-```
-
-≥ 5m でサイレントリカバリーモード。
-
-### L. 回転制限（Curved Motion）
-
-最大 **45°/s** の旋回速度キャップ（`Quaternion.RotateTowards`）。
+数式(ペース→速度・Vector Forward・接地・カルマンフィルタ・同期率・疲労係数など)は [AGENTS.md §4](AGENTS.md#4-core-mathematical-formulae--geometric-domain-logic) に一本化した。
 
 ---
 
-## 3. コード実行のフローチャート
+## 2. コード実行のフローチャート
 
 ### メインゲームループ（毎フレーム）
 
@@ -310,7 +189,7 @@ flowchart TD
     JITTER -->|No| PURIFY[UpdatePurifiedHeading<br/>1.5s GPS MA]
 
     PURIFY --> OVERTAKE[UpdateOvertakeState]
-    OVERTAKE --> KALMAN[SmoothSpatialData<br/>C++ Kalman]
+    OVERTAKE --> KALMAN[SmoothSpatialData<br/>SpatialKalmanFilter]
     PREDICT --> POS[位置Lerp + 回転]
     KALMAN --> POS
 
@@ -318,8 +197,7 @@ flowchart TD
     GS2 --> ANIM[OvertakeBehaviourController<br/>Animator更新]
     ANIM --> HUD[PeripheralHUDManager<br/>HUD更新]
     HUD --> ANALYTICS[AnalyticsManager<br/>同期率・疲労]
-    ANALYTICS --> SAFETY[SafetyAndSystemController<br/>TTC・バッテリー]
-    SAFETY --> END([次フレーム])
+    ANALYTICS --> END([次フレーム])
 
     HALT1 --> GS2
     HALT2 --> GS2
@@ -350,20 +228,7 @@ sequenceDiagram
 
 ### GPSフォールトトレランス FSM
 
-```mermaid
-stateDiagram-v2
-    [*] --> Normal
-
-    Normal --> InertialMovement : GPS喪失
-    InertialMovement --> Normal : GPS復帰
-
-    InertialMovement --> FadeOut : 5秒タイムアウト
-    FadeOut --> Normal : GPS復帰 (1秒以内)
-    FadeOut --> Standby : 1秒フェード完了
-
-    Standby --> Reaccumulation : GPS復帰
-    Reaccumulation --> Normal : 精度≤5m + 1.5sアニメ
-```
+[AGENTS.md §5](AGENTS.md#5-state-machine-lifecycle-gps-fault-tolerance) を参照。
 
 ### 追い抜き状態マシン
 
@@ -385,90 +250,7 @@ stateDiagram-v2
 
 ---
 
-## 4. 発表資料に使えそうなネタ
-
-### 技術的訴求ポイント
-
-| ネタ | 内容 | インパクト |
-|---|---|---|
-| **Motion-to-Photon ≤20ms** | 酔い防止の厳格なレイテンシ予算。Bキーでリアルタイム計測HUD | ARランニングの差別化 |
-| **Gaze Lock（視線ロック）** | 視線ではなくGPS移動で方向決定 → 首振り酔いゼロ | 人間工学・UX |
-| **エラスティックバンド** | ランニングコーチが「引っ張りすぎない」自然な距離維持 | プロダクト体験 |
-| **In-Place Jog at Cliff** | 崖・壁の前で止まり対面ジョグ → クリッピング防止 | LiDAR/Physics活用 |
-| **3デバイス連携** | iPhone + AR Glass + Apple Watch の役割分担 | ハードウェアエコシステム |
-| **バイオルミネッセンス** | 心拍に同期したアバターグロー + 10m離れるとアンバー | 視覚的フィードバック |
-| **Synchronicity Rate** | ゲーミフィケーション（S〜Dグレード） | 継続利用・モチベーション |
-| **暑さ疲労補正 C_f** | 気温28/31°Cで疲労指数1.5×/2.0× | スポーツ科学 × IoT |
-| **ゴースト機能** | 過去の自分の速度プロファイル（5秒毎サンプル）と競走 | Corbett(2012)の生理学的根拠を実装 |
-| **手続き生成サウンド** | 足音・呼吸音・システム音を全て実行時合成（アセットゼロ） | 技術的ユニークネス |
-| **E2E自動検証** | ヘッドレスUnityで32項目自動判定。コーナー追従: 先行1.0〜2.4m・方位誤差6° | 品質保証・CI対応 |
-| **SwiftUI×Unity モノレポ** | UaaLで1つのXcodeアプリに統合、双方向JSONブリッジ | アーキテクチャ |
-
-### デモシナリオ案
-
-1. **基本デモ**：START RUN → 5:00/kmペースで前方3mを走る → スライダーで4:30/kmに変更
-2. **追い抜きデモ**：O/Pキーで「追い抜かれる→譲る」「追い抜く→スプリント」
-3. **GPS喪失デモ**：G → 慣性移動 → 5秒後フェードアウト → R → 再出現＋Nod
-4. **崖デモ**：CキーでIn-Place Jog → 解除後に再開
-5. **ベンチマークデモ**：Bキーで20ms予算の各ステージ計測表示
-6. **バイオメトリクス**：Editor上でBPM/SPMがリアルタイム変動、アバターが脈動
-7. **ゴーストデモ**：1本走ってゴール → 「Simulate Ghost Run」→ 過去の自分のペース配分でアバターが走る
-8. **バイタル警告デモ**：Vキーで心拍195にスパイク → アバターが深青に変化＋CalmDownサイン
-9. **E2Eデモ**：「Build → Run E2E Scenario」で32項目が自動でPASSしていく様子を見せる
-
-### システム構成図
-
-```
-┌─────────────────────────────────────────────────────┐
-│  AR Pacesetter システム構成                          │
-├──────────────┬──────────────┬───────────────────────┤
-│ Apple Watch  │   iPhone     │   XREAL AR Glass      │
-│  BPM / SPM   │  空間エンジン │   アバター + HUD      │
-│   (BLE)      │  Kalman(C++) │   IMU 100Hz (USB-C)   │
-└──────┬───────┴──────┬───────┴───────────┬───────────┘
-       │              │                   │
-       └──────────────┴───────────────────┘
-              Motion-to-Photon ≤ 20ms
-```
-
-### 数値KPI
-
-| 指標 | 値 |
-|---|---|
-| リード距離 | 3.0 m |
-| ペース範囲 | 3:30 〜 7:00 /km |
-| 旋回速度上限 | 45 °/s |
-| ジッター許容 | ± 5 ms |
-| 崖検知距離 | 3.0 m（高さ ≥ 1.5 m） |
-| 同期率ゼロ距離 | ≥ 10 m |
-| GPS復帰精度ゲート | ≤ 5 m |
-| TTC警告閾値 | 1.5 s |
-| 低バッテリー退避 | ≤ 10 % |
-| IMUサンプリング | ≥ 100 Hz |
-| HUDフレームレート | 60 fps |
-| Motion-to-Photon予算 | ≤ 20 ms |
-
-### Motion-to-Photon レイテンシ配分
-
-| ステージ | 予算 |
-|---|---|
-| IMU Data Acquisition (USB-C) | ≤ 2 ms |
-| Kalman Filter (C++) | ≤ 4 ms |
-| AR Frame Command Generation | ≤ 6 ms |
-| USB-C Frame Transmission | ≤ 8 ms |
-| **合計** | **≤ 20 ms** |
-
-### Future Work
-
-- Swift/ARKit 本番パイプラインとの完全統合
-- 実LiDAR（iPhone Pro）からの地形メッシュ入力
-- Apple Watch ランニングピッチ → ペース自動調整フィードバック
-- ルートGPXインポート + `SilentRouteRecoverer` 本番化
-- マルチユーザー同期ラン（複数アバター）
-
----
-
-## 5. Swift UI連携（AR-runner）
+## 3. Swift UI連携（AR-runner）
 
 スマホアプリのUI（SwiftUI、元リポジトリ [kyainna/AR-runner](https://github.com/kyainna/AR-runner)）は
 **本リポジトリの `ios/` に取り込み済み（モノレポ構成）**。
@@ -534,7 +316,7 @@ Unityをランナーへ入れずに済む。実機へ入れるには署名が必
 
 | 方向 | 経路 | 内容 |
 |---|---|---|
-| Swift → Unity | `sendMessageToGO` → GameObject `ARSessionManager` / `DeviceManager` の `OnSwiftCommand(json)` | `StartSession`（ペースkm/h・目標距離・身長・先行距離）/ `UpdateMetrics`（心拍・距離・**測位3値**）/ `EndSession` / `RequestHistory` / `ResumeSession` / `ConnectXREAL` / `DisconnectXREAL`（計7種） |
+| Swift → Unity | `sendMessageToGO` → GameObject `ARSessionManager` / `DeviceManager` の `OnSwiftCommand(json)` | `StartSession`（ペースkm/h・目標距離・身長・先行距離）/ `UpdateMetrics`（心拍・距離・**測位3値**）/ `EndSession` / `RequestHistory` / `ResumeSession` / `ConnectXREAL`（表示メトリクス付き）/ `DisconnectXREAL` / `UpdateGlassPose`（将来用）（計8種） |
 | Unity → Swift | `UnitySwiftBridge.mm` → NSNotification `UnityToSwiftMessage` → `UnityBridge.onUnityMessage` | `SyncRateUpdated`(1Hz) / `AvatarStateChanged`(Idle・Run・Slow・Fast・Goal・Lost) / `GPSLost`・`GPSRecovered` / `LatencyReport` / `SessionEnded`（グレード・ランク・結果）/ `HistoryData` / `VoiceAlert` / ~~`LowBattery`~~（送出元が未配線のため現在発火しない） |
 
 ブリッジ用GameObjectは起動時に自動生成されるためシーン配線は不要。
@@ -554,831 +336,11 @@ UnityFramework未リンク時は自動でシミュレーションモードにフ
 
 ---
 
-## 6. 更新履歴
-
-### 2026-09-09 (3) — 初回起動が遅い件: 準備画面の追加と計測
-
-**まず実装を確認した結果、素朴なローディング画面は動かないことが分かった。**
-`UnityLauncher.launch()` は `bundle.load()` と `runEmbedded()` を**同期でメインスレッド上**で
-実行し、これは走行画面の `onAppear` から呼ばれている。つまり:
-
-- `isLoading = true` の直後に `launch()` を呼ぶと、SwiftUI が描画する隙が無く
-  **ローディング画面は一度も表示されないまま**初期化が終わる
-- 仮に表示できてもこの区間はメインスレッドが塞がっており、**アニメーションは動かない**。
-  スピナーを置くと止まったまま回らず、「読み込み中」ではなく「ハングした」に見える
-
-**対応**
-- `UnityLauncher.prepare(then:)` を追加。`isPreparing` を publish してから
-  `DispatchQueue.main.async` を挟み、**1フレーム描かせてから**初期化へ入る
-- 走行画面に準備オーバーレイを追加。**スピナーは意図的に置かない**静止表示で、
-  「AR環境を準備しています / 初回起動は数秒かかります」を出す。
-  文言で初回である旨を伝えるので、**別途アラートを出す必要は無い**
-- 起動時間を `bundle.load()` と `runEmbedded()` の内訳で計測してログへ出す。
-  前者はiOSによる署名検証とページイン(アプリ側で減らす余地は小さい)、
-  後者はIL2CPP初期化とシーンロード(シェーダのウォームアップ等で減らせる)。
-  **どちらが支配的かで対処が変わるため、まず実測する**
-- `UnityLauncher.prewarm()` を追加(走行設定画面から呼ぶ配線済み)。ただし
-  **既定OFF** — `runEmbedded` がUnityのウィンドウを前面に出す構成ではちらつく
-  可能性があり、実機未検証のため。有効化は `prewarmEnabled = true` の1行
-
-**検証**: Swiftのため `swiftc -parse` はWindowsで実行できず、CIのmacOSランナーで担保。
-Unity側の変更なし
-
-### 2026-09-09 (2) — 天井・壁の棄却を「実物を置いて」検証するようにした
-
-天井修正 (2026-09-07) のE2Eは、**肝心の分岐を一度も実行していなかった**。
-エディタのシーンにはコライダーもARプレーンも無いため、候補が1つも無い状態で
-「暫定床が維持される」ことしか見ておらず、既存の
-`ground: no wall/ceiling was mistaken for a measured floor` も
-`!HasMeasuredFloor` が自明に真になるだけだった。
-**複数候補からどちらを床に選ぶか**という選択そのものが未検証だった。
-
-- E2E中に**実際の床・天井・壁のコライダーを生成**して選択を試す4項目を追加。
-  天井は法線を上向きにして置く — ARKitが床も天井も「水平・法線上向き」で返す条件を
-  再現し、法線チェックだけでは弾けない状況を作る
-- 結果: 天井 2.23m を無視して床 -0.27m を選択。壁も床と誤認しない
-- 後片付けの順序も是正した。`Destroy` はフレーム末に効くため、先に `ResetFloor` を
-  呼ぶと**まだ生きているコライダーを掴み直してラッチが残り**、後続検証が落ちる。
-  コライダーの消滅を待ってから確定をやり直す(これ自体も1項目として検証)
-
-**検証**: フルコンパイル0エラー / **E2E 109項目 全PASS** (`fail=0`・終了コード0)
-
-### 2026-09-09 — 接地誤差 (§10) を実測できるようにした / 「浮遊感」の原因切り分け
-
-タスク「アバターの浮遊感の対処」は「アバターが浮遊している」(天井誤認・修正済み)とは
-別問題のため、推測せず実測できるようにした。
-
-- `AvatarEngine.FootOffsetMeters` を追加 — ルート原点から**足裏**までの高さ。
-  `GroundSnap` が床に合わせるのは原点なので、原点が足裏に無ければ床の推定が完璧でも
-  足は浮く/沈む
-- E2Eに **§10の接地誤差(上下5cm以内)そのものを測る項目**を追加。
-  足裏の実位置と確定床の差を見る
-
-**測り方を1度間違えたので記録しておく**: 最初は `SkinnedMeshRenderer.localBounds` を
-ルート空間へ変換して足裏を求めたが、**`localBounds` はルートボーン空間の値であり
-`renderer.transform` 空間ではない**。高さ(max−min)は平行移動の誤差が相殺されるので
-正しく出る(既存の身長計測が正しかったのはこのため)が、絶対位置はずれる。
-ワールドAABBで裏取りしたところ **0.796m 食い違った**ため、
-ヒューマノイドの足ボーン(+くるぶし→足裏の補正)から求める方式へ変更した。
-
-**結果**: 接地誤差は **-0.015〜-0.024m** で §10 の ±5cm 以内。
-つまり**接地そのものは正常で、「浮遊感」はピボット位置では説明できない**。
-残る有力候補は `FakeShadowRenderer` — 影がアバターのルートに剛体で親子付けされており、
-床に固定されず**アバターと一緒に上下する**。接地の知覚は「影が地面に貼り付いていること」
-から来るため、これは高さが数値上正しくても浮いて見える。
-
-**検証**: フルコンパイル0エラー / **E2E 104項目 全PASS** (`fail=0`・終了コード0)
-
-### 2026-09-08 (3) — `latency_m2p` が測っていないものを測っていると主張しないようにした
-
-**発見**: F-11のCSVに100Hzで書かれる `latency_m2p` は、M2Pの実測を一切含んでいなかった。
-`LatencyBenchmarkRunner` の4段はすべて合成:
-
-| 段 | 実体 | 実際のコスト |
-|---|---|---|
-| ①IMU取得 | `userCamera.position` に `Random.Range` でノイズを足す | 数μs |
-| ②カルマン | コメントは「~4ms相当」だが実体は**3回ループ**の浮動小数演算 | 数μs |
-| ③フレーム生成 | 「`AvatarEngine.Update` は再実行しない」と明記。代数演算のみ | 数μs |
-| ④送出 | `Time.deltaTime` の代用を `min(x, 16.0)` で**クランプ** | ~16ms |
-
-合計は実質 `min(フレーム時間, 16.0)` の定数。**決定的なのは④のクランプで、
-この指標は構造的に大きな違反を報告できない** — 実際のM2Pが45msでもCSVは約16msと書く。
-§10の要求は20ms以内、§11.2 は「CSV解析で20msを評価する」としているので、
-**測定ではなく構造によって合格する**状態だった。
-
-コード自体のコメントは正直(`Simulate` / `would be` / `closest proxy available`)で、
-足場が差し替えられないまま残っていたのが実態。問題は上の層 — 列名・HANDOVER・評価計画が
-これを実測として扱っていた。
-
-**対応**
-- ④のクランプを撤去。上限があると異常が見えない
-- `LatencyBenchmarkRunner.ProvidesRealMotionToPhoton`(現状 false)を追加。
-  false の間は **CSVにも Swift にも `-1`(未計測)を書く**。フレーム時間での穴埋めを廃止
-- `AverageTotalMs` → `AverageSyntheticTotalMs` へ改名。呼び出し側が名前で誤解しないように
-- 列名 `latency_m2p` は基本設計書 §5.2 の規定なので**変更していない**。
-  値を `-1` にすれば「無い」と伝わり、実測経路ができれば同じ列がそのまま埋まる
-- `ARSessionManagerBridge` が合成値を「実測M2P」としてSwiftへ送っていたのを停止。
-  フォールバック専用だった `_smoothedFrameMs` は死にコードになったため削除
-- **Swift側の未リンク時フォールバックも是正**: 同期率78〜96%、M2P 14〜19msという
-  「要求を満たしているように見える」乱数を返していた(UaaLガイド§6が warning していた当の罠が
-  そのまま残っていた)。`-1` に変更し、HUDは数値ではなくダッシュを出す
-- `HANDOVER.md` §4「計測基盤あり・実測は実機要」→「**未計測**」へ訂正し、
-  §5に実測経路の作り方(ARKitフレーム時刻 + `CADisplayLink.targetTimestamp`)を追記
-
-**検証**: フルコンパイル0エラー / 実機ビルド構成でも0エラー /
-**E2E 103項目 全PASS** — CSVの9列目が全行 `-1` であることを検証する項目を追加(300行確認)。
-Swiftは `swiftc -parse` がWindowsで動かないため未検証、CIのmacOSランナーで担保する
-
-### 2026-09-08 (2) — コードベース精査の低優先分の後片付け
-
-- **`ProjectSettings/ShaderGraphSettings 2〜5.asset` を削除**。4つとも正準版と内容が同一
-  (差は改行コードのみ)で、Unityが読むのは `ShaderGraphSettings.asset` だけ。
-  参照していたのは生成キャッシュ(`Library/PlayerDataCache/`)のみ。
-  インポート衝突でUnityが作る番号付きコピーで、放置すると増え続ける
-- **`PovRunnerDemoController` を `#if UNITY_EDITOR` で囲った**。
-  「エディタ専用」と明記されているのに実行時アセンブリに置かれており、
-  256行が iOS の実機ビルドへそのまま同梱されていた。Play Mode で AddComponent する
-  都合上エディタアセンブリへは移せないため、条件コンパイルで落とす
-- **`AvatarEngine.UpdatePurifiedHeading` の見出しコメントを実態へ修正**。
-  「Feature #6 — GPS-only」は合体前の実装の説明で、現在の一次情報は
-  `RunnerTrackingState` の**融合済み**方位 (GPS 0.65 : AR移動 0.35)。
-  あわせて、融合側でも Gaze lock の不変条件が保たれる理由を明記した
-
-**検証**: フルコンパイル0エラー / **実機ビルド構成(`UNITY_EDITOR` 未定義)でも0エラー**
-— こちらでしか `#if UNITY_EDITOR` の掛け違いは検出できない。従来のコンパイル検証は
-エディタ構成なので、ガードを追加しても参照切れに気づけなかった /
-E2E **102項目 全PASS** (`fail=0`・終了コード0)
-
-### 2026-09-08 — エクスポート鮮度のCI検査と、合体で陳腐化したドキュメントの是正
-
-**CIが「古いエクスポートに対して緑になる」穴を塞いだ**
-
-このジョブが検証しているのは「Swift/pbxproj が、あるUnity成果物とリンクできるか」。
-だがタグは常に最新のReleaseを拾うだけなので、**Unity側のC#を変更してから再エクスポートを
-公開し忘れると、古いフレームワークに対して緑になる**。実機で「直したはずの不具合が
-直っていない」となる典型経路がこれで、実際に本リポジトリでも2世代前のエクスポートに対して
-CIが緑を出し続けていた。
-
-- `Resolve export tag` にエクスポート鮮度の検査を追加。タグのコミットと `HEAD` の間で
-  `Assets/` `ProjectSettings/` `Packages/` に差分があれば警告し、未反映のファイルを列挙する
-- **失敗にはしない** — Swiftだけの変更なら古いエクスポートでもリンク検証は有効。
-  ただし「何に対して緑なのか」は必ず見えるようにする
-- 浅いclone(depth=1)のままでも判定できるよう、比較対象のコミットだけを
-  `git fetch --no-tags --depth=1` で取り寄せる。`git diff` は2つのツリーさえあれば
-  計算できるので、履歴全体(約1.3GB)を引く `fetch-depth: 0` は不要
-
-**合体で事実と食い違ったドキュメントの是正**
-
-- `Docs/BUILD_ON_BORROWED_MAC.md` 手順3 — **UnityFramework の Embed & Sign は不要になった**
-  (`AR_Runner_UI.xcodeproj` にリンク設定と Embed Frameworks フェーズが commit 済み)。
-  残る手作業だった `Data` の Target Membership も `tools/relink-unity-export.sh` に置換。
-  「直したはずの不具合が実機で直っていない」を失敗表へ追加
-- `Docs/UNITY_AS_A_LIBRARY.md` / `.ja.md` §9 — 「CIでは `canImport(UnityFramework)` が
-  false なので未検証」という記述は**もう事実ではない**。ビルドログでリンク行に
-  `-framework UnityFramework` が立っていることを確認済みなので、記述を実態へ合わせ、
-  あわせてエクスポート鮮度検査の知見を追記した
-- `tools/relink-unity-export.sh` の完了メッセージから、不要になった Embed & Sign の案内を削除
-
-**再エクスポートを公開**: `unity-export-d924b889`(天井修正・CSVロガー・合体分すべてを含む)。
-公開前に `preloadedAssets` が空になる既知の罠が**再発したので復元済み**。
-`relink-unity-export.sh` も適用済みなので、展開後のXcode手作業は不要
-
-### 2026-09-07 (3) — 天井を床と誤認する不具合の修正 (F-05)
-
-**実機で報告された症状**: 室内でアバターが浮遊し、視界から消える。壁でも同様。
-
-**原因**: ARKitの `ARPlaneAnchor.alignment` は `.horizontal` / `.vertical` しか区別せず、
-**床と天井はどちらも「水平」で法線が上向きに揃えて返る**。上下の区別は
-`classification`(.floor / .ceiling / .table)にしか無い。
-そのため既存の法線チェック(`Dot(normal, up) >= 0.7`)は天井を通してしまい、
-その後の「上向きの面のうち**最も高いもの**を床にする」ロジックで
-**室内では天井が必ず勝つ**。アバターは天井高へ跳ね上がり視界から消えていた。
-壁も、平面メッシュの縁を拾うと同じ経路で高い候補になりうる。
-
-**対応 — 幾何的事実を制約として課す**
-- `GroundFloorTracker.IsPlausibleFloorCandidate` を追加(Unity非依存の純ロジック)。
-  床候補は**カメラから 0.5m〜3.0m 下**にあること。プラットフォームの分類に
-  依存しないので、ARKitの仕様変更にも影響されない
-- `GroundSnap` の**3経路すべて**(コライダー / `PlaneWithinPolygon` /
-  `PlaneWithinInfinity`)にこの高さ帯を適用。特に無限延長は、天井を床一面に
-  広げてしまうため適用が必須だった
-- 高さ帯は `minCameraToFloorMeters` / `maxCameraToFloorMeters` で実機調整可能
-
-**対応 — 天井を掴んでしまった状態からの自己回復**
-- `GroundFloorTracker.InvalidateIfAboveCamera` を追加。ラッチは本来解除しない設計
-  だが、天井を掴むとアバターは再起動するまで戻らない。
-  **「床がカメラより上」という物理的にありえない条件だけ**を解除トリガーにした。
-  端末を頭上へ掲げても床は下のままなので誤発火しない(机の高さでは解除しない —
-  曖昧な条件で解除するとラッチの意味が消える)
-
-**検証**: フルコンパイル0エラー / ユニット**113件**全PASS(天井・机・段差・階下・
-自己回復の11件を追加) / **E2E 102項目 全PASS**(`fail=0`・終了コード0)。
-E2Eには「床は常にカメラより下」「カメラが床より下へ来たら破棄して掴み直す」の
-3項目を追加。比較対象を XR Origin の root ではなく**実カメラ**にしている —
-rig内でカメラには高さオフセット(実測0.93m)があり、rootで測ると判定がずれる
-
-### 2026-09-07 (2) — エクスポート後の再リンクを自動化
-
-`ios/UnityExport/` はエクスポートのたびに丸ごと作り直される生成物のため、
-Xcode上で手作業した設定は毎回消える。中でも `Data` フォルダの Target Membership は
-既定で **Unity-iPhone**(Unity単体アプリのターゲット)に付いており、UaaLでは
-**UnityFramework** へ付け替えないとホストアプリのリンクが undefined symbols で落ちる。
-毎回クリックし直す運用は忘れやすく、症状(リンクエラー)からは原因が分かりにくい。
-
-- [`tools/relink-unity-export.sh`](tools/relink-unity-export.sh) を追加。
-  pbxproj上で `Data` を UnityFramework の Resources フェーズへ移す
-- UUIDはハードコードせず**ターゲット名から解決**する。同名のPBXGroupが同じコメントを
-  持つため、`isa = PBXNativeTarget` を確認するまで確定しない
-- **冪等**: 両フェーズから一旦外してから付け直すので、何度実行しても結果は同じ
-
-なお、もう一方の手作業だった **UnityFramework の Embed & Sign** は、
-kyainna との合体で pbxproj にcommit済みとなったため不要になった(2026-09-05 のエントリ)。
-残る手作業はこのスクリプトが処理する Target Membership のみ。
-
-**検証**: 現行エクスポートに対して実行し、`Data in Resources` が Unity-iPhone の
-Resources フェーズから UnityFramework のフェーズへ1件だけ移動することを差分で確認 /
-2回目の実行が無変更(冪等)であることを確認
-
-### 2026-09-07 — CSVロガーの書き込み経路を是正(コードベース精査の中優先分)
-
-**問題**: `Flush()` が200行ごとに `File.AppendAllText` を呼んでいた。これは毎回
-**open → write → close** を行い、さらに `_buffer.ToString()` で24KB前後の一時文字列を
-確保する。60分連続稼働(§10)では約1,800回の開閉と数十MBのGCになり、
-M2P 20ms(§10)のフレーム予算を脅かす。メインスレッドで走る点も含めて割に合わない。
-
-**さらに悪かった点**: 書き込みに失敗しても `catch` してログを出すだけで
-**バッファを捨てていた**。PoCの成果物であるCSVが黙って欠ける状態だった。
-
-**対応**
-- 走行中は `StreamWriter` を開いたままにし、`Flush()` では `StringBuilder` を
-  直接 `Write` して `Flush()` するだけにした。**耐久性は従来と同じ**
-  (200行ごとにOSへ確実に渡すため、強制終了時の損失範囲は変わらない)
-- 書き出せなかった行数を `DroppedRowCount` として保持し、終了ログで必ず報告する。
-  0以外ならそのCSVは不完全であると分かる
-- `StopLogging` / `ResetSession` / `OnDestroy` でハンドルを確実に閉じる
-- 検証時の生成物 `e2e.log` / `export.log` を `.gitignore` へ追加
-
-**検証**: フルコンパイル0エラー / **E2E 99項目 全PASS**(`fail=0`・終了コード0)
-
-### 2026-09-06 — 合体で混入したローカル署名設定の除去と再発防止
-
-コードベース精査で検出。`f67c4886` に `tools/prepare-free-signing.sh` の
-**実行結果がそのままコミットされていた**。引数にはドキュメントの例文
-`com.yourname.pacesetter` がそのまま使われていた。
-
-**何が壊れていたか**(いずれも `d515120b` の値へ復元済み)
-
-| 設定 | 混入後 | 復元 |
-|---|---|---|
-| `PRODUCT_BUNDLE_IDENTIFIER` | `com.yourname.pacesetter` | `com.pacesetterUI` |
-| `DEVELOPMENT_TEAM`(プロジェクト) | `""` | `2A8ULHF589` |
-| HealthKit entitlement | 削除済み | 復元 |
-
-**なぜ重大か**: Bundle IDが変わるとiOSは別アプリとして扱う。それまでの実機ビルドが
-`Documents/RunLogs/` に貯めた **CSVログ(PoCの成果物)へ新しいアプリからアクセスできない**。
-加えてHealthKitのentitlementが無いため、`HeartRateMonitor` /
-`HealthKitWorkoutSaver` のコードが残ったまま**黙って機能しない**状態になっていた。
-entitlementsファイル内の復旧手順コメント(`git checkout -- ios/AR_Runner_UI`)も、
-コミットされた時点で「削除済みの版を復元する」誤った案内に変わっていた。
-
-**再発防止**(事故の直接原因は「ドキュメントの例をそのまま貼れたこと」)
-
-1. `prepare-free-signing.sh` が `yourname` / `example` / `<>` / 既定値 `com.pacesetterUI` を
-   **プレースホルダとして拒否**する
-2. 同スクリプトが、対象ファイルに未コミット変更(staged含む)があれば**多重実行を拒否**する
-   — 重ねて実行すると元の値が失われ `git checkout` で戻せなくなるため
-3. 完了時に「**コミットしないこと**」を枠付きで警告し、戻すコマンドを提示する
-4. **CIに混入検知を追加**。Bundle IDのプレースホルダ・空の`DEVELOPMENT_TEAM`・
-   HealthKit欠落のいずれかで、高価なビルドの前に数秒で落ちる
-5. `Docs/BUILD_ON_BORROWED_MAC.md` の例を `com.<あなたのID>.pacesetter` へ変更し、
-   コミット禁止とCSVログを失う理由を明記
-
-**検証**: 復元後の署名設定が `d515120b` と完全一致することを差分で確認 /
-UnityFrameworkのリンク設定(合体の成果)が無傷であることを確認 /
-新ガードを事故当時の状態に対して実行し3項目すべて検知することを確認 /
-スクリプトの3つの拒否経路を実行確認。C#変更なしのためE2Eは再実行していない。
-
-### 2026-09-05 — kyainna/AR-pace-setter-unity との合体
-
-分岐点 `d515120b` から並行開発されていた2本の履歴をマージ。共通の祖先を持つため
-`--allow-unrelated-histories` は不要で、衝突は5ファイルのみだった。
-
-**取り込んだもの(kyainna側)**
-- POVランナー追跡基盤(`RunnerTrackingState` / `RunnerTrackingMath` / `PaceSynchronicityMath`)。
-  GPS方位とARKitのVisual-Inertial移動を1.5秒窓で融合し、シンクロ率を
-  「アバターの3m先行」から切り離して目標ペース対実測で算出する
-- ARゴールライン・ゴール演出(`GoalLineController` / `GoalLineMath`)
-- `Tools → AR Pacesetter → POV Demo` の自動60m走デモ(`PovRunnerDemoMenu`)
-- 開始演出の音源と`3 → 2 → 1 → START!`の同期
-- **`AR_Runner_UI.xcodeproj` への UnityFramework リンクのcommit化**。
-  これまでXcodeで毎回手作業していた Embed & Sign が不要になる
-
-**衝突の解消方針**
-- `ARVisionSystemsBootstrap` / `ARSessionManagerBridge` / `ARVision.UnitTests.csproj` — 双方とも追加のみ。両方採用
-- `E2EScenarioBehaviour` — 相手が前倒しした開始カウントダウン検証と、
-  こちらの実測身長チェックを併存させ、**重複したカウントダウン検証1件のみ削除**
-- `README.md` — 双方が `(3)` から独立採番したため `2026-09-02 (4)` が衝突。
-  相手側を `(4-b)` へ改番して時系列順に統合
-
-**検証**: フルコンパイル0エラー(Assembly-CSharp 53本 + Editor 7本) /
-ユニット**102件**全PASS(GoalLineMath・PaceSynchronicityMath・RunnerTrackingMath の22件が加わった) /
-**E2E 99項目 全PASS**(pass=99 fail=0、終了コード0)。
-Swiftの `swiftc -parse` はWindowsでは実行できないため未検証 — CIのmacOSランナーで担保する
-
-### 2026-09-04 — UaaLワークスペーススキームの復旧
-
-- `ios/ARRunner.xcworkspace` に共有の `AR_Runner_UI` スキームを配置。SwiftUIホストと `UnityFramework` を同一スキームでビルド・実機起動できるようにした
-
-### 2026-09-04 — POVランナー追跡基盤・自動デモ
-
-- ユーザーの3Dモデルは描画せず、`RunnerTrackingState`へXR Camera位置、CoreLocation距離/速度/精度、GPS方位、心拍を集約
-- GPS緯度経度の進行方向をARワールドへ較正し、ARKitのVisual-Inertial移動と1.5秒窓で融合。`AvatarEngine`は融合済み方位を一次情報として使用
-- シンクロ率を意図的な「アバター3m先行距離」から切り離し、目標ペース対実測ペースと累積距離偏差(10mで0%)で算出
-- CoreLocationの新規fix/速度有効性を明示し、キャッシュ再送・精度20m超のfix・GPS未取得時の設定ペースが実測として扱われる問題を修正
-- `StartSession`は走行を即時加算せず、`3 → 2 → 1 → START!`完了を正式な計測開始境界に変更。カウント中の移動をGPS距離ベースラインから除外し、時計・シンクロ率・CSV・VFXもSTART後に開始
-- `Tools → AR Pacesetter → POV Demo → Start Automatic 60m Run`で、ユーザーモデル無しの60m走行を自動再現可能
-- 自動デモの`StartSession` JSON生成で末尾の数値書式が文字列`F2`になるUnityランタイム互換問題を修正し、Play開始直後でも設定パネルを再生成せず確実にカウントダウンへ進むよう改善
-- 現在のXREAL連携は外部ディスプレイ出力まで。XREAL固有head-pose/IMU入力は未統合であり、現段階の追跡姿勢はiPhone ARKit/XR Camera由来
-- 検証: Unity C#コンパイル0エラー、純C#ロジック15チェック、Swift全ファイル構文解析、Play Mode E2E **86/86 PASS**
-
-### 2026-09-04 — スタート演出の視認性・音源更新
-
-- 提供されたレース開始音源へ差し替え、`3 → 2 → 1 → START!`を音と同じ1秒間隔へ同期
-- カウント文字へフィット制御、影、アクセントリング、ポップアニメーションを追加し、短い開始演出中は常にユーザー正面へ表示
-- 移動方位が未確定の開始時だけカメラ正面を初期アンカーに使い、アバターが背後へ出る問題を修正。移動開始後は従来どおり1.5秒の移動ベクトルのみで方位更新
-- ゴールゲートへ出現アニメーション、シアンの輪郭・ポールキャップ、色変化する紙吹雪を追加し、暗いAR背景でも判別しやすく改善
-
-### 2026-09-03 — ゴール演出（ゲームスタイル）
-
-- 参考画像に合わせ、上下の黒白チェック柄と円柱ポールを持つフィニッシュゲートへ変更
-- ゴール時にワールド空間の「CONGRATULATIONS!」バウンス表示と紙吹雪VFXを再生
-- 提供された2種類のMP3をResourcesから読み込み、ゴールごとにランダム再生（読込失敗時は従来音へフォールバック）
-- TMP文字の実寸をゲート幅へ正規化し、祝い文字が視界全体を覆う問題を修正。エディタ用に「残り5m」再現メニューも追加
-
-### 2026-09-02 (8) — アバターが実物より大きい問題の修正(実測ベースの身長スケール)
-
-実機で「アバターが実寸より大きい」報告への対応。**計測して確認できた**:
-モデルは175cm指定でも実際には **1.88m** で描画されていた(約7%大)。
-
-- 原因: `localScale = 指定cm / 175` という固定倍率で、
-  **「モデルはスケール1のとき正確に175cmである」という未検証の前提**に依存していた。
-  Swiftは常に175cmを送るのでスケールは常に1.0となり、モデルの素の大きさがそのまま出る。
-  FBXの単位やインポート設定(`useFileScale`)次第でずれるが、誰も気づけない構造だった
-- 対応: `AvatarScale.cs` 新規(Unity非依存の純ロジック)。**実測した素の身長から必要な倍率を
-  逆算**する。モデルを差し替えてもインポート設定が変わっても指定身長どおりに表示される
-- **スケールはモデル側のTransformへ適用**する。ルートの`localScale`は
-  `AvatarVFXController`が起動/消滅演出で動かしており、身長を混ぜると取り合いになる
-- **計測はポーズと親スケールに非依存**: ワールドの`Renderer.bounds`ではなく
-  オーサリング値の`localBounds`をモデル空間へ変換して測る。
-  ワールドboundsは走行ポーズで縮み、かつVFXの起動演出(0.15→1.0)を含むため、
-  最初の実装はそれを打ち消す方向に誤補正していた(E2Eが検出)
-
-**検証**: フルコンパイル0エラー / ユニット**80件**(AvatarScale 11件を追加) /
-**E2E 87項目 全PASS**。実機と同じモデルで公称身長が1.75mになることを確認し、
-再適用しても1.75mのまま(冪等)であることも確認
-
-### 2026-09-02 (7) — 検出済み平面の「延長」で検出範囲外でも接地を維持
-
-実機で「LiDARが検出した床の範囲から出るとアバターが消える」報告への対応。
-
-- 原因: ARレイキャストが `TrackableType.PlaneWithinPolygon` のみを使っており、
-  **検出済み平面のポリゴン内**でしか地面を拾えなかった。歩いた範囲の外へ出ると
-  実測が途切れる(LiDAR/平面検出は歩いた場所しか地面を作らない)
-- 対応: `PlaneWithinInfinity` によるフォールバックを追加。**検出済み平面を境界の外まで
-  延長**して判定する = ソフト的に床を伸ばす。実測が完全に無くなっても
-  `GroundFloorTracker` が確定床を保持するので、二段構えで接地が途切れない
-- **机などを誤って床にしない工夫**: 延長時に「最も高い面」を採ると机の平面が無限に
-  延長されてフロア全体が机の高さになる。確定済みの床に**最も近い**候補を選び、
-  `extendedFloorToleranceMeters`(既定0.5m)を超える面は「床の続き」ではないとみなす
-- **障害物停止のON/OFFを追加**(`haltOnObstacles`、既定ON): 陸上トラックのように
-  壁が単なる背景の環境ではOFFにすると、前方の壁で足踏み停止せず素直に走り続ける。
-  接地判定には影響しない
-
-**E2Eのテスト不備も修正**: 追加した検証でカメラを1フレームで25m瞬間移動させており、
-アンカー補間が追随できずに後続のコーナー判定の初期状態まで壊していた
-(コーナーのフレーク再発)。実走と同じく連続的に前進させる形へ修正
-
-**検証**: フルコンパイル0エラー / **E2E 85項目 全PASS**
-(検出範囲外を歩いても床が -1.20 のまま保持され、アバターが前方2.8mに留まることを確認)
-
-### 2026-09-02 (6) — 胸マウント運用への対応(光学シースルー対応・想定保持高)
-
-第1期は「iPhoneを胸にマウント + グラスは表示のみ」で進める方針が確定したことによる対応。
-XREALのSDKはAndroid専用でiOSからは頭部姿勢を取得できないため、空間トラッキングは
-引き続きiPhoneのARKitが担う。したがって**端末は世界を見ている必要があり**、
-ポケット運用は不可(公式ドキュメントで確認済み)。
-
-- **想定保持高を1.2mへ**(`GroundSnap.assumedCameraHeightMeters`)。従来の1.5mは手持ち・目線高
-  想定で、胸マウントだと実測フロアを掴むまでの数秒間アバターが約30cm沈んで見えていた。
-  ARプレーンを掴めば実測値が優先されるため、効くのは走行開始直後のみ
-- **`ARPassthroughController.cs` 新規**: 光学シースルーのグラスへ出す間はカメラ映像を描かない。
-  現実の上に「現実の動画」を重ねると二重像になり全体が濁るため、背景は黒(=グラスでは透過)。
-  `ConnectXREAL` で無効化し `DisconnectXREAL` で復帰する。**カメラのトラッキング自体は
-  常時動作**(消すのは表示だけ)。iPhone表示中はビデオシースルーのため有効のまま
-
-**検証**: フルコンパイル0エラー / **E2E 83項目 全PASS**
-(パススルー4項目を追加。暫定床が -1.200 になることをログで確認)
-
-### 2026-09-02 (5) — 壁でアバターが消える不具合の修正(F-05 / §4.2)
-
-実機(屋内)で「垂直な壁の近くでアバターが消える」報告への対応。原因は3つ:
-
-1. **前方に地面が「見つからない」ことを断崖と誤判定していた**(主因)
-   ARKitの平面検出はまばらで、平坦な床でも3m先が未検出のことが普通にある。
-   それを断崖として停止させていたため、屋内では未検出域のたびにアバターが足踏みを始め、
-   ユーザーが追い越して視界から消えていた。**断崖は実測された落差でのみ判定**するよう変更
-2. **壁を床と誤認して跳ね上がる経路があった**
-   ARKitは垂直平面もコライダー付きで生成するため、真下へのレイが壁を拾うと
-   「最も高い地面」として採用され、アバターが壁の高さへ飛んでいた。
-   **上向きの面(法線·up ≥ 0.7)のみを地面として採用**するよう変更。ARプレーン側も同様
-3. **床のコライダーが障害物と誤判定され得た**
-   高さ1.5m以上という条件だけで判定していたため、大きな水平面も障害物になり得た。
-   **ほぼ垂直な面のみ**を壁とみなす。開始位置がコライダー内部で法線が零になるケースも除外
-
-**併せて**: 停止解除時にペーシングのアンカーを取り直すようにした。停止中はアンカーが
-更新されないため、置き去りにされたアバターが古い位置から復帰して視界に戻るのが遅かった
-
-**検証**: フルコンパイル0エラー / **E2E 79項目 全PASS**
-(停止中にユーザーが4m追い越す状況を作り、解除後にアバターが前方2.8mへ復帰することを追加検証)
-
-### 2026-09-02 (4) — HUDの所有者を表示面で切り替える(発表用にSwiftUIを前面へ)
-
-- HUDの所有者を**表示面ひとつで決める**方式にした。二重描画は依然として起こさない:
-  - **iPhone表示中** = SwiftUI側のHUD(手に持って正面から見る画面に適した意匠。発表向け)
-  - **グラス出力中** = UnityのF-07 HUD(周辺視野レイアウトはグラス用の設計)
-- Unity側は `StartSession` に追加した `hideUnityHud` で切り替える。**開始時に確定させる**ため
-  一瞬の二重表示が起きない。未送信(既定)ならUnityが描くので、エディタ・E2Eは従来どおり
-- Swift側は `ExternalDisplayManager.isGlassesConnected` を基準に所有者を決める。
-  グラス出力中は前コミットの操作面(経過時間の大表示+全幅の終了ボタン)を継続
-
-**検証**: フルコンパイル0エラー / Swift構文PASS / **E2E 77項目 全PASS**
-(所有権の3項目を追加: 未送信時はUnityが所有 / 非表示に切り替わる / 復帰する)
-### 2026-09-02 (4-b) — ARゴールライン (kyainnaブランチで並行開発)
-
-- 目標距離の残り25mで、白×シアンのチェック柄ゴールラインとゲートをAR空間へ表示
-- 純化済み進行方向と正規距離から終点を推定し、残り8mでワールド座標へ固定して視線揺れを抑制
-- ゴール到達時は2.5秒間表示を残し、自動終了・再走行・手動終了と同期
-- Prefabやシーン配線は不要（`GoalLineController`をBootstrapが実行時生成）
-
-### 2026-09-02 (3) — 二重HUDの解消とiPhoneの操作面化(監査M1)
-
-**二重HUDの解消**
-
-- SwiftUI側とUnity側(F-07)が**同じ統計を二重に描画**していた。グラス未接続時は
-  UnityのARビューがiPhoneに表示されるため、Unity製HUDとSwiftUI製HUDが同一画面に重なる
-- 実際にUnityが描画している間は統計をUnity側HUDに一本化し、SwiftUI側は出さない。
-  UnityFramework未リンク(シミュレータ/UI単体開発)のときだけ従来どおりSwiftUIが担当する
-
-**グラス出力中のiPhoneを操作面へ**
-
-- 走行中の端末は腕・ポケットにあり読めないため、統計を並べても意味がない。
-  グラス出力中は「経過時間の大表示 + 全幅の終了ボタン(高さ88pt)」に切り替える
-- 従来の終了ボタンは右上の42ptの丸で、走行中にグラスを着けたまま押すのは現実的でなかった。
-  グラス未接続時は従来のレイアウトのまま
-
-**検証**: Swift構文PASS / 波括弧の対応確認。C#は未変更のため
-E2E 74項目・ユニット70件は直前の結果(全PASS)がそのまま有効。
-
-### 2026-09-02 (2) — F-07 周辺視野レイアウトの是正 と 開始カウントダウンのAR表示
-
-**F-07 レイアウトがシーン上で設計書と一致していなかった**
-
-実配置を調べたところ、必須3項目がいずれも規定のゾーンに無かった:
-
-| 要素 | 実際の配置 | F-07の規定 |
-|---|---|---|
-| `Text_Time` | 右上 | 左上 |
-| `Text_Distance` | **左下** | 左上 |
-| `Text_Pace` | **右下** | 右上 |
-| Sync / Fatigue / Grade / Pitch | 右下に4段積み | 表示しない |
-| `Text_Notif` | 右下(`Text_Pitch`と**同座標で重なり**) | — |
-
-- 補助表示5件(心拍・ピッチ・シンクロ率・疲労・グレード)を非表示にし、中央を空けた。
-  **値の算出自体は継続**する(アバターのバイタル警告とリザルト集計が依存しているため)。
-  これらはリザルト画面に元から出ている
-- 残る3項目を規定ゾーンへ再配置。スプリット通知は重なりを避けて上部中央へ退避
-  (下部はF-10の警告専用ゾーンのため使わない)
-- **シーンを書き換えず実行時に適用**。`peripheralModeOnly` をOFFにすれば元の配置に戻り、
-  デバッグ時は全項目を見られる
-
-**開始カウントダウンのAR表示(新規 `CountdownDisplay.cs`)**
-
-- 音のカウントダウン(`RunAudioEngine.PlayStartSignal` — 0.6秒間隔のビープ3回+GO)は
-  既にあったが視覚表示が無かった。**ワールド空間の実体テキスト**(TextMeshPro 3D)として
-  ユーザー前方2.2mに出す。HUDオーバーレイではないため、グラス越しに
-  「その場に浮かんでいる」ように見える
-- 位置はカウント開始時に固定し向きだけ追従(頭に完全追従させると空間に置かれた感じが失われる)。
-  音と同じ0.6秒刻みで 3→2→1→GO。実行時生成でアセット・シーン配線とも不要。再走行にも対応
-
-**併せて修正: 装飾が初期化を道連れにしていた不具合**
-
-- 前コミットで追加した安全警告ラベルの生成中、`ApplyOutline` が TMP 内部の
-  `SetOutlineThickness` で `NullReferenceException` を投げ、**`Start()` が中断**していた。
-  結果、F-07レイアウト適用と `visualsEngine` の自動解決が丸ごと実行されていなかった
-- アウトラインは装飾であり初期化を止めてはならないため try/catch で握り、
-  併せて重要な初期化を装飾より前に並べ替えた(多重防御)
-- **E2Eが検出**: レイアウト系4項目がFAILし、ログのスタックトレースから原因を特定した
-
-**検証**: フルコンパイル0エラー / ユニット70件 / **E2E 74項目 全PASS・未処理例外0**
-
-### 2026-09-02 — F-07 現在ペース表示 と F-10 安全警告(実機初走行のフィードバック反映)
-
-初めて実機で走行できたことで判明した、**HUDが走行中のフィードバックになっていない**
-問題への対応。実機では屋内テスト中にGPSロストでアバターが消えたが、
-理由が何も表示されず不安だけが残る状態だった。
-
-**F-07 右上「現在ペース」(遅れ=赤 / 維持=緑)**
-
-- HUDは `Target 5:00/km` と**目標ペース(=自分で設定した定数)**を出しており、
-  走っている間ずっと何のフィードバックにもなっていなかった。設計書F-07が求めるのは
-  **現在**ペースと、その色分け(遅れ=赤・維持=緑)
-- `PaceHudDisplay.cs` 新規(Unity非依存の純ロジック): 速度→ペース換算・遅延判定
-  (目標比5%超の遅れで赤)・`M'SS"/km` 整形。ユニットテスト18件で境界と
-  桁上がり(4'60"にならないこと)を検証
-- ペース源は**実測優先**: Swiftが`UpdateMetrics`で送っていた`paceKmH`は
-  ブリッジで**破棄されていた**ため受け取って公開し(5秒で失効)、
-  無い場合はUnity側のカメラ移動量を時定数3秒で平滑化した速度へフォールバック
-- 停止中・実測なしは赤にせず中立色で `--'--"/km`
-
-**F-10 HUD下部の安全警告**
-
-- 設計書の文言そのまま「GPS信号を探索中：安全のため減速してください」を
-  **赤字でHUD下部へ表示**。従来は完全に未実装で、アバターが理由も分からず消えていた
-- 表示は**GPSロスト中かつ走行中のみ**。F-07の「下部=警告時のみ」に従い平常時は空
-- 実行時生成(シーン配線不要)。**首振り抑制のフェードとバッテリー点滅の色変更からは
-  意図的に除外** — 安全上の警告が横を向いた瞬間に薄くなったり黄色くなっては困るため
-
-**検証**: フルコンパイル0エラー / ユニット**70件**(PaceHudDisplay 18件を追加) /
-**E2E 67項目 全PASS**。E2Eは書式の変化だけでなく、走行中に実ペース値が出ること・
-目標維持中に緑判定になること・ロスト中に警告が出て復帰で消えることまで検証している
-
-### 2026-09-01 — コードベース監査の指摘対応(C1/C2/H2〜H6/M3)
-
-**C1 実機クラッシュの修正(最優先)**
-
-- `HealthKitWorkoutSaver` は毎回の`SessionEnded`で**書き込み**許可を要求するが、
-  `NSHealthUpdateUsageDescription` がビルド設定に存在しなかった。iOSはこのキー無しで
-  share許可を要求したプロセスを**強制終了する**ため、**走行を終えるたびに結果表示の直前で落ちていた**。
-  両ビルド構成へキーを追加(entitlementとコードは元から正しい)
-
-**C2 GPSロスト判定が実機で成立しない問題の修正**
-
-- Swiftの1Hzタイマーが `LocationTracker` の**キャッシュ済みfixを毎秒再送**しており、Unity側の
-  `ReportGpsUpdate` が呼ばれるたびに更新時刻をリセットしていた。このため設計書§8.1の
-  **「1.5秒途絶」判定が原理的に成立しない**状態だった。実際にGPSが切れると`didUpdateLocations`が
-  止まり精度値も最後の良好値のまま固まるので、10m判定も発火しない = **F-09/F-10が実機で完全に不動作**
-- `LocationTracker.latestFixDate`(CoreLocationの発行時刻)を追加し、**前回送信と異なるfixのときだけ**
-  測位3値を添付するよう変更。同一fixのときは`gpsAccuracy`を送らない(=無効)ため、Unityは
-  更新時刻を進めず、実際の途絶を正しく検知できる
-
-**M3 バックグラウンドでUnityへの供給が途切れる問題**
-
-- メトリクス送出を`LocationTracker.onNewFix`からも駆動。画面ロックでタイマーが止まっても
-  CoreLocationは動き続けるため、Unityへの供給とCSVのGPS列が途切れない
-
-**H2〜H4 捏造データの排除**
-
-- **心拍**: 未取得時の `Int.random(in: 138...152)` / `(138...148)` を全廃。実測が無ければ0=不明として
-  送り、HUDは "--" を表示する(従来は仮の心拍がUnityのバイタル警告判定にも流れていた)
-- **距離**: GPS未取得時の推定(`paceKmH/3600`)を**表示専用**に分離。Unityへ送るのは実測のみとし、
-  ゴール判定とHealthKitへ推定値が混入しないようにした。推定表示中はHUDに「推定」を出す
-- **経過時間**: タイマーの発火回数を数える方式(`elapsedSeconds += 1`)から**壁時計基準**へ変更。
-  バックグラウンドやタイマー合体で過少カウントし、Unity側(`_runStartUtc`)と食い違っていた
-
-**H5 F-11 CSVのIMU列を実測化**
-
-- iOSの`Input.gyro`はCoreMotionが実体なので、`Input.gyro.userAcceleration`を**100Hzで直接取得**し
-  m/s²へ換算して`imu_accel_x/y/z`へ供給。UnitySendMessageで毎秒100件のJSONを流す必要がなく、
-  Swift側の配線も不要。優先順位は Swift供給 > 端末IMU > カメラ速度差分の近似で、
-  供給元は`RunTelemetryLogger.ImuSource`から判別できる
-
-**H6 アバターが接地せず浮き上がる不具合の修正**
-
-- 実測フロア(コライダー/ARプレーン)が無い間、`GetCurrentGroundLevel`が
-  `userCamera.position.y - 1.5f` を**毎フレーム再計算**していたため、「床」が頭・端末の上下動に
-  追従してアバターが一緒に浮き上がっていた(走行開始前から発生)
-- `GroundFloorTracker.cs` 新規(Unity非依存の純ロジック): 床を**1回だけ確定して保持**し、実測が
-  来ればそちらを優先、実測が途切れても直前の床を維持する。ユニットテスト12件で
-  「カメラが動いても床が追従しない」ことを含めて検証
-- 併せて床の由来(`Measured`/`Provisional`)をログ出力。実測フロアを掴むまで描画を抑止する
-  `hideUntilMeasuredFloor` も追加(既定OFF — エディタ/E2Eには実測フロアが無いため)
-
-**E2Eのフレーク修正**
-
-- コーナー追従シナリオが`Time.deltaTime`(timeScale=3で増幅)をそのまま角度前進に使っており、
-  フレームヒッチ時にカメラが円弧を数mテレポートしていた。実走では起こらない入力でアンカー補間が
-  追随できず、**同一コードでPASS/FAILが揺れていた**(min lead 1.4m ⇔ 0.1m)。1歩相当(50ms)に制限
-
-**C3 iOSエクスポートが失敗し続けていた問題(追加検出)**
-
-- `Build → Export iOS` を実行したところ **`Microphone class is used but Microphone Usage Description is
-  empty in Player Settings.` で失敗**していた。`RunAudioEngine`が環境適応音響でマイクを使うため、
-  Unity側Player Settingsの使用目的文が必須(Swiftアプリの`INFOPLIST_KEY_*`とは別物)。
-  Microphone/Location/Bluetooth の3件を設定し、**エクスポート成功を確認**
-  (`ios/UnityExport/Unity-iPhone.xcodeproj` 生成)。`ios/UnityExport/`が空だった原因はこれ
-- **失敗が検知できなかった原因も修正**: エクスポート失敗時に`Debug.LogError`だけを出していたため
-  `-quit`が**終了コード0**を返しており、CIもシェルも失敗に気づけなかった。バッチモードでは
-  `EditorApplication.Exit(1)`を返すよう変更
-- 残るC3のMac作業(UnityFrameworkのEmbed & Sign / DataフォルダのTarget Membership)は未実施
-
-**ビルド手順の訂正(README §5)**
-
-- ②の初回手順に **`Data` フォルダの Target Membership 変更が抜けていた**(SWIFT_INTEGRATION.md ②-3 には
-  記載済み)。抜けたままだとリンクが通らないため追記
-- ①の前提条件(Unityバージョン・iOS Build Supportモジュール・**Player Settingsの使用目的文**・
-  `preloadedAssets`の確認)を明記。従来READMEには前提が一切書かれておらず、実際にこれが原因で
-  エクスポートが失敗し続けていた
-- ②に**Macの所有は必須でない**旨を追記(公開リポジトリのためGitHub ActionsのmacOSランナーが無料。
-  Windowsで①→CIで`xcodebuild`のみ、が最短)
-- ②未実施時に「動いているように見えるがUnityに繋がっていない」状態になることを警告として明記
-- ※E2Eの「終了コード 0=全PASS / 1=FAILあり」の記載は**実測で正しいことを確認**(失敗時 exit=1)
-
-**検証**: フルコンパイル0エラー / ユニット**52件**(GroundFloorTracker 12件を追加) /
-Swift構文PASS / **E2E 60項目を3回連続で全PASS**(コーナー判定は3回とも min 1.4m・max 1.8m で一致し、
-フレーク解消を確認)。C3(UnityFrameworkのEmbed & Sign)はMac作業のため未実施 — 完了するまで
-Swift側は`#if canImport(UnityFramework)`の偽実装で動作する点に注意
-
-### 2026-08-31 — ドキュメント同期: 未配線コンポーネントの記録＋ビルド/デプロイ手順の更新
-
-- **UI配線の棚卸しで、`SafetyAndSystemController` が実行時に一度も生成されないことを確認**（scene/prefab/asset のどこにもGUID `ee3904c3…` が無く、`ARVisionSystemsBootstrap` の `Ensure<>` にも `AddComponent` 呼び出しにも不在）。
-  TTC赤フラッシュ+警告音+振動・最小HUDパネル・低バッテリー退避が動作せず、`UnityBridge.swift` が購読する `LowBattery` イベントも唯一の送出元がここなので発火し得ない
-- HANDOVER.md が本機能の検証を「エディタ(Tキー)」と記載していたが**事実と異なる**ため「未配線 — 実行時に存在しない」へ訂正。README のショートカット表からもTキーを無効表記へ、スクリプト一覧・TTC数式節にも注記
-- 有効化を保留した理由を HANDOVER.md §5 / CLAUDE.md §差分8 に明記: (a) 障害物の検知ソースが無い（シーンにコライダーが1つも無く、地図/LiDAR連携も未接続） (b) **非検出時にTTCを`ttcScanRange`(8m)で計算する誤り**があり、前方に何も無くても閉速度 5.33m/s(19.2km/h) 超で警告が成立しループ警告音と振動が鳴り続ける。第1期スコープ(F-01〜F-11)外のため、この2点を解消し実機検証できるまで意図的に休眠のままとする
-**ビルド/デプロイ手順の追従**（実装に対して古くなっていた箇所を修正）
-
-- **ブリッジ契約の欠落を補完**（SWIFT_INTEGRATION.md / README §5）: §8.3で追加した `ResumeSession`・`DisconnectXREAL` の2コマンドが契約表に未記載だった（実装7種に対し表は5種）。`UpdateMetrics` も §8.1 で追加した `gpsLatitude`/`gpsLongitude`/`gpsAccuracy` が未記載だったため追記（`gpsAccuracy > 0` が有効サンプルの目印である点も明記）
-- **`LowBattery` イベントの実態を明記**: 送出元が未配線のため現在発火しないことを両ドキュメントに記載（Swift側の購読は将来の有効化に備え残置）
-- **F-11 CSVの取り出し手順を新設**（SWIFT_INTEGRATION.md ④）: PoCの成果物でありながら**実機からの回収方法がどこにも書かれていなかった**。出力先が `persistentDataPath/RunLogs/`（iOSではアプリコンテナの`Documents/`）であること、Xcode → Devices and Simulators → Download Container での取り出し手順、`Docs/field-tests/` への格納までを明文化。あわせて `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` を足せばMac無しで「ファイル」アプリから共有できる点を推奨事項として記載（未適用・要チーム判断）
-- **Unityバージョンをビルド手順に明記**: `6000.3.17f1`（ProjectVersion.txt・CIイメージと一致必須）とiOS Build Supportモジュール要件、エクスポート対象シーンのフォールバック仕様を追記
-- CSVの `imu_accel_*` 列が実機でもエディタ近似値である（CoreMotion配線が未実装）ことを取り出し手順の注意書きに明記
-
-- **コード変更なし**（ドキュメントのみ）。検証: ユニット40件 / フルコンパイル0エラー / E2E 55項目、いずれも変更前と同一で全PASS
-
-### 2026-07-14 — 音声警告＆優先度制御（企画書4.3）
-
-- `VoiceAlertSpeaker.swift` 新規: 「赤信号」「交差点」のみを音声警告対象とし、AVSpeechSynthesizer（ja-JP）で発話。**重複時はTTCが短い警告が発話中でも割込**（企画書4.3の優先度制御）。信号は長め振動を併用
-- Unity→Swiftの`VoiceAlert`イベント追加（`SwiftMessageSender.SendVoiceAlert`）。エディタ検証: `ARSessionManager`コンテキストメニュー「Simulate Voice Alert」（赤信号TTC2.5s→交差点TTC1.2s割込の優先度テスト）
-- 検知ソース（地図データ連携）は未接続 — HANDOVER未完了事項に記載。E2E 37項目全PASSで回帰確認
-
-### 2026-07-20 (4) — ARグラス切断時の緊急処理（§8.3）
-
-- **切断**: `DisconnectXREAL` → スタンバイ移行でアバターを消去。**走行セッションは終了させない**ため、F-11のCSVログ書き出しはバックグラウンドで継続（§8.3の「ログ書き出し等はBG継続」）
-- **Swift**: `ExternalDisplayManager`が外部ディスプレイ切断を検知して送信。走行画面は準備画面（デバイス接続）へ自動で戻る（接続実績がある場合のみ反応するので未接続環境では誤発火しない）
-- **再接続**: ランナーの安全のため**即座にはアバターを出現させない**。準備画面からの再スタート操作で`ResumeSession`が飛び、スタンバイ中の表示だけ復帰（新規セッションは開始せず記録は継続）
-- 併せて`GameStateController`のNormal遷移でアバターを再表示するよう修正（Standbyからの復帰経路が無かった）
-- 検証: Swift構文PASS + フルコンパイル0エラー + E2E 55項目（切断→Standby／ログ継続／再接続だけでは非復帰／ResumeSessionで復帰の4項目を追加）、全PASS
-
-### 2026-07-20 (3) — ペーシング・オーラエフェクト（§7.2）
-
-- **`AvatarAuraEffect.cs` 新規**: 目標より**5.0m以上遅れる**と、アバターの足元からランナー側へ**光のラインを地面に放射**。遅れが大きいほど**密度**（3→7本）と**流速**（3→9m/s）が上がり12mで最大 — 「前方を向いたまま周辺視野の光の流れで遅れ具合を掴む」という§7.2の意図をそのまま実装
-- 実行時生成のLineRenderer（ワールド空間・アバター非親）でアセット不要。走行中のみ点灯し、準備画面・終了後は自動消灯
-- 発動判定は `AuraFeedback.cs`（Unity非依存の純クラス）へ抽出しユニットテスト8件で閾値・強度カーブ・0除算ガードを検証
-- 検証: ユニット40件 + フルコンパイル0エラー + E2E 51項目（オンペース時に**誤発火しない**ことを追加）、全PASS
-
-### 2026-07-20 (2) — モーション閾値のkm/h基準化（§7.3）＋ **ロコモーション不動作の修正**
-
-- 閾値を設計書§7.3のkm/h基準へ換算: Idle=0 / Walk=0.0278（0.1km/h）/ Run=1.3889（5.0km/h）/ Sprint=4.1667（15km/h）m/s。歩行は`PlaybackSpeed`（既定1.0）で再生速度を同期（§7.3）
-- **既存バグを発見・修正（F-06が無効化されていた）**:
-  1. `new BlendTree()` を `AssetDatabase.AddObjectToAsset` で登録しておらず、保存時に破棄 → Locomotionの`m_Motion`が空（fileID:0）で **Idle/Walk/Runブレンドが一度も再生されていなかった**
-  2. `useAutomaticThresholds`（既定ON）が閾値を[0,1]へ均等再配置していた → 明示閾値が効かない
-  生成後の.controllerを実検査して両方を確認・修正（BlendTree 1件・閾値0/0.0278/1.3889/4.1667・GUID維持）
-- E2Eに「走行中PlaybackSpeed>0（ロコモーション凍結検知）」を追加。50項目全PASS
-
-### 2026-07-20 — F-09 GPSロスト自動判定（§8.1）＋ CSVログのGPS配線
-
-- **`GpsSignalMonitor.cs` 新規**: 設計書§8.1の異常検知条件を実装 — 位置情報の更新が**1.5秒以上途絶**、または**水平精度誤差10m以上**でGPSロストと判定しFSMを自動で慣性移動へ遷移。精度5m以内の新鮮なサンプルで通常追従へ自動復帰
-- **実測サンプル未受信時は完全に非介入**（エディタ単体走行・E2Eの既存G/R/Aキー検証は従来どおり）
-- Swift配線: `LocationTracker`が生サンプル（精度不良も含む）を保持し、`UpdateMetrics`に`gpsLatitude`/`gpsLongitude`/`gpsAccuracy`を追加。これによりF-11 CSVログのGPS列（§5.2）も実データで埋まるようになった
-- 検証: Swift構文PASS + フルコンパイル0エラー + E2E 49項目（良好3m→非ロスト／12m→ロスト遷移／3m→復帰の4項目を追加）、全PASS
-
-### 2026-07-19 — アバター ペースシンクロ・カラー（基本設計書§7.1）
-
-- 設計書§7.1のペースシンクロ色へ移行（旧シアン/琥珀/深青 → 緑/橙→赤/青）:
-  - **ジャスト**（目標リード±1.5m以内）= 緑（安定）
-  - **遅延**（アバターが前方へ離隔）= 橙→赤 グラデ（離れるほど赤）
-  - **超過**（ユーザーが追い抜き）= 青（過速）
-- 判定は進行方向への**符号付きリード距離**（`AvatarEngine.CurrentHeading`との内積）。バイタル警告（深青・第1期スコープ外）は優先オーバーライドとして温存
-- 判定ロジックは `AvatarPaceColor.cs`（Unity非依存の純クラス）へ抽出しユニットテスト9件で境界を精密検証。MonoBehaviourは色合成のみ担当
-- 検証: ユニット32件 + フルコンパイル0エラー + E2E 45項目（走行中の緑判定を追加）、全PASS
-
-### 2026-07-17 — F-11 100Hz テレメトリCSVログ（基本設計書§5.2・PoCの核）
-
-- **`RunTelemetryLogger.cs` 新規**: 走行中のセンサー生データと描画遅延を**100HzでローカルCSVへ出力**。`<persistentDataPath>/RunLogs/Log_YYYYMMDD_HHMMSS.csv`、列は§5.2準拠の9列（timestamp/gps_latitude/gps_longitude/imu_accel_x,y,z/avatar_pos_x,z/latency_m2p）。設計書が「実証実験の技術限界データ蓄積＝ソラド社への技術資産譲渡の基盤」と位置づける最優先機能
-- 実機ではSwift(CoreLocation/CoreMotion)から`SetGpsCoordinates`/`SetImuAcceleration`で供給（ブリッジ配線は次回）。エディタではIMUをカメラ速度差分で近似
-- **実CSVを検査して不具合を検出・修正**: 1フレームで複数行を書く際に書込時刻を使っており**タイムスタンプが重複**（100Hzサンプルとして§11.2のCSV遅延解析が不成立）→ サンプル時刻採番（開始epoch＋連番×10ms）へ修正。10ms刻み単調増加をE2Eで回帰防止
-- E2E 44項目全PASS（ログ開始・ヘッダー準拠・行数・タイムスタンプ間隔の4項目を追加）
-
-### 2026-07-14 (2) — 純ロジック抽出＆ユニットテスト導入
-
-- **`PaceMath.cs` 新規**（Unity非依存の静的クラス）: ペース解析（`TryParsePace`）とゴースト区間ペース算出（`SampleGhostPace`）をMonoBehaviourから抽出。`PaceCalibrationController`/`GhostPaceDriver`は薄いラッパーとして委譲、`PaceSample`も独立ファイル化
-- **`Tests/UnitTests/` 新規**: NUnitで純ロジックを`dotnet test`検証（**23ケース・26ms・Unity DLL参照ゼロ**）。E2E（数分・Unityバッチ）を補完し境界値を秒速で網羅、CI(Linux)でもそのまま動く
-- 検証: ユニット23件+フルコンパイル0エラー+E2E 40項目、すべてPASS。AGENTS.md検証ワークフローに追記
-
-### 2026-07-10 (9) — 60fps設定・透過率50%・ルート同期ギャップの記録
-
-- **60fps明示設定**（要件定義6.1）: iOSのUnityは既定30fpsのため、`Application.targetFrameRate=60`+vSync無効をBootstrapで設定（未設定だと実機M2Pが実質倍増）。E2Eで自動判定
-- **透過率50%**（企画書4.1）: アバター基準透過率を`GameStateController.AvatarBaseAlpha`に一元化し起動時から適用。GPS復帰時のアルファ復元も1.0→0.5に修正（マテリアルが透過モードであることが視覚反映の前提）
-- HANDOVER: MapRouteViewのルートがUnity逸脱判定へ未接続である統合ギャップを未完了事項に明記
-- E2E 37項目全PASS
-
-### 2026-07-10 (8) — フェイクシャドウ・ドラムロール入力
-
-- **フェイクシャドウ**（企画書4.1 コア・レンダリング）: `FakeShadowRenderer.cs` — アバター足元の半透明放射状ブロブ影（テクスチャ実行時生成）。子要素として接地・傾斜・消滅スケール・Standby非表示に自動追従。E2E 36項目で検証
-- **ドラムロール入力**（要件定義5.1）: RunningSettingsViewにホイールピッカー（4.0〜16.0km/h・0.5刻み、分'秒"/km併記）を追加し、±ボタン・直接入力と双方向同期 — ハイブリッド入力3方式が完成
-
-### 2026-07-10 (7) — プロシージャルジェスチャー(Mixamo不要で手招き・お辞儀・サインが動く)
-
-- `ProceduralGestureDriver.cs` 新規: ヒューマノイドボーンをLateUpdateでワールド空間回転し、**手招き**（右腕上げ+前腕1.6Hz振り）/**落ち着けサイン**（手のひら前+ゆっくり上下）/**お辞儀**（背骨+頭の前傾→復帰）を実モーションとして再生。Mixamoアセット不要、専用モーション導入後もフォールバックとして共存可
-- E2Eを35項目へ拡張: 3ジェスチャーの再生を自動判定（全PASS）
-
-### 2026-07-10 (6) — ジェスチャーAnimatorステート実装(手招き・挨拶・落ち着けサイン)
-
-- `Beckon`（離隔待機の手招き）/`Goodbye`（終了挨拶）/`CalmDownSign`（バイタル警告ハンドサイン）のトリガーがコントローラ側に存在せず**視覚的に無反応**だった問題を解消 — ジェネレータを10パラメータ・8ステートへ拡張し、コントローラを再生成（GUID維持でシーン参照無傷）
-- 各ステートのモーションはIdleのプレースホルダー。Mixamoの Waving / Bow / Hand Raising 系への差し替えポイントを`AvatarStateTransitions.md`に明記
-- E2E 32項目全PASSで回帰確認
-
-### 2026-07-10 (5) — iOSビルドブロッカー解消: カルマン実体・HealthKit書き込み
-
-- **C++カルマンフィルタのネイティブ実体**を追加(`Assets/Plugins/iOS/KalmanFilterNative.mm`) — `AvatarEngine`の`DllImport("__Internal")`が要求するシンボルで、**これが無いとiOSビルドはリンクエラーで失敗**する必須部品。3軸スカラーKF(Q=0.05/R=0.8)+線形トレンド外挿(lteWeight)
-- **HealthKit書き込みを実装**(`HealthKitWorkoutSaver.swift`) — SessionEnded受信時にHKWorkout(ランニング・距離・カロリー)を保存。権限拒否/シミュレータでは静かにスキップ(JSON一次記録はUnity側で完了済み)。`SessionDataStore`のTODOスタブを解消
-
-### 2026-07-10 (4) — ARグラス出力(SDK不要)・E2E 32項目・CI・実地テスト計画
-
-- **ARグラスへの外部ディスプレイ出力**: XREAL OneはUSB-C外部ディスプレイとして振る舞うため、`ExternalDisplayManager.swift`(UIWindowScene)でNRSDKなしに「グラスにARビュー・iPhoneに操作パネル」を実現。接続検知はデバイス接続画面とUnityのReadyチェックに自動反映
-- **E2Eを32項目へ拡張**(全PASS): 追い抜きリアクション(高速ユーザー→反応→通常復帰)/HUD自動抑制(首振り→フェード→復帰)を追加。コーナー先行距離の下限をアンカーラグの実態(定常≒1.5m)に合わせ0.7mへ調整
-- **CIスキャフォールド**: `.github/workflows/e2e.yml`(手動トリガー)。`UNITY_LICENSE`シークレット設定でヘッドレスE2EがActions上で実行可能
-- **実地テスト計画書**: [`Docs/FIELD_TEST_PLAN.md`](Docs/FIELD_TEST_PLAN.md) — 企画書§6成功基準の実地計測手順(T1〜T9)・記録テンプレ・中断基準
-
-### 2026-07-10 (3) — E2Eを28項目へ拡張・ルート復帰の不在を検出/修正
-
-- E2Eに4シナリオ追加: **バイタル警告**（HR195→深青）/**障害物停止・再開**/**ルート逸脱→サイレント復帰+ログ**/**離隔待機**（壁停止中にユーザーが10m離れる→手招き→7mで再開）— 28項目全PASS
-- **検出**: `SilentRouteRecoverer`がシーン未配置で逸脱復帰機能が実行時に丸ごと不在だった → Bootstrapがアバターへ自動装着+参照自動解決
-- 検証用API追加: `GroundSnap.SimulateObstacle` / `SilentRouteRecoverer.SimulateDeviation`（C/Dキーと同一経路）
-- 知見: 通常追従はユーザー+3mアンカーのため、10m離隔は「アバター停止中にユーザーが離れる」場合に発生（E2Eシナリオも実運用形に）
-
-### 2026-07-10 (2) — コーナー追従E2E・引き継ぎドキュメント
-
-- **コーナー追従テスト**（企画書§6 成功基準①）: 400mトラック曲線部（半径36.5m）を1/4周するシナリオをE2Eに追加。結果: 先行距離1.0〜2.4mで安定・ワープなし（最大0.13m/フレーム）・**接線方位誤差6°** — 20項目全PASS
-- [`HANDOVER.md`](HANDOVER.md) 新規: 企画書要件→実装→検証状態の対応表、成功基準の達成状況、未完了事項（要件定義9.3のDoD「GitHubでのドキュメント整備」に対応）
-
-### 2026-07-10 — E2E自動検証の導入・実測距離の鮮度フォールバック
-
-- **E2Eシナリオランナー**（`E2EScenarioRunner` / `E2EScenarioBehaviour`）: 開始→走行→ゴール自動終了→記録保存→ゴースト再走→GPS喪失/復帰→履歴取得を Play Mode で自動実行・判定。バッチモード対応（終了コードでCI組込可）。**初回実行で17項目中15PASS、検出した2件を修正して全PASS**
-- 修正1（実バグ）: Swift報告距離が途絶えた場合、古い値が記録・ゴーストタイムラインに固まる問題 → 5秒の鮮度チェックでUnity計測へ自動フォールバック
-- 修正2（検証側）: Reaccumulation遷移が精度ゲートをリセットする仕様への追従
-
-### 2026-07-09 (6) — GPS復帰演出・HUD高コントラスト・バックグラウンド走行
-
-- **GPS復帰の実粒子演出**（要件定義6.2）: Reaccumulation時に光の粒子集積（1.5秒）を実際に再生（従来はログのみ）→ 頷きで復帰確認
-- **HUD 1pxアウトライン**（企画書§2 アダプティブ表示）: 全HUDテキストに黒アウトラインで高コントラスト確保
-- **スプリット通知の拡大演出**（企画書§2 ダイナミック・フィードバック）: 0.7→1.15→1.0倍のオーバーシュート
-- **バックグラウンド走行**: `UIBackgroundModes: location`（部分Info.plistマージ）+ LocationTrackerの背景更新で画面ロック中も距離計測継続
-
-### 2026-07-09 (5) — ゴースト機能（企画書§3）
-
-- 走行中に5秒毎の距離サンプル（`paceTimeline`）をセッションへ記録
-- 履歴画面の「この記録と競走（ゴースト）」→ 過去の自分の速度プロファイルでアバターが走る（`GhostPaceDriver.cs`）
-- 旧データ（タイムライン無し）は平均ペースで代替、走行画面は「ゴースト競走中」表示
-- エディタ検証: `ARSessionManager` コンテキストメニュー「Simulate Ghost Run」
-
-### 2026-07-09 (4) — VFX演出（企画書4.1）
-
-- **起動時の粒子集積**: 球殻から粒子が中心へ収束しつつアバターがスケールイン
-- **終了時の挨拶と消滅**: `Goodbye`トリガー（お辞儀/手振り）→1.5秒後に粒子拡散とともに消滅。再走行で自動復元
-- **接地サイバーパルス**: 足音（`RunAudioEngine.FootstepOccurred`）に同期して地面にシアンの拡張リング
-- すべて実行時生成（`AvatarVFXController.cs`、Bootstrapがアバターへ自動装着）
-
-### 2026-07-09 (3) — 自律アクション・実測センサー・再走行対応
-
-- **離隔待機**（企画書4.1）: ユーザーが10m以上遅れるとアバターが座標固定＋対面＋`Beckon`（手招き）、7mまで戻ると走行再開（`AvatarEngine`）
-- **HUD自動抑制**（企画書2）: 首を素早く振る（横を向く）とHUDを自動フェード、正面復帰で戻る（`PeripheralHUDManager`）
-- **TTC警告時のスマホ振動**（企画書3 マルチモーダル通知）
-- **実測センサー**: CoreLocation距離/速度（`LocationTracker.swift`）・HealthKit心拍（`HeartRateMonitor.swift`）・実測M2Pレイテンシ（`LatencyBenchmarkRunner`連続計測）。未取得時は自動フォールバック
-- **再走行対応**: 走行→終了→再走行を同一起動内でサポート（全コンポーネントに`ResetSession`）
-- **履歴の実データ化**: `RequestHistory`/`HistoryData`でUnityのJSON DB→Swift HistoryViewへ
-- **目標距離ゴール判定**: 到達でUnityから自動終了→SwiftはGOAL演出→統計へ
-- 権限整備: カメラ/位置情報/モーション/Bluetooth/ヘルスケアのINFOPLIST_KEY＋HealthKit entitlements
-
-### 2026-07-09 (2) — モノレポ化（SwiftUIアプリを ios/ に統合）
-
-- [kyainna/AR-runner](https://github.com/kyainna/AR-runner) のSwiftUIアプリを `ios/AR_Runner_UI/` に取り込み
-- `ios/ARRunner.xcworkspace` 新設 — AR_Runner_UI と Unityエクスポート産物を1ワークスペースで管理
-- `UnityLauncher.swift` 新規 — UnityFramework起動（runEmbedded）+ SwiftUI用 `UnityContainerView`
-- `UnityBridge.swift` を本番配線版に置き換え（`Docs/Swift/` は廃止しアプリ内へ移動）
-- Unityメニュー **Build → Export iOS (ios/UnityExport)** 追加（`Assets/Editor/IOSBuildExporter.cs`）
-- `.gitignore` に `ios/UnityExport/`（生成物）・xcuserdata を追加
-
-### 2026-07-09 — 資料ベース機能実装・接地バグ修正・Swift連携
-
-**企画書・要件定義書ベースの新機能**（詳細は各スクリプト参照）
-
-| 機能 | 実装 |
-|---|---|
-| サウンドシステム（足音・心拍連動呼吸音・カウントダウン/ゴール音・45dB環境適応音響） | `RunAudioEngine.cs`（全クリップ実行時手続き生成・アセット不要） |
-| バイタル警告（心拍185BPM以上で深青＋CalmDownSignトリガー） | `AvatarVisualsAndActions.cs` |
-| 走行終了フロー・リザルト（Perfect〜Try Again 4段階＋S〜D＋アバターコメント生成） | `RunSessionController.cs`（HOLD TO FINISH 1.5秒長押し） |
-| セーフティ・ロギング（急停止・速度超過・逸脱地点） | `SafetyEventLogger.cs` |
-| デュアル・データ保存（アプリ内JSON DB＋HealthKit同期キュー） | `SessionDataStore.cs` |
-| Readyチェック（4デバイス4色インジケーター・出走ゲート） | `ReadyCheckController.cs` |
-| オンボーディング（身長・体重・性別）＋ハイブリッド入力（±5秒ボタン）＋ガードレイヤー・スリープ制御 | `PaceCalibrationController.cs` / `UserProfile.cs` |
-| バッテリー10%以下のHUD黄色点滅 | `PeripheralHUDManager.cs` |
-
-**接地バグ修正（アバターが地面の上を正しく走れない問題）**
-
-原因は3つの配線ミスの複合:
-1. シーンに孤立した2つ目のAvatarEngine（カメラ参照null）が存在し、GroundSnapがそれを参照 → 削除・再接続
-2. Animator参照がコンテナ上の無効化されたAnimatorを指し、表示中のY Bot（子の有効Animator）に`Speed`が届かずIdleのまま滑走 → `AvatarRigLocator.cs`で「有効・アクティブ・コントローラ付き」Animatorを優先解決
-3. AvatarModelSwitcherのモデル参照が2つともUIアイコンを誤指定 → 無効参照を検出し実モデルを自動配線
-
-あわせて接地レイキャストにトリガーコライダー無視を追加、`IsSessionEnded`フラグ新設（GroundSnapの`IsHalted`毎フレーム上書きと終了停止の競合を解消）。
-
-**Swift UI連携** — 上記セクション5参照。
-
----
-
 ## 関連ドキュメント
 
-- [`AGENTS.md`](AGENTS.md) — エージェント向け技術仕様（数式・FSM・レイテンシ予算）
+- [`AGENTS.md`](AGENTS.md) — 技術仕様（数式・FSM・レイテンシ予算・検証手順・不変条件）
+- [`CHANGELOG.md`](CHANGELOG.md) — 更新履歴
+- [`Docs/PRESENTATION.md`](Docs/PRESENTATION.md) — 発表資料に使えそうなネタ
 - [`Assets/AvatarStateTransitions.md`](Assets/AvatarStateTransitions.md) — Animator状態遷移ガイド
 - [`SWIFT_INTEGRATION.md`](SWIFT_INTEGRATION.md) — Swift UI（AR-runner）連携ガイド
 - [`Docs/UNITY_AS_A_LIBRARY.md`](Docs/UNITY_AS_A_LIBRARY.md) / [`.ja`](Docs/UNITY_AS_A_LIBRARY.ja.md) — **UaaL汎用ガイド（英/日）**: SwiftUIアプリへUnityを組み込む手順と落とし穴

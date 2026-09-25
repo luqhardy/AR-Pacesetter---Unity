@@ -118,10 +118,7 @@ public class GameStateController : MonoBehaviour
                 return;
             }
         }
-        // Use reflection to call the private method for simulation only
-        var method = typeof(AvatarEngine).GetMethod("EnterBeingOvertakenState",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        method?.Invoke(avatarEngine, null);
+        avatarEngine.SimulateBeingOvertaken();
     }
 
     private void SimulateAvatarOvertaking()
@@ -131,9 +128,7 @@ public class GameStateController : MonoBehaviour
             avatarEngine = FindObjectOfType<AvatarEngine>();
             if (avatarEngine == null) return;
         }
-        var method = typeof(AvatarEngine).GetMethod("EnterOvertakingState",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        method?.Invoke(avatarEngine, null);
+        avatarEngine.SimulateOvertaking();
     }
 
     // ── Transition dispatcher ────────────────────────────────────────────────
