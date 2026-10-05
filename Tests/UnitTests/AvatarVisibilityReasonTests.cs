@@ -38,6 +38,21 @@ public class AvatarVisibilityReasonTests
     }
 
     [Test]
+    public void グラス切断のスタンバイをGPSロストと報告しない()
+    {
+        // 以前は Standby をすべてGPSロスト扱いにし、グラスを抜いただけで
+        // 「GPSロスト」のバナーが出ていた
+        var i = Healthy();
+        i.GameObjectActive = false;
+        i.FsmState = "Standby";
+        i.GlassDisconnected = true;
+
+        Assert.IsFalse(AvatarVisibilityReason.Resolve(i, out string reason));
+        StringAssert.Contains("グラス切断", reason);
+        StringAssert.DoesNotContain("GPSロスト", reason);
+    }
+
+    [Test]
     public void FSMがNormalなのに無効なら外部要因として報告する()
     {
         var i = Healthy();

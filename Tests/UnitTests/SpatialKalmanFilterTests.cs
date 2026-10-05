@@ -100,6 +100,51 @@ public class SpatialKalmanFilterTests
     }
 
     [Test]
+    public void 観測の途絶後に再開すると古い推定が大きく遅れる_だから再開時はリセットする()
+    {
+        // GPSロストの慣性移動(5秒)の間、AvatarEngine は平滑器へ観測を送らない。
+        // そのまま再開すると最初の出力は真値から大きく遅れ、アバターが後ろへ引き戻される
+        // (3.33m/s・5秒で約13m)。AvatarEngine は再開時に ResyncPacingAnchor で Reset する
+        var f = new SpatialKalmanFilter();
+        float z = 0f;
+        for (int i = 0; i < 600; i++) { z += 3.33f * Dt; f.Update(z, 0f, 0f, Dt, out _, out _, out _); }
+        z += 3.33f * 5f;
+        z += 3.33f * Dt;
+        f.Update(z, 0f, 0f, Dt, out float stale, out _, out _);
+        Assert.Less(stale - z, -10f, "古い推定のまま再開すると10m以上後方に出る");
+
+        f.Reset();
+        f.Update(z, 0f, 0f, Dt, out float fresh, out _, out _);
+        Assert.AreEqual(z, fresh, 1e-4f);
+    }
+
+    [Test]
+    public void 予測は観測なしで速度ぶん進み_未初期化なら何もしない()
+    {
+        var f = new SpatialKalmanFilter();
+        Assert.IsFalse(f.Predict(Dt, out _, out _, out _), "未初期化では予測できない");
+
+        float z = 0f;
+        for (int i = 0; i < 300; i++) { z += 3f * Dt; f.Update(z, 0f, 0f, Dt, out _, out _, out _); }
+        f.Update(z, 0f, 0f, Dt, out float last, out _, out _);
+
+        Assert.IsTrue(f.Predict(0.1f, out float predicted, out _, out _));
+        Assert.AreEqual(last + 3f * 0.1f, predicted, 0.05f, "推定速度(約3m/s)で外挿される");
+    }
+
+    [Test]
+    public void 予測は上限時間までしか外挿しない()
+    {
+        var f = new SpatialKalmanFilter();
+        float z = 0f;
+        for (int i = 0; i < 300; i++) { z += 3f * Dt; f.Update(z, 0f, 0f, Dt, out _, out _, out _); }
+        f.Update(z, 0f, 0f, Dt, out float last, out _, out _);
+
+        f.Predict(5f, out float predicted, out _, out _);
+        Assert.AreEqual(last + 3f * SpatialKalmanFilter.MaxPredictionSeconds, predicted, 0.1f);
+    }
+
+    [Test]
     public void 壊れた観測は無視して前の推定を返す()
     {
         var f = new SpatialKalmanFilter();

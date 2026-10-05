@@ -189,15 +189,16 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 
 | event | フィールド | 送信タイミング |
 |---|---|---|
+| `UnityReady` | — | 起動後、受信ブリッジ(`ARSessionManager`/`DeviceManager`)が揃った時点で1回。**Swiftはこれを受けるまでコマンドを溜め、受信後に順に送る**(Unity起動前の `StartSession`・`ConnectXREAL` が消えないように)。`UpdateMetrics`/`UpdateGlassPose` は溜めずに捨て、グラスの接続/切断は最新1件のみ。届かない古いエクスポートでも起動3秒後に送り出す |
 | `SyncRateUpdated` | `value` (int 0-100) | 走行中 1Hz |
 | `AvatarStateChanged` | `state` = Idle/Run/Slow/Fast/Goal/Lost | 状態変化時 |
-| `GPSLost` / `GPSRecovered` | — | GPS FSM遷移時 |
+| `GPSLost` / `GPSRecovered` | — | GPS FSM遷移時(慣性移動・フェード・GPS起因のスタンバイ)。グラス切断のスタンバイでは送らない |
 | `VrmImportResult` | `accepted`, `name`, `report`(実測値つき説明), `reason`(断った理由) | 取り込み/選択の結果。**断った理由を必ず持つ** — VRChat向けアバターは三角形数の上限に掛かることが多く、「失敗しました」だけでは利用者が直しようがない |
 | `VrmAvatarList` | `current`, `avatars`: `{name, path}` の配列 | 選べるアバターの一覧 |
 | `Diagnostics` | `rows`: `{key, value}` の配列(表示順を保つ) | 開発者モードの要求時のみ |
 | `LogFiles` | `directory`, `files`: `{name, path, bytes, modifiedIso}` の配列 | 開発者モードの要求時のみ |
 | `LatencyReport` | `ms` (double), `maxMs`・`overBudgetRatio`・`sampleCount`(実測サンプルがある時のみ) | 走行中 1Hz。**F-11のCSV `latency_m2p` と同じ `SensorTimingBridge` の実測値**(ARKitフレームのセンサー時刻と `CADisplayLink.targetTimestamp` の差)。`ms = -1` は未計測で、合成値は一切入らない。`maxMs`/`overBudgetRatio` は1Hzの瞬時値では拾えない超過を捉えるための区間統計 |
-| `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答 |
+| `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答(目標距離の自動終了を含む)。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
 | `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
 | `LowBattery` | — | **現在発火しない** — 唯一の送出元 `SafetyAndSystemController` が実行時に生成されないため(HANDOVER.md §5)。Swift側の購読は将来の有効化に備えて残置。※HUDのバッテリー黄色点滅(`PeripheralHUDManager`)は別実装で正常動作 |
 | `VoiceAlert` | `kind`("Signal"/"Intersection"), `ttc` | 音声警告要求 → Swift側`VoiceAlertSpeaker`がAVSpeechSynthesizerで発話。重複時はTTCが短い方が割込(企画書4.3)。信号は長め振動併用 |

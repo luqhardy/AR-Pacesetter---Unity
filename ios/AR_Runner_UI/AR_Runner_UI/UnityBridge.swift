@@ -155,6 +155,19 @@ final class UnityBridge: NSObject, ObservableObject {
         }
     }
 
+    // MARK: Unity起動前のコマンド
+    /// Unityの受信ブリッジ("ARSessionManager" / "DeviceManager")が揃ったか。
+    /// Unityが `UnityReady` を送ってくるまでは false。
+    ///
+    /// Unityは走行画面で初めて起動する(`UnityLauncher.prepare()` は起動を次のRunLoopへ遅らせる)。
+    /// 一方 `StartSession` はその直後、`ConnectXREAL` はグラスを挿した時点(ホーム画面など)で
+    /// 送られるため、**受け手のGameObjectがまだ無く、以前は届かずに消えていた** —
+    /// 初回の走行が始まらない、グラスへ出してもパススルー映像が消えず画角プロファイルも
+    /// 切り替わらない、の原因になる。届くまで溜めて、`UnityReady` で順に送る。
+    private(set) var isUnityReady = false
+    private var pendingCommands: [(object: String, method: String, command: String, json: String)] = []
+    private let maxPendingCommands = 32
+
     // MARK: Init
     private override init() {
         super.init()
@@ -335,6 +348,8 @@ final class UnityBridge: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             switch event {
+            case "UnityReady":
+                self.flushPendingCommands()
             case "SyncRateUpdated":
                 self.avatarSyncRate = dict["value"] as? Int ?? 0
             case "AvatarStateChanged":
@@ -440,12 +455,62 @@ final class UnityBridge: NSObject, ObservableObject {
 
 #if canImport(UnityFramework)
         // Production: Unity as a Library
+        guard isUnityReady else {
+            enqueueUntilReady(object: object, method: method,
+                              command: payload["command"] as? String ?? "", json: json)
+            return
+        }
         UnityFramework.getInstance()?.sendMessageToGO(
             withName: object, functionName: method, message: json)
 #else
         // Development / simulator fallback (UnityFramework not linked)
         print("[UnityBridge → Unity] \(object).\(method)(\(json))")
         simulateUnityResponse(event: payload["command"] as? String ?? "")
+#endif
+    }
+
+    /// Unity起動前のコマンドを溜める。
+    /// - 測位・頭部姿勢の連続ストリーム(UpdateMetrics / UpdateGlassPose)は溜めない。
+    ///   古い測位をまとめて流すと、Unity側はそれを「今届いた新鮮な測位」として扱ってしまう
+    /// - グラスの接続/切断は状態なので最新の1件だけ残す
+    private func enqueueUntilReady(object: String, method: String, command: String, json: String) {
+        switch command {
+        case "UpdateMetrics", "UpdateGlassPose":
+            return
+        case "ConnectXREAL", "DisconnectXREAL":
+            pendingCommands.removeAll { $0.command == "ConnectXREAL" || $0.command == "DisconnectXREAL" }
+        default:
+            break
+        }
+        if pendingCommands.count >= maxPendingCommands {
+            print("[UnityBridge] Unity起動待ちのコマンドが上限(\(maxPendingCommands))に達したため古いものを捨てます")
+            pendingCommands.removeFirst()
+        }
+        pendingCommands.append((object, method, command, json))
+    }
+
+    /// Unity起動後の保険。`UnityReady` を送らない古いUnityエクスポートでビルドされた場合でも、
+    /// 溜めたコマンドが永久に送られない(=走行が始まらない)ことにはしない。
+    /// `UnityLauncher.launch()` が起動完了後に呼ぶ。
+    func flushIfReadySignalMissing() {
+        guard !isUnityReady else { return }
+        print("[UnityBridge] UnityReady が届かないまま起動から時間が経過 — 古いエクスポートの可能性。溜めたコマンドを送ります")
+        flushPendingCommands()
+    }
+
+    /// `UnityReady` 受信時: 溜めたコマンドを送った順に流し、以後は直接送る。
+    private func flushPendingCommands() {
+        isUnityReady = true
+#if canImport(UnityFramework)
+        let queued = pendingCommands
+        pendingCommands.removeAll()
+        if !queued.isEmpty {
+            print("[UnityBridge] Unity準備完了 — 起動待ちのコマンド \(queued.count) 件を送信")
+        }
+        for c in queued {
+            UnityFramework.getInstance()?.sendMessageToGO(
+                withName: c.object, functionName: c.method, message: c.json)
+        }
 #endif
     }
 

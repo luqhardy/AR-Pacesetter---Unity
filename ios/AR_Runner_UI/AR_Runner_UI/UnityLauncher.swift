@@ -114,6 +114,12 @@ final class UnityLauncher: ObservableObject {
 
         ufw = framework
         isRunning = true
+
+        // 通常はUnityが最初のシーンを読み込んだ時点で UnityReady を送り、UnityBridge が
+        // 起動待ちのコマンドを流す。届かない場合(古いエクスポート)の保険
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            UnityBridge.shared.flushIfReadySignalMissing()
+        }
     }
 
     /// 走行画面より前の画面で Unity を先に温めておく（初回のコストを前倒しする）。

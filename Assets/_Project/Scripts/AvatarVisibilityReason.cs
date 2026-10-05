@@ -34,6 +34,8 @@ public static class AvatarVisibilityReason
         public float HorizontalAngleDegrees;
         /// <summary>検出平面によるアバター遮蔽が有効か。</summary>
         public bool PlaneOcclusionEnabled;
+        /// <summary>スタンバイの原因がグラス切断か(GPSロストと取り違えないため)。</summary>
+        public bool GlassDisconnected;
     }
 
     /// <summary>これより遠いと「遠すぎる」を理由に出す(m)。通常追従は3.0m。</summary>
@@ -47,7 +49,9 @@ public static class AvatarVisibilityReason
     {
         if (!i.GameObjectActive)
         {
-            reason = IsGpsLostState(i.FsmState)
+            reason = i.GlassDisconnected
+                ? "グラス切断のスタンバイ(§8.3) — 準備画面からの再スタートで復帰"
+                : IsGpsLostState(i.FsmState)
                 ? $"GPSロスト: FSM={i.FsmState} でアバターを無効化(F-10 フェードアウト後のスタンバイ)"
                 : "アバターのGameObjectが無効(グラス切断のスタンバイ or 外部からのSetActive(false))";
             return false;

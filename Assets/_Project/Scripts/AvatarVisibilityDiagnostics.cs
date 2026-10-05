@@ -57,6 +57,8 @@ public class AvatarVisibilityDiagnostics : MonoBehaviour
             WaitingForUser       = avatarEngine.IsWaitingForUser,
             OverriddenByRecovery = avatarEngine.IsOverriddenByRecovery,
             PlaneOcclusionEnabled = planeOcclusion != null && planeOcclusion.OccludeAvatarBehindPlanes,
+            GlassDisconnected    = stateController != null
+                && stateController.CurrentStandbyCause == GameStateController.StandbyCause.GlassDisconnected,
         };
         FillCameraRelation(ref inputs);
 

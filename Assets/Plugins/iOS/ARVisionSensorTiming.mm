@@ -17,10 +17,25 @@
 //   CACurrentMediaTime() はすべて mach_absolute_time 由来の同一時間軸(秒)。
 //   この前提が崩れると M2P の引き算が無意味になるため、混ぜないこと。
 
+//
+// ■ どの画面の提示時刻か
+//   提示予定時刻は **Unityの描画ビューが今載っている画面** の CADisplayLink から取る。
+//   以前は [CADisplayLink displayLinkWithTarget:] で常に iPhone 本体の画面に結び付けており、
+//   グラス(外部ディスプレイ)へ出している間も iPhone の vsync を測っていた —
+//   §10 の「グラスでの M2P 20ms」の評価対象を取り違える。グラスの抜き挿しでビューが
+//   移ると、約0.5秒以内に新しい画面へ結び直す(結び直しの直後は未計測 = -1)。
+
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <CoreMotion/CoreMotion.h>
 #import <os/lock.h>
+
+// Unity の描画ビュー(Classes/Unity/UnityInterface.h と同じ宣言)
+extern "C" UIView* UnityGetGLView(void);
+
+// 出力画面が変わっていないかを確かめる間隔(displayLinkのtick数。60Hzで約0.5秒)
+static const int kScreenCheckIntervalTicks = 30;
 
 static const int kImuRingCapacity = 512; // 100Hz なら約5秒ぶん。フレーム落ちに耐える
 
@@ -35,6 +50,8 @@ static const int kImuRingCapacity = 512; // 100Hz なら約5秒ぶん。フレ�
 
 @implementation ARVSensorTiming {
     CADisplayLink   *_displayLink;
+    __weak UIScreen *_linkScreen;      // _displayLink を結び付けた画面
+    int              _ticksSinceScreenCheck;
     CMMotionManager *_motion;
     NSOperationQueue *_motionQueue;
 
@@ -79,10 +96,7 @@ static const int kImuRingCapacity = 512; // 100Hz なら約5秒ぶん。フレ�
     // ── 提示予定時刻 ──────────────────────────────────────────────────
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self->_displayLink != nil) return;
-        self->_displayLink = [CADisplayLink displayLinkWithTarget:self
-                                                        selector:@selector(onDisplayTick:)];
-        [self->_displayLink addToRunLoop:[NSRunLoop mainRunLoop]
-                                 forMode:NSRunLoopCommonModes];
+        [self attachDisplayLinkToScreen:[self unityOutputScreen]];
     });
 
     // ── 100Hz IMU ────────────────────────────────────────────────────
@@ -118,6 +132,7 @@ static const int kImuRingCapacity = 512; // 100Hz なら約5秒ぶん。フレ�
             [self->_displayLink invalidate];
             self->_displayLink = nil;
         }
+        self->_linkScreen = nil;
     });
 
     if (_motion != nil && _motion.isDeviceMotionActive) {
@@ -125,9 +140,45 @@ static const int kImuRingCapacity = 512; // 100Hz なら約5秒ぶん。フレ�
     }
 }
 
+// Unity の描画ビューが今載っている画面。グラス接続中は外部ディスプレイ。取れなければ nil。
+// メインスレッドから呼ぶこと。
+- (UIScreen *)unityOutputScreen {
+    UIView *view = UnityGetGLView();
+    if (view == nil || view.window == nil) return nil;
+    return view.window.windowScene.screen;
+}
+
+// 指定した画面の vsync で回る displayLink を張り直す(nil なら本体の画面)。メインスレッド専用。
+- (void)attachDisplayLinkToScreen:(UIScreen *)screen {
+    if (_displayLink != nil) {
+        [_displayLink invalidate];
+        _displayLink = nil;
+    }
+    _displayLink = (screen != nil)
+        ? [screen displayLinkWithTarget:self selector:@selector(onDisplayTick:)]
+        : [CADisplayLink displayLinkWithTarget:self selector:@selector(onDisplayTick:)];
+    [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    _linkScreen = screen;
+    _ticksSinceScreenCheck = 0;
+    _targetTimestamp = 0.0; // 前の画面の提示時刻を新しい画面の値として使わない
+}
+
 - (void)onDisplayTick:(CADisplayLink *)link {
     // targetTimestamp = このフレームが表示される予定の時刻
     _targetTimestamp = link.targetTimestamp;
+
+    // グラスの抜き挿しで Unity のビューが別の画面へ移ったら結び直す。
+    // 自分のコールバック中に自分を無効化しないよう、次のRunLoopで行う
+    if (++_ticksSinceScreenCheck < kScreenCheckIntervalTicks) return;
+    _ticksSinceScreenCheck = 0;
+
+    UIScreen *current = [self unityOutputScreen];
+    if (current != nil && current != _linkScreen) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!self->_running || self->_displayLink == nil) return;
+            [self attachDisplayLinkToScreen:current];
+        });
+    }
 }
 
 - (double)targetTimestamp {

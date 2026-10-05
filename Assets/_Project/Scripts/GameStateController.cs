@@ -32,6 +32,16 @@ public class GameStateController : MonoBehaviour
     /// <summary>現在のスタンバイの原因。Standby以外では <see cref="StandbyCause.None"/>。</summary>
     public StandbyCause CurrentStandbyCause { get; private set; } = StandbyCause.None;
 
+    /// <summary>
+    /// GPSロスト由来の状態か(慣性移動・フェードアウト・GPS起因のスタンバイ)。
+    /// Swiftへの GPSLost 通知・HUDのF-10警告はこれを見る。グラス切断や低バッテリーの
+    /// スタンバイを「GPS喪失」と報告しないため、Standby は原因で区別する
+    /// </summary>
+    public bool IsGpsLossState =>
+        currentState == ARVisionState.InertialMovement
+        || currentState == ARVisionState.FadeOut
+        || (currentState == ARVisionState.Standby && CurrentStandbyCause == StandbyCause.GpsLost);
+
     [Header("References")]
     [SerializeField] private GameObject avatarTarget;
     [SerializeField] private MeshRenderer avatarRenderer;

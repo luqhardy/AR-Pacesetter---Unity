@@ -78,6 +78,13 @@ public class DeviceManagerBridge : MonoBehaviour
                 // iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えない
                 EnableGlassOutput(cmd);
 
+                // HUDの所有者: グラスに出ている間はUnityのF-07 HUD(Swiftの hideUnityHud と同じ規則)。
+                // StartSession時にしか決めていなかったため、iPhoneで走り出してから
+                // グラスを挿すとグラスにHUDが出なかった。表示メトリクスがある = 実際の外部
+                // ディスプレイ接続のときだけ切り替える(準備画面の手動「接続」には付かない)
+                if (cmd.pixelWidth > 0 && cmd.pixelHeight > 0)
+                    SetUnityHudVisible(true);
+
                 // §8.3: 再接続でも即座にアバターを出現させない。Swiftが準備画面へ戻り、
                 // ユーザー操作後に ResumeSession/StartSession が来てから復帰する
                 Debug.Log("[SWIFT BRIDGE] ConnectXREAL — glass Connected (アバター復帰は再スタート操作を待つ)。");
@@ -87,6 +94,8 @@ public class DeviceManagerBridge : MonoBehaviour
                 // iPhone表示へ戻るのでカメラ映像を復帰させる(ビデオシースルー)
                 SetPassthrough(true);
                 DisableGlassOutput();
+                // iPhone表示に戻ればSwiftUIがHUDを持つ(二重表示しない)
+                SetUnityHudVisible(false);
                 HandleGlassDisconnected();
                 break;
 
@@ -98,6 +107,13 @@ public class DeviceManagerBridge : MonoBehaviour
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown device command: {cmd.command}");
                 break;
         }
+    }
+
+    private void SetUnityHudVisible(bool visible)
+    {
+        var hud = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
+        if (hud != null && hud.IsHudVisible != visible)
+            hud.SetHudVisible(visible);
     }
 
     /// <summary>パススルー表示の切り替え(コントローラ未配置でも落ちない)。</summary>

@@ -52,6 +52,9 @@ E2Eで自動検証済みのロジックは対象外とし、**実機・実地で
 - [ ] 開発者モードからCSVを取り出し、PCで解析する:
       `dotnet run --project tools/analyze-run-log -- <取り出したCSV>`
   - **M2P が「not measured」でないこと** — 実測値は実機でのみ出る。未計測なら `m2p.native`(開発者モード)を確認
+  - **グラスへ出力中の区間も実測されていること**。提示時刻はUnityのビューが載っている画面(グラス)の
+    vsyncから取る(2026-10-05〜)。抜き挿しの直後0.5秒ほどは -1 になるのが正常。
+    ずっと -1 なら `ARVisionSensorTiming.mm` の画面の結び直しを疑う
   - Timeline が `100 Hz: OK`、欠落がほぼ無いこと
   - IMU が非ゼロであること(開発者モード `csv.imuSource` が `device`)
   - 室内ならGPSは未取得(`no fix`)で正常。屋外で数分歩けば位置更新と距離が出る

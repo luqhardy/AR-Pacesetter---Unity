@@ -94,7 +94,8 @@ Watch/HealthKit/ゴースト等の企画書由来機能も実装済み。削除�
 - **IMU Sampling Rate**: ≥ 100Hz。
 - **HUD Frame Rate**: 60fps(16.6ms/frame)。
 - **Jitter Tolerance**: フレーム間隔の変動は ±5ms 以内。超えたフレームは生の測定値を捨て、
-  カルマンフィルタ(`SpatialKalmanFilter`)の予測補間を優先する。
+  カルマンフィルタ(`SpatialKalmanFilter`)の予測補間を優先する。判定は `JitterGuard`:
+  基準はフレーム時間の移動平均、予測だけで進めるのは最大0.1秒(交互フレームで永久に直進しないため)。
 
 ---
 
@@ -193,7 +194,10 @@ stateDiagram-v2
 - **アバターは常時「ユーザー+3m」アンカー追従**(自走ではない)。10m離隔待機は「アバター停止中にユーザーが離れる」場合にのみ発生する
 - **Animator取得は `AvatarRigLocator.FindBestAnimator`** — コンテナに無効化された旧Animatorが残っており、素の `GetComponentInChildren<Animator>` はそれを拾う
 - **AnimatorControllerはジェネレータ管理**(`AvatarAnimatorControllerGenerator`)。手編集せず再生成する(同一パスならGUID維持でシーン参照は無傷)。閾値は km/h 基準を m/s に換算した値(Walk 0.0278 / Run 1.3889 / Sprint 4.1667)
-- **UnitySendMessage対象のGameObject名は固定**: "ARSessionManager" / "DeviceManager"(Bootstrapが自動生成)
+- **UnitySendMessage対象のGameObject名は固定**: "ARSessionManager" / "DeviceManager"(Bootstrapが自動生成)。
+  Swiftは `UnityReady` を受けるまでコマンドを溜める — Unity起動前に送ると受け手が無く消える
+- 追従を止めていた後の再開(GPS復帰・離隔待機)は `ResyncAfterPause`、位置を外部が飛ばした後は `ResyncPacingAnchor`。
+  前者は走者の速度推定を残す(捨てると先回り約1.4mが消えてアバターが下がる)
 - **他コンポーネントの状態は型安全な公開APIで触る**(例: `AvatarEngine.ResyncPacingAnchor`)。リフレクション(`field?.SetValue`)は名前変更時に無言で失敗するため使わない
 - **平滑化はフレーム時間依存にする**(`FrameSmoothing.Factor(Time.deltaTime, k)`)。`Lerp(a, b, Time.deltaTime * k)` は長いフレームで瞬間移動に化ける
 - **モデル(Animatorの付いた子)の `localPosition` は `FootPlanting` が毎フレーム書く**(足のめり込み補正)。位置を変えたいときはルートを動かす。足裏の点はメッシュから取るので、アバターのFBXは **Read/Write 有効**にする

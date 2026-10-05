@@ -96,10 +96,21 @@ public class AvatarEngine : MonoBehaviour
     private Quaternion _smoothRotation = Quaternion.identity;
 
     // ── Jitter Guard (AGENTS.md §3 — ±5ms jitter tolerance) ─────────────────
-    private float   _lastFrameDeltaTime       = 0.0f;
-    private Vector3 _lastCleanKalmanVelocity  = Vector3.zero;
-    private const float JitterThresholdSeconds = 0.005f;
+    // 判定と「予測だけで進める時間の上限」は JitterGuard(純ロジック・ユニットテスト付き)
+    private readonly JitterGuard _jitterGuard = new JitterGuard();
     private float   _lastJitterWarningTime    = -99f;
+
+    // ── F-09 慣性移動: 直前1秒の平均速度・方向 ───────────────────────────────
+    private readonly RecentVelocityWindow _avatarVelocityWindow = new RecentVelocityWindow(1.0f);
+    private Vector3 _inertialVelocity;
+    private bool _wasGpsLost;
+    // スタンバイ(GameObjectごと非アクティブ)から戻った最初のフレームで再同期するための印
+    private bool _reappearedAfterHide;
+
+    void OnEnable()
+    {
+        _reappearedAfterHide = _hasStarted && _runMotionActive;
+    }
 
     // ── Speed Maintenance state (Feature #3) ────────────────────────────────
     private float _effectiveSpeedMultiplier = 1.0f; // blended each frame
@@ -207,12 +218,14 @@ public class AvatarEngine : MonoBehaviour
         // Always update speed maintenance to ensure multipliers are fresh
         UpdateSpeedMaintenance();
 
+        // フレーム時間の基準は毎フレーム更新する(停止・慣性中のフレームも基準に含める)
+        bool jitterFrame = _jitterGuard.ShouldPredict(Time.deltaTime);
+
         if (IsOverriddenByRecovery)
         {
             // Skip positioning, but keep histories and trackers fresh
             UpdatePurifiedHeading();
             _lastFrameUserPosition = userCamera.position;
-            _lastFrameDeltaTime = Time.deltaTime;
             return;
         }
 
@@ -260,7 +273,6 @@ public class AvatarEngine : MonoBehaviour
             }
 
             _lastFrameUserPosition = userCamera.position;
-            _lastFrameDeltaTime = Time.deltaTime;
             return;
         }
 
@@ -276,9 +288,41 @@ public class AvatarEngine : MonoBehaviour
 
         if (gpsLost)
         {
+            if (!_wasGpsLost) BeginInertialMotion();
+            _wasGpsLost = true;
             RunInertialLinearMotion();
             return;
         }
+
+        bool reappeared = _reappearedAfterHide;
+        _reappearedAfterHide = false;
+        if (_wasGpsLost || reappeared)
+        {
+            // 慣性移動・スタンバイの間、平滑器は観測を受けていない。古い推定(ロスト時点の
+            // アンカー)を残したまま再開すると、最初の出力が数m〜十数m後方に出てアバターが
+            // 後ろへ引き戻される。追従を取り直す(§5 復帰時の同期)
+            _wasGpsLost = false;
+
+            // スタンバイ(非表示)明けのアバターは消えた地点に置き去りで、走者はその先にいる。
+            // そのまま再開すると10m以上離れて「離隔待機」に入り、**前にいる走者を後ろで
+            // 手招きし続ける**。非表示だった/大きく離れたときはリード位置へ置き直す
+            Vector3 anchor = userCamera.position + _currentLinearDirection * leadDistanceMeters;
+            anchor.y = transform.position.y;
+            Vector3 offset = transform.position - anchor;
+            offset.y = 0f;
+            if (reappeared || offset.magnitude >= WaitForUserEnterMeters)
+            {
+                transform.position = anchor;
+                _isWaitingForUser = false;
+            }
+
+            ResyncAfterPause();
+            Debug.Log($"[PACER ENGINE] 追従を再同期 ({(reappeared ? "非表示から復帰" : "GPS復帰")}, " +
+                      $"リード位置との差 {offset.magnitude:F1}m)");
+        }
+
+        // F-09 用: 直前1秒のアバター自身の移動(停止・待機中のフレームも含める = 速度0)
+        _avatarVelocityWindow.Add(Time.time, transform.position.x, transform.position.z);
 
         // ── 離隔待機 (企画書 4.1 自律アクション) ─────────────────────────────
         // 10m以上離れたら座標を固定してユーザーへ向き、手招きで待つ。7mまで
@@ -292,31 +336,30 @@ public class AvatarEngine : MonoBehaviour
             return;
         }
 
-        // ── Jitter Guard (AGENTS.md §3) ──────────────────────────────────────
-        float frameDeltaDrift = Mathf.Abs(Time.deltaTime - _lastFrameDeltaTime);
-        bool  jitterSpike     = (_lastFrameDeltaTime > 0f) && (frameDeltaDrift > JitterThresholdSeconds);
+        // ── Vector_Forward Purification (AGENTS.md §4.1) ─────────────────────
+        // 進行方向は時間窓の移動平均なので毎フレーム更新する(変動フレームで飛ばすと
+        // その分の移動が窓から抜け、以前はコーナーで接線への追従が遅れていた)
+        UpdatePurifiedHeading();
 
+        // ── Jitter Guard (AGENTS.md §3) ──────────────────────────────────────
+        // 変動の大きいフレームは生の測定値を捨ててカルマンの予測で進める。
+        // 予測だけで進む時間には上限があり(JitterGuard)、フレームが 16.7/33.3ms と交互でも
+        // 定期的に測定を取り込む — 以前は永久に直進し続けた
         Vector3 filtered;
-        if (jitterSpike)
+        if (jitterFrame && _spatialFilter.Predict(Time.deltaTime, out float px, out float py, out float pz))
         {
             if (Time.time - _lastJitterWarningTime > 2.0f)
             {
-                Debug.LogWarning($"[JITTER GUARD] Frame-delta spike: {frameDeltaDrift * 1000f:F2}ms. Using prediction based on last good delta.");
+                Debug.LogWarning($"[JITTER GUARD] フレーム時間 {Time.deltaTime * 1000f:F1}ms " +
+                                 $"(基準 {_jitterGuard.BaselineSeconds * 1000f:F1}ms) — 測定を捨ててカルマン予測で補間");
                 _lastJitterWarningTime = Time.time;
             }
-            
-            // Fix: Advance by the current spiked Time.deltaTime since that represents actual elapsed time
-            filtered = _targetPacingPosition + _lastCleanKalmanVelocity * Time.deltaTime;
-            
-            // Update _lastFrameDeltaTime slightly so we adapt to new framerates and don't get permanently stuck
-            _lastFrameDeltaTime = Mathf.Lerp(_lastFrameDeltaTime, Time.deltaTime, 0.1f);
+            filtered = new Vector3(px, py, pz);
         }
         else
         {
-            // ── Vector_Forward Purification (AGENTS.md §4.1) ─────────────────────
-            UpdatePurifiedHeading();
-
             // ── Overtake detection & state machine (Features #8 & #9) ────────────
+            // 瞬間速度(フレーム移動量÷dt)を使うので、変動フレームでは判定しない
             UpdateOvertakeState();
 
             // ── Compute filtered anchor position ──────────────────────────────────
@@ -325,18 +368,13 @@ public class AvatarEngine : MonoBehaviour
                               + _sidestepOffset;
             rawAnchor.y = transform.position.y;
             filtered  = SmoothSpatialData(rawAnchor);
-            
-            // Safety guard against C++ Kalman Filter returning NaN during initialization
+
+            // Safety guard against the filter returning NaN during initialization
             if (float.IsNaN(filtered.x) || float.IsNaN(filtered.y) || float.IsNaN(filtered.z))
             {
                 filtered = rawAnchor;
             }
         }
-
-        // Track Kalman velocity for jitter-fallback use next frame, clamped to a safe sprint speed
-        Vector3 rawVelocity = (filtered - _targetPacingPosition) / Mathf.Max(Time.deltaTime, 0.001f);
-        rawVelocity.y = 0;
-        _lastCleanKalmanVelocity = Vector3.ClampMagnitude(rawVelocity, 10.0f);
 
         // Blend position with elastic catchup speed (Feature #3)
         float posLerpSpeed = GetEffectivePositionLerpSpeed();
@@ -372,12 +410,33 @@ public class AvatarEngine : MonoBehaviour
         ApplySmoothRotation(_currentLinearDirection);
 
         _lastFrameUserPosition = userCamera.position;
-        _lastFrameDeltaTime    = Time.deltaTime;
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    // Feature #2 — Inertial Linear Motion (GPS lost)
+    // Feature #2 — Inertial Linear Motion (GPS lost) — F-09
+    //   「直前1秒の平均速度・方向で最大5秒慣性」。以前は目標ペース(と倍率)で進んでおり、
+    //   ロスト直前に止まっていても遅れていても、アバターだけ目標ペースで走り去っていた
     // ════════════════════════════════════════════════════════════════════════
+    private const float MaxInertialSpeedMetersPerSecond = 10f; // 人の走速の上限(測定の暴れ対策)
+
+    private void BeginInertialMotion()
+    {
+        if (_avatarVelocityWindow.TryGetAverageVelocity(out float vx, out float vz))
+        {
+            _inertialVelocity = Vector3.ClampMagnitude(new Vector3(vx, 0f, vz), MaxInertialSpeedMetersPerSecond);
+            Debug.Log($"[PACER ENGINE] GPSロスト — 直前1秒の平均 {_inertialVelocity.magnitude:F2}m/s で慣性移動");
+        }
+        else
+        {
+            // 直前の移動が測れない(開始直後など)ときだけ目標ペースで代用する
+            _inertialVelocity = _currentLinearDirection * GetTargetSpeed();
+            Debug.Log($"[PACER ENGINE] GPSロスト — 直前の移動が無いため目標ペース {_inertialVelocity.magnitude:F2}m/s で慣性移動");
+        }
+    }
+
+    /// <summary>慣性移動の速度ベクトル(m/s)。GPSロスト中のみ意味を持つ。E2E検証用。</summary>
+    public Vector3 InertialVelocity => _inertialVelocity;
+
     private void RunInertialLinearMotion()
     {
         if (!_hasStarted)
@@ -388,16 +447,15 @@ public class AvatarEngine : MonoBehaviour
 
         if (!IsHalted)
         {
-            float speed = GetTargetSpeed();
-            _targetPacingPosition += _currentLinearDirection * speed * Time.deltaTime;
-            
+            _targetPacingPosition += _inertialVelocity * Time.deltaTime;
+
             // Fix: Align Y with ground snap height even during inertial motion
             _targetPacingPosition.y = transform.position.y;
             transform.position     = _targetPacingPosition;
-            
-            ApplySmoothRotation(_currentLinearDirection);
+
+            Vector3 dir = _inertialVelocity;
+            ApplySmoothRotation(dir.sqrMagnitude > 0.01f ? dir.normalized : _currentLinearDirection);
         }
-        _lastFrameDeltaTime    = Time.deltaTime;
         _lastFrameUserPosition = userCamera.position;
     }
 
@@ -419,8 +477,9 @@ public class AvatarEngine : MonoBehaviour
         else if (_isWaitingForUser && separation <= WaitForUserExitMeters)
         {
             _isWaitingForUser = false;
-            // 内部追従位置を現在位置に同期してから再開(ワープ防止)
-            _targetPacingPosition = transform.position;
+            // 内部追従位置を現在位置に同期してから再開(ワープ防止)。平滑器も待機中は
+            // 観測を受けておらず、そのままだと停止地点の古い推定でアバターを引き戻す
+            ResyncAfterPause();
             SendSafeAnimatorTrigger("RunResume");
             Debug.Log("[PACER ENGINE] User caught up — resuming pace.");
         }
@@ -460,7 +519,6 @@ public class AvatarEngine : MonoBehaviour
             transform.rotation   = _smoothRotation;
         }
         _lastFrameUserPosition = userCamera.position;
-        _lastFrameDeltaTime    = Time.deltaTime;
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -897,6 +955,25 @@ public class AvatarEngine : MonoBehaviour
         _smoothedAnchorVelocity = Vector3.zero;
         // 平滑器も古い推定から新しい位置へ「引きずる」ので捨てる
         _spatialFilter.Reset();
+        // 外部が位置を飛ばした場合、その差分は移動ではない(F-09の慣性速度に混ぜない)
+        _avatarVelocityWindow.Clear();
+    }
+
+    /// <summary>
+    /// 追従を一時停止していた後(GPSロストの慣性移動・離隔待機)の再開。
+    ///
+    /// <para><see cref="ResyncPacingAnchor"/> との違い: あちらは<b>位置が外部から飛ばされた</b>前提で、
+    /// 走者の速度推定(定常遅れの先回り量)も捨てる。ここでは走者は連続して動いていたので
+    /// 速度推定は残す — 捨てると先回り(3.6m/sで約1.4m)が一旦0になり、再開の瞬間に
+    /// アバターがその分だけ後ろへ下がる(E2Eで実測1.39m)。捨てるのは観測を受けていなかった
+    /// 平滑器の古い推定だけ。</para>
+    /// </summary>
+    private void ResyncAfterPause()
+    {
+        _targetPacingPosition = transform.position;
+        _lastFrameUserPosition = userCamera.position;
+        _lastAnchorPosition = userCamera.position; // 停止中の移動を1フレームの速度と誤認しない
+        _spatialFilter.Reset();
     }
 
     /// <summary>
@@ -921,7 +998,11 @@ public class AvatarEngine : MonoBehaviour
         _sprintTimer = 0f;
         _sidestepOffset = Vector3.zero;
         _effectiveSpeedMultiplier = 1.0f;
-        _lastCleanKalmanVelocity = Vector3.zero;
+        _jitterGuard.Reset();
+        _avatarVelocityWindow.Clear();
+        _inertialVelocity = Vector3.zero;
+        _wasGpsLost = false;
+        _reappearedAfterHide = false;
         _hasLastAnchor = false;
         _smoothedAnchorVelocity = Vector3.zero;
         _spatialFilter.Reset();
@@ -1026,7 +1107,6 @@ public class AvatarEngine : MonoBehaviour
         _runMotionActive = true;
         _targetPacingPosition = transform.position;
         _lastFrameUserPosition = userCamera != null ? userCamera.position : Vector3.zero;
-        _lastFrameDeltaTime = Time.deltaTime;
         SendSafeAnimatorTrigger("RunResume");
         Debug.Log("[PACER ENGINE] START complete — runner timing, tracking and pacer motion are active.");
     }

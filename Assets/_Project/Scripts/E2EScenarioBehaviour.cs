@@ -751,6 +751,16 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
 
         Check(engine.IsSessionEnded, "goal: session auto-finished by goal distance");
+
+        // 自動ゴールの直後に利用者が「終了」を押しても、結果(SessionEnded)は1回しか送らない。
+        // Swiftは受信のたびにHealthKitへワークアウトを保存するため、以前は2件残った
+        Check(bridge.SessionResultSent, "goal: session result sent to Swift on auto-finish");
+        int resultsBeforeEnd = bridge.SessionResultSendCount;
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return null;
+        Check(bridge.SessionResultSendCount == resultsBeforeEnd,
+            $"goal: a late EndSession does not send the result twice (HealthKit duplicate, sent {bridge.SessionResultSendCount - resultsBeforeEnd} more)");
+
         Check(goalLineObserved, "goal: AR goal line appeared before target distance");
         Check(goalLine != null && goalLine.IsReached,
             "goal: AR goal line remains visible briefly after crossing");
@@ -1365,11 +1375,26 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 gpsForGlass.ResetSession();
             }
 
-            // 再接続だけではアバターを復帰させない(準備画面からの再スタートを待つ)
-            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");
+            // グラス切断はGPS喪失ではない: 「GPS再取得中」系の表示を出さない
+            var visGlass = FindFirstObjectByType<AvatarVisibilityDiagnostics>(FindObjectsInactive.Include);
+            if (visGlass != null)
+                Check(!visGlass.IsVisible && visGlass.CurrentReason.Contains("グラス切断"),
+                    $"glass: hidden avatar is attributed to the glass disconnect, not GPS ({visGlass.CurrentReason})");
+            Check(!stateController.IsGpsLossState, "glass: a glass-disconnect standby is not a GPS-loss state");
+            var hudGlass = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
+            if (hudGlass != null)
+                Check(!hudGlass.IsHudVisible && !hudGlass.IsSafetyWarningVisible,
+                    "glass: Unity HUD yields to SwiftUI on the phone, with no GPS warning");
+
+            // 再接続だけではアバターを復帰させない(準備画面からの再スタートを待つ)。
+            // 実機の外部ディスプレイ接続と同じく表示メトリクスを付ける
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
             yield return null;
             Check(stateController.currentState == GameStateController.ARVisionState.Standby,
                 "glass: reconnect alone does NOT resurrect avatar (§8.3)");
+            if (hudGlass != null)
+                Check(hudGlass.IsHudVisible,
+                    "glass: plugging the glasses in mid-run hands the HUD back to Unity (F-07 on the glasses)");
 
             // 準備画面からの再スタート操作で復帰
             bridge.OnSwiftCommand("{\"command\":\"ResumeSession\"}");
@@ -1377,6 +1402,10 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(stateController.currentState == GameStateController.ARVisionState.Normal,
                 "glass: ResumeSession restores normal pacing");
         }
+
+        // ── Step 4d: 走行中のGPSロスト → 慣性移動 → 復帰 (F-09 / §5) ───────────
+        if (stateController != null && !engine.IsSessionEnded)
+            yield return StartCoroutine(RunGpsLossWhileMovingTest(engine, stateController));
 
         // ── Step 5: 履歴取得 ────────────────────────────────────────────────
         bridge.OnSwiftCommand("{\"command\":\"RequestHistory\"}");
@@ -1568,6 +1597,63 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // (GpsSignalMonitor は未受信の間は一切介入しない)
         ResetGpsMonitor();
         yield return WaitScaled(0.5f);
+    }
+
+    /// <summary>
+    /// 走りながらのGPSロスト。2点を縛る:
+    ///   ① 慣性移動の速度は「直前1秒のアバター自身の平均速度」(F-09)。立ち止まった直後の
+    ///      ロストなら慣性も0 — 以前は目標ペースでアバターだけ走り去っていた
+    ///   ② 復帰の瞬間にアバターが後ろへ引き戻されない。慣性移動の間は平滑器が観測を受けず、
+    ///      以前は古い推定のまま再開して数m後方へ引かれた
+    /// </summary>
+    private IEnumerator RunGpsLossWhileMovingTest(AvatarEngine engine, GameStateController stateController)
+    {
+        ResetGpsMonitor(); // 測位は注入しない(監視は介入しない)
+        stateController.TransitionToState(GameStateController.ARVisionState.Normal);
+        Vector3 dir = CamForwardFlat();
+
+        // ① 立ち止まって1.5秒 → ロスト: 慣性は0のはず
+        yield return WaitScaled(1.5f);
+        stateController.TransitionToState(GameStateController.ARVisionState.InertialMovement);
+        yield return null;
+        yield return null;
+        Check(engine.InertialVelocity.magnitude < 0.5f,
+            $"inertia: GPS loss right after standing still keeps the avatar still " +
+            $"(F-09 last-1s average, got {engine.InertialVelocity.magnitude:F2}m/s; target pace {engine.GetBaseTargetSpeed():F2}m/s)");
+        stateController.TransitionToState(GameStateController.ARVisionState.Normal);
+
+        // ② 走り続けながら 2秒ロスト → 復帰
+        for (float t = 0f; t < 2.0f; t += Time.deltaTime)
+        {
+            MoveRig(dir * RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f));
+            yield return null;
+        }
+        stateController.TransitionToState(GameStateController.ARVisionState.InertialMovement);
+        yield return null;
+        float inertialSpeed = engine.InertialVelocity.magnitude;
+        Check(inertialSpeed > RunSpeedMetersPerSecond * 0.6f && inertialSpeed < RunSpeedMetersPerSecond * 1.4f,
+            $"inertia: GPS loss while running continues at the avatar's own recent speed " +
+            $"({inertialSpeed:F2}m/s vs run {RunSpeedMetersPerSecond:F2}m/s)");
+
+        for (float t = 0f; t < 2.0f; t += Time.deltaTime)
+        {
+            MoveRig(dir * RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f));
+            yield return null;
+        }
+
+        stateController.TransitionToState(GameStateController.ARVisionState.Normal);
+        float backward = 0f;
+        float last = Vector3.Dot(engine.transform.position, dir);
+        for (float t = 0f; t < 1.0f; t += Time.deltaTime)
+        {
+            MoveRig(dir * RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f));
+            yield return null;
+            float along = Vector3.Dot(engine.transform.position, dir);
+            if (along < last) backward += last - along;
+            last = along;
+        }
+        Check(backward < 0.3f,
+            $"inertia: no backward snap when tracking resumes after GPS loss (moved back {backward:F2}m)");
     }
 
     /// <summary>

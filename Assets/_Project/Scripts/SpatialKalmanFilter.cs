@@ -95,6 +95,30 @@ public class SpatialKalmanFilter
         smoothZ = Step(ref _az, rawZ, dt);
     }
 
+    /// <summary>
+    /// 観測を取り込まずに予測だけ進める(§3: 変動の大きいフレームは生の測定値を捨て、予測を優先)。
+    /// 未初期化なら false(呼び出し側は観測で <see cref="Update"/> する)。
+    /// </summary>
+    public bool Predict(float deltaSeconds, out float predictedX, out float predictedY, out float predictedZ)
+    {
+        predictedX = predictedY = predictedZ = 0f;
+        if (!IsSeeded) return false;
+
+        float dt = deltaSeconds > 0f ? deltaSeconds : 1f / ReferenceFrameRate;
+        predictedX = PredictStep(ref _ax, dt);
+        predictedY = PredictStep(ref _ay, dt);
+        predictedZ = PredictStep(ref _az, dt);
+        return true;
+    }
+
+    private float PredictStep(ref Axis s, float dt)
+    {
+        float predictDt = dt < MaxPredictionSeconds ? dt : MaxPredictionSeconds;
+        s.X += s.V * predictDt;
+        s.P += _q * predictDt; // 観測が無い分だけ不確かさが増える
+        return s.X;
+    }
+
     private float Step(ref Axis s, float z, float dt)
     {
         if (float.IsNaN(z) || float.IsInfinity(z))

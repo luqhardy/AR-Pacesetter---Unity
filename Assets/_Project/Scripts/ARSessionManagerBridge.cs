@@ -182,6 +182,7 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         // リセットで false に戻るため、必ずリセット後に立てる
         ExternalMetricsActive = true;
+        _sessionResultSent = false;
 
         // 目標距離: 到達したらUnity側から自動終了する (SessionEnded送信)
         _goalDistanceMeters = cmd.distanceKm > 0 ? cmd.distanceKm * 1000.0 : 0;
@@ -320,8 +321,25 @@ public class ARSessionManagerBridge : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// このセッションで走行結果(SessionEnded)をSwiftへ送ったか。StartSessionで戻る。
+    /// Swiftは受信のたびにHealthKitへワークアウトを保存するため、**1走行1回**を守る —
+    /// 目標距離の自動終了の直後に利用者が「終了」を押すと、以前は2件保存されていた
+    /// </summary>
+    public bool SessionResultSent => _sessionResultSent;
+    private bool _sessionResultSent;
+
+    /// <summary>起動以来 SessionEnded を送った回数(E2E検証用)。</summary>
+    public int SessionResultSendCount { get; private set; }
+
     private void HandleEndSession()
     {
+        if (_sessionResultSent)
+        {
+            Debug.Log("[SWIFT BRIDGE] EndSession — この走行の結果は送信済みのため無視します(HealthKitの二重保存防止)。");
+            return;
+        }
+
         if (!_goalReached && goalLineController != null)
             goalLineController.HideImmediately();
 
@@ -340,6 +358,8 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         SendAvatarStateIfChanged("Goal");
         SwiftMessageSender.SendSessionResult(record);
+        _sessionResultSent = record != null;
+        if (_sessionResultSent) SessionResultSendCount++;
         Debug.Log("[SWIFT BRIDGE] EndSession — result sent to Swift.");
     }
 
@@ -504,9 +524,8 @@ public class ARSessionManagerBridge : MonoBehaviour
     {
         if (gameStateController == null) return;
 
-        bool gpsLost = gameStateController.currentState == GameStateController.ARVisionState.InertialMovement
-                    || gameStateController.currentState == GameStateController.ARVisionState.FadeOut
-                    || gameStateController.currentState == GameStateController.ARVisionState.Standby;
+        // グラス切断のスタンバイ(§8.3)はGPS喪失ではない — 以前はSwiftに「GPS再取得中」が出ていた
+        bool gpsLost = gameStateController.IsGpsLossState;
 
         if (gpsLost && !_gpsWasLost)
         {

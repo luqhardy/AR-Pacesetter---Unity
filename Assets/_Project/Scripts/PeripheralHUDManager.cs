@@ -329,14 +329,8 @@ public class PeripheralHUDManager : MonoBehaviour
         if (textSafetyWarning == null) return;
         if (_hudHidden) return; // Unity側HUDが非表示のときはSwiftのバナーが担当する
 
-        bool gpsLost = false;
-        if (_gameState != null)
-        {
-            var st = _gameState.currentState;
-            gpsLost = st == GameStateController.ARVisionState.InertialMovement
-                   || st == GameStateController.ARVisionState.FadeOut
-                   || st == GameStateController.ARVisionState.Standby;
-        }
+        // グラス切断・低バッテリーのスタンバイでは「GPS信号を探索中」を出さない
+        bool gpsLost = _gameState != null && _gameState.IsGpsLossState;
 
         // 走行中のみ。準備画面・終了後に警告を残さない
         bool running = avatarEngine != null && avatarEngine.HasStarted && !avatarEngine.IsSessionEnded;

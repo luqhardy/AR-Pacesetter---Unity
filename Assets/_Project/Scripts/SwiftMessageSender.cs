@@ -36,6 +36,14 @@ public static class SwiftMessageSender
     public static void SendAvatarState(string state)
         => SendRaw($"{{\"event\":\"AvatarStateChanged\",\"state\":\"{state}\"}}");
 
+    /// <summary>
+    /// 受信ブリッジ("ARSessionManager" / "DeviceManager")が揃ったことの通知。
+    /// Swiftはこれを受けるまでコマンドを溜めておき、受信後にまとめて送る —
+    /// Unityの起動前に送った StartSession / ConnectXREAL は受け手のGameObjectが無く届かない
+    /// </summary>
+    public static void SendUnityReady()
+        => SendRaw("{\"event\":\"UnityReady\"}");
+
     public static void SendGpsLost()
         => SendRaw("{\"event\":\"GPSLost\"}");
 

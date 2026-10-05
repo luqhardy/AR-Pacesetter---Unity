@@ -98,6 +98,9 @@ public static class ARVisionSystemsBootstrap
         // GameObject名は UnityBridge.swift の sendMessageToGO と完全一致させる
         Ensure<ARSessionManagerBridge>(ARSessionManagerBridge.RequiredGameObjectName);
         Ensure<DeviceManagerBridge>(DeviceManagerBridge.RequiredGameObjectName);
+
+        // 受け手が揃ったのでSwiftへ知らせる(Swiftは溜めていたコマンドをここで送る)
+        SwiftMessageSender.SendUnityReady();
     }
 
     private static void Ensure<T>(string gameObjectName = null) where T : MonoBehaviour
