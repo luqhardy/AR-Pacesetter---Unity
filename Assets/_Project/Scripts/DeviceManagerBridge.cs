@@ -155,8 +155,10 @@ public class DeviceManagerBridge : MonoBehaviour
     /// <summary>
     /// §8.3 ARグラス切断時の緊急処理:
     /// スタンバイへ移行してアバターを消去する。走行セッション自体は終了させないため、
-    /// F-11のCSVログ書き出し(RunTelemetryLoggerはHasStarted && !IsSessionEndedで動作)は
-    /// バックグラウンドで継続する。再接続時は即復帰させず準備画面からの再スタートを待つ。
+    /// F-11のCSVログ書き出し(RunTelemetryLogger はアバターとは別のGameObjectで
+    /// IsRunMotionActive の間動作)はバックグラウンドで継続する。
+    /// 再接続時は即復帰させず準備画面からの再スタートを待つ — 原因を GlassDisconnected として
+    /// 残すので、その間にGPSが復帰しても GpsSignalMonitor はアバターを戻さない。
     /// </summary>
     private void HandleGlassDisconnected()
     {
@@ -168,7 +170,7 @@ public class DeviceManagerBridge : MonoBehaviour
         bool running = avatarEngine != null && avatarEngine.HasStarted && !avatarEngine.IsSessionEnded;
         if (running && stateController != null)
         {
-            stateController.TransitionToState(GameStateController.ARVisionState.Standby);
+            stateController.EnterStandby(GameStateController.StandbyCause.GlassDisconnected);
             Debug.LogWarning("[SWIFT BRIDGE] DisconnectXREAL — スタンバイ移行(アバター消去)。CSVログは継続。");
         }
         else

@@ -7,6 +7,8 @@ using UnityEngine;
 ///   ロスト判定: 位置情報の更新が 1.5秒以上 途絶えた場合、
 ///               または水平精度誤差が 10m以上 に悪化した瞬間
 ///   復帰判定 : 新鮮なサンプルがあり、かつ精度が復帰ゲート(5m)以内
+/// 判定と遷移の表は <see cref="GpsSignalPolicy"/>(純ロジック・ユニットテスト付き)。
+/// 復帰は InertialMovement / FadeOut → Normal、GPSロストによる Standby → ReAccumulation。
 ///
 /// 実測サンプルを一度も受け取っていない間(エディタ単体走行・E2E)は一切介入しない
 /// ため、既存のシミュレーションキー(G/R/A)の挙動は従来どおり。
@@ -59,7 +61,6 @@ public class GpsSignalMonitor : MonoBehaviour
     private float _lastAccuracy = -1f;
     private bool _hasReceivedSample;
     private bool _hasHadGoodFix;
-    private bool _lostReported;
 
     /// <summary>実測サンプルを受信済みか(未受信なら本監視は介入しない)。</summary>
     public bool IsMonitoring => _hasReceivedSample;
@@ -67,6 +68,8 @@ public class GpsSignalMonitor : MonoBehaviour
     public float LastAccuracyMeters => _lastAccuracy;
     /// <summary>現在ロスト条件を満たしているか。</summary>
     public bool IsSignalLost => _hasReceivedSample && EvaluateLost();
+    /// <summary>現在復帰条件(新鮮かつ精度5m以内)を満たしているか。</summary>
+    public bool IsSignalRecovered => _hasReceivedSample && EvaluateRecovered();
 
     /// <summary>
     /// これまでに「ロスト条件を満たさない精度」の測位を一度でも得たか。
@@ -120,8 +123,10 @@ public class GpsSignalMonitor : MonoBehaviour
         // 走行中のみ判定(準備画面や終了後は介入しない)
         if (avatarEngine != null && (!avatarEngine.HasStarted || avatarEngine.IsSessionEnded)) return;
 
-        // 再集積ゲート(AGENTS.md §5)へ実測精度を供給する
-        stateController.SimulatedGPSAccuracyRadius = _lastAccuracy;
+        // 再集積ゲート(AGENTS.md §5)へ実測精度を供給する。更新が途絶えている間は
+        // 「不確か」(99)として渡す — 途絶前の良い精度でゲートが開いてしまわないように
+        bool fresh = (Time.time - _lastUpdateTime) < staleTimeoutSeconds;
+        stateController.SimulatedGPSAccuracyRadius = fresh ? _lastAccuracy : 99f;
 
         // 検証のため一時的にOFF: 判定・計測(精度の供給・CSV)は続けるが、FSMは動かさない
         if (!autoLostHandlingEnabled)
@@ -133,41 +138,54 @@ public class GpsSignalMonitor : MonoBehaviour
                                  "F-09/F-10 は発動せず、GPSが悪化してもアバターは消えません。" +
                                  "SetGpsLostHandling {\"enabled\":true} で戻せます");
             }
-            _lostReported = false;
             return;
         }
 
-        bool lost = EvaluateLost();
+        switch (GpsSignalPolicy.Decide(CurrentPhase(), EvaluateLost(), EvaluateRecovered()))
+        {
+            case GpsSignalPolicy.Action.EnterInertialMovement:
+                Debug.LogWarning($"[GPS MONITOR] ロスト判定 — 更新途絶 {Time.time - _lastUpdateTime:F2}s / 精度 {_lastAccuracy:F1}m");
+                stateController.TransitionToState(GameStateController.ARVisionState.InertialMovement);
+                break;
 
-        if (lost && !_lostReported && stateController.currentState == GameStateController.ARVisionState.Normal)
-        {
-            _lostReported = true;
-            float stale = Time.time - _lastUpdateTime;
-            Debug.LogWarning($"[GPS MONITOR] ロスト判定 — 更新途絶 {stale:F2}s / 精度 {_lastAccuracy:F1}m");
-            stateController.TransitionToState(GameStateController.ARVisionState.InertialMovement);
-        }
-        else if (!lost && _lostReported)
-        {
-            _lostReported = false;
-            // 慣性移動中の復帰は Normal へ直接同期(FadeOut以降は既存FSMの復帰経路に委ねる)
-            if (stateController.currentState == GameStateController.ARVisionState.InertialMovement)
-            {
-                Debug.Log($"[GPS MONITOR] 信号復帰 — 精度 {_lastAccuracy:F1}m。通常追従へ同期");
+            case GpsSignalPolicy.Action.ReturnToNormal:
+                Debug.Log($"[GPS MONITOR] 信号復帰 — 精度 {_lastAccuracy:F1}m。{stateController.currentState} から通常追従へ同期");
                 stateController.TransitionToState(GameStateController.ARVisionState.Normal);
-            }
+                break;
+
+            case GpsSignalPolicy.Action.BeginReaccumulation:
+                Debug.Log($"[GPS MONITOR] 信号復帰 — 精度 {_lastAccuracy:F1}m。スタンバイから再集積へ");
+                stateController.TransitionToState(GameStateController.ARVisionState.Reaccumulation);
+                break;
         }
     }
 
-    private bool EvaluateLost()
+    private GpsSignalPolicy.Phase CurrentPhase()
     {
-        // 一度も掴んでいない信号は失えない。§8.1のロストは「掴んでいた信号が途絶/悪化する」こと、
-        // 一度も掴めていないのは F-02 のレディチェックが弾くべき別の状態
-        if (requireInitialFixBeforeLost && !_hasHadGoodFix) return false;
-
-        bool stale = (Time.time - _lastUpdateTime) >= staleTimeoutSeconds;
-        bool inaccurate = _lastAccuracy >= accuracyLostThresholdMeters;
-        return stale || inaccurate;
+        switch (stateController.currentState)
+        {
+            case GameStateController.ARVisionState.Normal:           return GpsSignalPolicy.Phase.Normal;
+            case GameStateController.ARVisionState.InertialMovement: return GpsSignalPolicy.Phase.InertialMovement;
+            case GameStateController.ARVisionState.FadeOut:          return GpsSignalPolicy.Phase.FadeOut;
+            case GameStateController.ARVisionState.Standby:
+                return stateController.CurrentStandbyCause == GameStateController.StandbyCause.GpsLost
+                    ? GpsSignalPolicy.Phase.StandbyAfterGpsLoss
+                    : GpsSignalPolicy.Phase.Other;
+            default:
+                return GpsSignalPolicy.Phase.Other;
+        }
     }
+
+    // 一度も掴んでいない信号は失えない。§8.1のロストは「掴んでいた信号が途絶/悪化する」こと、
+    // 一度も掴めていないのは F-02 のレディチェックが弾くべき別の状態
+    private bool EvaluateLost() => GpsSignalPolicy.IsLost(
+        _hasHadGoodFix, requireInitialFixBeforeLost,
+        Time.time - _lastUpdateTime, staleTimeoutSeconds,
+        _lastAccuracy, accuracyLostThresholdMeters);
+
+    private bool EvaluateRecovered() => GpsSignalPolicy.IsRecovered(
+        Time.time - _lastUpdateTime, staleTimeoutSeconds,
+        _lastAccuracy, accuracyRecoveredThresholdMeters);
 
     /// <summary>再走行対応: 監視状態を初期化する。</summary>
     public void ResetSession()
@@ -176,6 +194,5 @@ public class GpsSignalMonitor : MonoBehaviour
         _lastAccuracy = -1f;
         _hasReceivedSample = false;
         _hasHadGoodFix = false;
-        _lostReported = false;
     }
 }

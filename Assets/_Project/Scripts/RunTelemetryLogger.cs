@@ -15,7 +15,8 @@ using UnityEngine;
 /// GPS緯度経度は Swift の UpdateMetrics → GpsSignalMonitor → SetGpsCoordinates で入る。
 /// IMU加速度は実機では端末IMU(Input.gyro.userAcceleration)を直接読み、エディタでは
 /// カメラ速度差分で近似する。SetImuAcceleration は C# 側の受け口で、Swift からの経路は無い。
-/// AvatarEngineと同じGameObjectに置く(Bootstrapが自動装着)。
+/// <b>AvatarEngine とは別のGameObjectに置く</b>(Bootstrapが自動生成)。スタンバイは
+/// アバターのGameObjectを非アクティブにするので、同居するとその間ログが止まる。
 /// </summary>
 public class RunTelemetryLogger : MonoBehaviour
 {
@@ -45,11 +46,18 @@ public class RunTelemetryLogger : MonoBehaviour
     /// <summary>書き出せなかった行数。0以外ならこのCSVは不完全。</summary>
     public int DroppedRowCount { get; private set; }
 
-    // タイムスタンプはサンプル時刻(開始epoch + 連番×10ms)で採番する。
+    // タイムスタンプはサンプル時刻(開始epoch + 10ms刻み)で採番する。
     // 書き込み時刻を使うと1フレームで複数行を書いた際に同一msが重複し、
-    // 100Hzサンプルとして解析(§11.2 CSV解析による遅延評価)できなくなる
+    // 100Hzサンプルとして解析(§11.2 CSV解析による遅延評価)できなくなる。
+    // ネイティブ行と合成行が混ざっても単調増加を保つ採番は TelemetryTimeline が持つ
     private long _logStartEpochMs;
-    private long _sampleIndex;
+    private readonly TelemetryTimeline _timeline = new TelemetryTimeline();
+
+    // ネイティブ100Hzが流れている間、サンプル0件のフレームは**何も書かない**(次フレームで届く)。
+    // 合成行で埋めると同じ時間帯に偽の行が混ざる。この秒数だけ1件も届かなければ
+    // ネイティブが止まったとみなして合成行へ切り替える(時刻は直前の行の後ろへ続ける)
+    private const float NativeStarvationSeconds = 0.5f;
+    private float _lastNativeSampleRealtime;
 
     // ネイティブ100Hzサンプルの受け皿(毎フレーム使い回す)と、時刻の基準点
     private readonly double[] _imuSampleTimes = new double[SensorTimingBridge.MaxDrainPerFrame];
@@ -80,8 +88,13 @@ public class RunTelemetryLogger : MonoBehaviour
 
     void Awake()
     {
+        // ?? は使わない: エディタの GetComponent は未装着でも「偽のnull」オブジェクトを返し、
+        // ?? はそれを非nullとみなすため Find へ落ちない
         if (avatarEngine == null)
-            avatarEngine = GetComponent<AvatarEngine>() ?? FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
+            avatarEngine = FindFirstObjectByType<AvatarEngine>(FindObjectsInactive.Include);
+        if (avatarEngine != null && avatarEngine.gameObject == gameObject)
+            Debug.LogWarning("[TELEMETRY] RunTelemetryLogger がアバターと同じGameObjectにあります — " +
+                             "スタンバイ中はアバターごと非アクティブになり、CSVが書かれません。別のGameObjectへ移してください");
         if (userCamera == null && Camera.main != null)
             userCamera = Camera.main.transform;
         if (sensorTiming == null)
@@ -114,6 +127,12 @@ public class RunTelemetryLogger : MonoBehaviour
 
     /// <summary>ネイティブ100Hzサンプルから書いた行数(0ならフレーム同期の擬似100Hz)。</summary>
     public long NativeImuRowCount { get; private set; }
+
+    /// <summary>現在のCSVへ書いたデータ行数(ヘッダ除く)。ログが本当に進んでいるかの検証用。</summary>
+    public long WrittenRowCount { get; private set; }
+
+    /// <summary>前の行より古い時刻だったため書かなかったネイティブサンプル数。</summary>
+    public long RejectedOutOfOrderSamples => _timeline.RejectedNativeCount;
 
     /// <summary>
     /// CSVの <c>timestamp</c> 列がどの時間軸か。解析側はこれを知らないと誤読する。
@@ -183,8 +202,14 @@ public class RunTelemetryLogger : MonoBehaviour
 
         // ① ネイティブの100Hz IMU があれば **1サンプル=1行**で書く。
         //    行数だけでなく中身も本物の100Hzになり、タイムスタンプもサンプル自身の
-        //    観測時刻になる(下の擬似100Hzは同じ値を複数行に複製してしまう)
-        if (!_imuExternal && TryAppendNativeImuRows()) return;
+        //    観測時刻になる(下の擬似100Hzは同じ値を複数行に複製してしまう)。
+        //    0件のフレームは書かずに待つ — ここで合成行へ落とすと実測の行と同じ時間帯に
+        //    偽の行が混ざる。長く途絶えたときだけ合成行へ切り替える
+        if (!_imuExternal && IsNativeImuAvailable())
+        {
+            if (AppendNativeImuRows() > 0) _lastNativeSampleRealtime = Time.realtimeSinceStartup;
+            if (Time.realtimeSinceStartup - _lastNativeSampleRealtime < NativeStarvationSeconds) return;
+        }
 
         // ② ネイティブが無い場合(エディタ・Swift供給時)の擬似100Hz。
         //    優先順位: Swift供給 > 端末IMU(CoreMotion) > カメラ速度差分の近似
@@ -221,17 +246,17 @@ public class RunTelemetryLogger : MonoBehaviour
         _lastCamVel = vel;
     }
 
+    /// <summary>ネイティブ100Hz IMU(実機のみ)が使えるか。時刻の基準が取れていることも条件。</summary>
+    private bool IsNativeImuAvailable()
+        => sensorTiming != null && sensorTiming.IsImuStreaming && _mediaTimeAtLogStart > 0.0;
+
     /// <summary>
     /// ネイティブ(CoreMotion)に貯まった100Hzサンプルを引き取り、1件1行で書く。
-    /// 実機でのみ成立する。書けたら true。
+    /// 引き取ったサンプル数を返す(0 = このフレームには届いていない)。
     /// </summary>
-    private bool TryAppendNativeImuRows()
+    private int AppendNativeImuRows()
     {
-        if (sensorTiming == null || !sensorTiming.IsImuStreaming) return false;
-        if (_mediaTimeAtLogStart <= 0.0) return false; // 時刻の基準が取れていない
-
         int count = sensorTiming.DrainImuSamples(_imuSampleTimes, _imuSampleXyz);
-        if (count <= 0) return false;
 
         for (int i = 0; i < count; i++)
         {
@@ -244,25 +269,28 @@ public class RunTelemetryLogger : MonoBehaviour
             double offsetSeconds = _imuSampleTimes[i] - _mediaTimeAtLogStart;
             if (offsetSeconds < 0.0) continue; // ログ開始前に貯まっていた古いサンプル
 
-            AppendRowAt(_logStartEpochMs + (long)(offsetSeconds * 1000.0));
+            // 前の行(途絶中に書いた合成行など)より古いサンプルは書かない — 順序を壊さない
+            long tsMs = _logStartEpochMs + (long)(offsetSeconds * 1000.0);
+            if (!_timeline.TryAcceptNative(tsMs)) continue;
+
+            AppendRowAt(tsMs);
             NativeImuRowCount++;
         }
 
-        return true;
+        return count;
     }
 
     private void AppendRow()
     {
-        // 100Hz固定間隔のサンプル時刻(単調増加・10ms刻み)
-        long tsMs = _logStartEpochMs + (long)(_sampleIndex * (SampleIntervalSeconds * 1000f));
-        _sampleIndex++;
-        AppendRowAt(tsMs);
+        // 100Hz固定間隔のサンプル時刻(10ms刻み・直前に書いた行より必ず後ろ)
+        AppendRowAt(_timeline.NextSynthetic());
     }
 
     private void AppendRowAt(long tsMs)
     {
         var ci = CultureInfo.InvariantCulture;
         _lastWrittenTsMs = tsMs; // TimelineSource / ドリフト診断用
+        WrittenRowCount++;
 
         Vector3 avatarPos = avatarEngine != null ? avatarEngine.transform.position : Vector3.zero;
 
@@ -323,8 +351,10 @@ public class RunTelemetryLogger : MonoBehaviour
         _logStartEpochMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         _logStartRealtime = Time.realtimeSinceStartup;
         _lastWrittenTsMs = 0;
-        _sampleIndex = 0;
+        _timeline.Reset(_logStartEpochMs);
+        _lastNativeSampleRealtime = Time.realtimeSinceStartup; // 最初のサンプルが届くまでは待つ
         NativeImuRowCount = 0;
+        WrittenRowCount = 0;
 
         // ネイティブのサンプル時刻(端末起動からの秒)をepochへ写すための基準点。
         // 実機以外では0が返り、ネイティブ経路は使われない
@@ -343,6 +373,9 @@ public class RunTelemetryLogger : MonoBehaviour
         CloseWriter();
         _logging = false;
         if (sensorTiming != null) sensorTiming.StopMeasuring();
+        if (_timeline.RejectedNativeCount > 0)
+            Debug.LogWarning($"[TELEMETRY] 時刻が前の行より古いIMUサンプル {_timeline.RejectedNativeCount} 件を書かずに捨てました " +
+                             "(ネイティブ途絶→合成行→再開の重なり)");
         if (DroppedRowCount > 0)
             Debug.LogError($"[TELEMETRY] CSVログ終了 — 不完全 ({DroppedRowCount} 行欠落): {_filePath}");
         else

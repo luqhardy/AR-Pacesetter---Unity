@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-05 — GPSロスト後にアバターが戻らない / スタンバイ中にCSVが止まる / CSV時刻の逆行
+
+GPS監視が InertialMovement からしか復帰させず、FadeOut / Standby からの復帰はRキーのみ — 実機では5秒超のロスト後、走行終了までアバターが消えたままだった。判定と遷移を `GpsSignalPolicy`(純ロジック)へ移し、FadeOut→Normal・GPS起因Standby→ReAccumulation を追加。復帰は仕様どおり精度5m以内(以前は10m未満)。Standbyは原因つき(`EnterStandby`)で、グラス切断のスタンバイはGPSでは戻さない。マテリアルが無いとフェードがStandbyへ進まない不具合も修正。
+`RunTelemetryLogger` がアバターに同居しており、スタンバイ(アバターごと非アクティブ)の間CSVが1行も書かれていなかった(E2Eは IsLogging フラグだけ見て通過) → 別GameObjectへ。ネイティブIMUが0件のフレームに開始直後の時刻の合成行が混ざる件は `TelemetryTimeline` で単調増加を保証。
+検証: tools/verify.sh 全通過(dotnet test 369/369、Swift 24、E2E 218/218 — 新規: 測位だけでFadeOut/Standbyから復帰・7mは復帰でない・スタンバイ中もCSV行が増える・グラス切断のスタンバイはGPSで戻さない)
+
 ### 2026-09-25 (3) — 実機の初回確認(FIELD_TEST_PLAN §0-A)と開発者モードのフレーム時間表示
 
 実機で一度も見ていない項目(新しいネイティブ.mmのビルド、Bluetooth/マイクが出ないこと、FootPlantingの見た目、フレーム時間、実機CSVのM2P)を1か所の室内チェックリストに。§0 の許可ダイアログの記述も現状へ。

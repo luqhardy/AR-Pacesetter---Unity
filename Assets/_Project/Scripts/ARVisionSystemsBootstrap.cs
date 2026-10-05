@@ -89,12 +89,10 @@ public static class ARVisionSystemsBootstrap
         Ensure<AvatarVisibilityDiagnostics>(); // 「なぜ見えないか」を経路で報告(ログ+Swiftバナー)
 
         // F-11: 100Hz テレメトリCSVロガー(基本設計書§5.2 — PoCの核)。
-        // アバターtransformを読むためエンジンと同居させる
-        if (engine.GetComponent<RunTelemetryLogger>() == null)
-        {
-            engine.gameObject.AddComponent<RunTelemetryLogger>();
-            Debug.Log("[BOOTSTRAP] RunTelemetryLogger auto-attached to avatar.");
-        }
+        // **アバターとは別のGameObjectに置く**。スタンバイ(GPSロストのフェード完了・グラス切断)は
+        // アバターのGameObjectごと非アクティブにするため、同居させていた頃はその間
+        // Update が止まり、CSVが1行も書かれなかった(§8.3「CSVログは継続」に反する)
+        Ensure<RunTelemetryLogger>();
 
         // Swiftブリッジ受信オブジェクト — UnitySendMessage のターゲットになるため
         // GameObject名は UnityBridge.swift の sendMessageToGO と完全一致させる

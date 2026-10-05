@@ -160,6 +160,8 @@ stateDiagram-v2
 ```
 
 - `TransitionToState(Reaccumulation)` は `SimulatedGPSAccuracyRadius` を 99 に戻す。精度を設定するのは**遷移の後**。
+- 復帰の遷移表は `GpsSignalPolicy`(純ロジック)。Standby へは原因つき(`EnterStandby`)で入る。
+  GPS復帰で ReAccumulation へ進むのは原因が `GpsLost` のときだけ — グラス切断(§8.3)は再スタート操作を待つ。
 
 ---
 
@@ -196,6 +198,7 @@ stateDiagram-v2
 - **平滑化はフレーム時間依存にする**(`FrameSmoothing.Factor(Time.deltaTime, k)`)。`Lerp(a, b, Time.deltaTime * k)` は長いフレームで瞬間移動に化ける
 - **モデル(Animatorの付いた子)の `localPosition` は `FootPlanting` が毎フレーム書く**(足のめり込み補正)。位置を変えたいときはルートを動かす。足裏の点はメッシュから取るので、アバターのFBXは **Read/Write 有効**にする
 - 新規マネージャーは `ARVisionSystemsBootstrap` に登録すればシーン配線不要
+- **Standby はアバターのGameObjectごと非アクティブにする**。走行中ずっと動くべきもの(`RunTelemetryLogger` 等)をアバターに同居させない
 - アバターの色は発光で出すので、アバターのmaterialは **Emission 対応**にする
 - GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う。既定値(`true`)は仕様どおりに保つ。
   屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)

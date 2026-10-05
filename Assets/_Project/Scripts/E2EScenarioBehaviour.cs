@@ -1268,6 +1268,64 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(gpsMonitor.AutoLostHandlingEnabled,
                 "gps-auto: SetGpsLostHandling(true) re-arms F-09/F-10 at runtime");
 
+            // ── 実測サンプルだけで FadeOut / Standby から戻ること (AGENTS.md §5) ──
+            // 以前の監視は InertialMovement からしか復帰させず、FadeOut→Normal と
+            // Standby→ReAccumulation はRキーにしか無かった。実機では5秒を超えるロストの後、
+            // アバターが走行終了まで戻らなかった。ここは TransitionToState で復帰させず、
+            // 測位サンプルの供給だけで戻ることを縛る
+            gpsMonitor.ResetSession();
+            stateController.TransitionToState(GameStateController.ARVisionState.Normal);
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
+            yield return null;
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 12.0f);
+            yield return null;
+            yield return null;
+            stateController.TransitionToState(GameStateController.ARVisionState.FadeOut); // 5秒経過を短絡
+            yield return null;
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
+            yield return null;
+            yield return null;
+            Check(stateController.currentState == GameStateController.ARVisionState.Normal,
+                $"gps-auto: a good fix during fade-out returns to Normal (§5, got {stateController.currentState})");
+
+            // 5〜10mは復帰ではない(ヒステリシス): 慣性移動のまま
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 12.0f);
+            yield return null;
+            yield return null;
+            gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 7.0f);
+            yield return null;
+            yield return null;
+            Check(stateController.currentState == GameStateController.ARVisionState.InertialMovement,
+                $"gps-auto: a 7m fix is not a recovery (needs <=5m, got {stateController.currentState})");
+
+            // フェード完了まで進めてGPS起因のスタンバイへ
+            var telemetryForGps = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
+            stateController.TransitionToState(GameStateController.ARVisionState.FadeOut);
+            yield return WaitScaled(1.5f);
+            Check(stateController.currentState == GameStateController.ARVisionState.Standby
+                  && stateController.CurrentStandbyCause == GameStateController.StandbyCause.GpsLost,
+                $"gps-auto: fade-out completes into a GPS-caused Standby ({stateController.currentState}/{stateController.CurrentStandbyCause})");
+
+            // スタンバイはアバターのGameObjectを非アクティブにする。CSVはその間も書かれること
+            // (以前はロガーがアバターに同居しており、IsLogging は true のまま行が止まっていた)
+            long rowsAtStandby = telemetryForGps != null ? telemetryForGps.WrittenRowCount : 0;
+            yield return WaitScaled(0.5f);
+            Check(telemetryForGps != null && telemetryForGps.WrittenRowCount > rowsAtStandby,
+                $"telemetry: CSV rows keep growing during GPS Standby ({rowsAtStandby} → {telemetryForGps?.WrittenRowCount})");
+
+            // 測位の復帰だけで 再集積 → 1.5秒の演出 + 精度ゲート → Normal
+            bool sawReaccumulation = false;
+            for (float t = 0f; t < 3.5f && stateController.currentState != GameStateController.ARVisionState.Normal; t += 0.25f)
+            {
+                gpsMonitor.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
+                yield return null;
+                sawReaccumulation |= stateController.currentState == GameStateController.ARVisionState.Reaccumulation;
+                yield return WaitScaled(0.25f);
+            }
+            Check(sawReaccumulation, "gps-auto: a good fix moves a GPS Standby into ReAccumulation");
+            Check(stateController.currentState == GameStateController.ARVisionState.Normal,
+                $"gps-auto: GPS recovery alone brings the avatar back to Normal (got {stateController.currentState})");
+
             gpsMonitor.ResetSession();
             gpsMonitor.AutoLostHandlingEnabled = GpsSignalMonitor.VerificationDefaultAutoLostHandling;
             stateController.TransitionToState(GameStateController.ARVisionState.Normal);
@@ -1285,8 +1343,27 @@ public class E2EScenarioBehaviour : MonoBehaviour
             yield return null;
             Check(stateController.currentState == GameStateController.ARVisionState.Standby,
                 "glass: disconnect moves FSM to Standby (avatar hidden, §8.3)");
-            Check(telemetryForGlass == null || telemetryForGlass.IsLogging,
-                "glass: CSV logging continues while disconnected (§8.3)");
+            Check(stateController.CurrentStandbyCause == GameStateController.StandbyCause.GlassDisconnected,
+                "glass: standby records the glass disconnect as its cause");
+            // IsLogging だけでは不十分 — 以前はアバターごと非アクティブになったロガーが
+            // フラグを true のまま1行も書いていなかった。行数が実際に増えることを見る
+            long rowsAtDisconnect = telemetryForGlass != null ? telemetryForGlass.WrittenRowCount : 0;
+            yield return WaitScaled(0.5f);
+            Check(telemetryForGlass != null && telemetryForGlass.IsLogging
+                  && telemetryForGlass.WrittenRowCount > rowsAtDisconnect,
+                $"glass: CSV rows keep growing while disconnected (§8.3, {rowsAtDisconnect} → {telemetryForGlass?.WrittenRowCount})");
+
+            // グラス切断のスタンバイは、GPSが良好でも戻さない(再スタート操作を待つ)
+            var gpsForGlass = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+            if (gpsForGlass != null)
+            {
+                gpsForGlass.ReportGpsUpdate(34.6937, 135.5023, 3.0f);
+                yield return null;
+                yield return null;
+                Check(stateController.currentState == GameStateController.ARVisionState.Standby,
+                    "glass: a good GPS fix does NOT resurrect a glass-disconnect standby (§8.3)");
+                gpsForGlass.ResetSession();
+            }
 
             // 再接続だけではアバターを復帰させない(準備画面からの再スタートを待つ)
             deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");

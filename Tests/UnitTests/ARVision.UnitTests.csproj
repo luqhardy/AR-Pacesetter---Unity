@@ -48,5 +48,7 @@
     <Compile Include="..\..\Assets\_Project\Scripts\GoalLineMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\PaceSynchronicityMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\RunnerTrackingMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\GpsSignalPolicy.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\TelemetryTimeline.cs" />
   </ItemGroup>
 </Project>

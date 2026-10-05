@@ -13,8 +13,24 @@ public class GameStateController : MonoBehaviour
         Reaccumulation
     }
 
+    /// <summary>
+    /// スタンバイに入った原因。GPS復帰で ReAccumulation へ進めてよいのは
+    /// <see cref="GpsLost"/> のときだけ — グラス切断(§8.3)は再接続後の再スタート操作を、
+    /// 低バッテリー退避は利用者の判断を待つ。
+    /// </summary>
+    public enum StandbyCause
+    {
+        None,
+        GpsLost,
+        GlassDisconnected,
+        Other
+    }
+
     [Header("Current Status")]
     public ARVisionState currentState = ARVisionState.Normal;
+
+    /// <summary>現在のスタンバイの原因。Standby以外では <see cref="StandbyCause.None"/>。</summary>
+    public StandbyCause CurrentStandbyCause { get; private set; } = StandbyCause.None;
 
     [Header("References")]
     [SerializeField] private GameObject avatarTarget;
@@ -132,9 +148,20 @@ public class GameStateController : MonoBehaviour
     }
 
     // ── Transition dispatcher ────────────────────────────────────────────────
+    /// <summary>
+    /// 原因つきでスタンバイへ入る。原因は GPS 復帰で自動的に戻してよいかの判断に使う
+    /// (<see cref="GpsSignalPolicy"/>)。<see cref="TransitionToState"/> で直接入ると原因は Other。
+    /// </summary>
+    public void EnterStandby(StandbyCause cause)
+    {
+        TransitionToState(ARVisionState.Standby);
+        CurrentStandbyCause = cause;
+    }
+
     public void TransitionToState(ARVisionState newState)
     {
         currentState = newState;
+        CurrentStandbyCause = newState == ARVisionState.Standby ? StandbyCause.Other : StandbyCause.None;
         Debug.Log($"[FSM] AR Vision State → {newState}");
 
         switch (newState)
@@ -186,25 +213,26 @@ public class GameStateController : MonoBehaviour
     // ── Coroutines ───────────────────────────────────────────────────────────
     private IEnumerator FadeAvatarAlpha(float start, float end, float duration)
     {
+        // マテリアルが取れなくてもフェードの時間は進めてスタンバイへ入る。
+        // 以前はここで yield break しており、FSM が FadeOut のまま止まっていた
         Material mat = GetActiveMaterial();
-        if (mat == null) yield break;
-
-        Color baseColor = mat.color;
+        Color baseColor = mat != null ? mat.color : Color.white;
         float elapsed = 0.0f;
 
         while (elapsed < duration)
         {
-            // Allow GPS recovery to interrupt the fade at any point (AGENTS.md §5)
-            if (currentState == ARVisionState.Normal) yield break;
+            // GPS復帰(→Normal)やグラス切断(→Standby)でいつでも打ち切る (AGENTS.md §5)
+            if (currentState != ARVisionState.FadeOut) yield break;
 
             elapsed += Time.deltaTime;
-            float alpha = Mathf.Lerp(start, end, elapsed / duration);
-            ApplyAlpha(baseColor, alpha);
+            if (mat != null)
+                ApplyAlpha(baseColor, Mathf.Lerp(start, end, elapsed / duration));
             yield return null;
         }
 
-        if (end == 0.0f)
-            TransitionToState(ARVisionState.Standby);
+        // 途中で別の遷移が入っていたら、その原因(例: グラス切断)を GPS で上書きしない
+        if (end == 0.0f && currentState == ARVisionState.FadeOut)
+            EnterStandby(StandbyCause.GpsLost);
     }
 
     private IEnumerator ExecuteReaccumulationProcess()
@@ -217,11 +245,16 @@ public class GameStateController : MonoBehaviour
         if (vfx != null)
             vfx.PlayRecoveryConvergence();
         yield return new WaitForSeconds(1.5f);
+        // 演出中にグラス切断等で別の状態へ移っていたら、ここで Normal へ戻してはいけない
+        if (currentState != ARVisionState.Reaccumulation) yield break;
 
         // Step 2: AGENTS.md §5 accuracy gate — wait until radius ≤ 5m
         Debug.Log("[REACCUMULATION] Waiting for GPS accuracy ≤5m… (press A in Editor)");
         while (SimulatedGPSAccuracyRadius > 5.0f)
+        {
+            if (currentState != ARVisionState.Reaccumulation) yield break;
             yield return null;
+        }
 
         // Step 3: Materialize and confirm
         RestoreAvatarAlpha();
