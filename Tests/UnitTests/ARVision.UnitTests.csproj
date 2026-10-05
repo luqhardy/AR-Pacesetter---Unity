@@ -52,5 +52,7 @@
     <Compile Include="..\..\Assets\_Project\Scripts\TelemetryTimeline.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\JitterGuard.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\RecentVelocityWindow.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\GlowPulseMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\SyncAverage.cs" />
   </ItemGroup>
 </Project>

@@ -1169,8 +1169,32 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
             // 5秒でフェードアウト→1秒後にスタンバイ(SetActive(false))。
             // この「消えた」が GPS 経路として報告されること
+            // 透過率・発光はモデル配下の全マテリアルへ。Y Bot は2メッシュ・2マテリアルで、
+            // 以前は1枚目だけを操作していた(半身だけ色が変わり、フェード中も半身は不透明のまま)
+            var fadeMaterials = stateController.AvatarMaterials;
+            Check(fadeMaterials.Count >= 2,
+                $"materials: fade covers every material of the model (got {fadeMaterials.Count})");
+            var glowVisuals = engine.GetComponent<AvatarVisualsAndActions>();
+            if (glowVisuals != null)
+            {
+                Check(glowVisuals.GlowMaterialCount == fadeMaterials.Count,
+                    $"materials: pace colour/glow covers the same materials ({glowVisuals.GlowMaterialCount} vs {fadeMaterials.Count})");
+                Check(glowVisuals.LastGlowIntensity >= 0f,
+                    $"materials: glow intensity is never negative ({glowVisuals.LastGlowIntensity:F2})");
+            }
+
             stateController.TransitionToState(GameStateController.ARVisionState.FadeOut);
-            yield return WaitScaled(1.5f);
+            yield return WaitScaled(0.5f);
+            bool allFading = fadeMaterials.Count > 0;
+            string alphas = "";
+            for (int m = 0; m < fadeMaterials.Count; m++)
+            {
+                float a = fadeMaterials[m].color.a;
+                alphas += $"{a:F2} ";
+                if (a >= GameStateController.AvatarBaseAlpha - 0.01f) allFading = false;
+            }
+            Check(allFading, $"materials: every material is fading mid fade-out (alphas {alphas.Trim()})");
+            yield return WaitScaled(1.0f);
             Check(stateController.currentState == GameStateController.ARVisionState.Standby,
                 "gps: fade-out completes into Standby (F-10)");
             if (visibility != null)

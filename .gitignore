@@ -55,3 +55,7 @@ ios/**/*.xcuserstate
 
 # Visual Studio のローカル状態(ウィンドウ配置・Copilot索引・.suo)
 /.vs/
+
+# Visual Studio のプロジェクト移行レポート(ソリューションを開くと生成される)
+/UpgradeLog*.htm
+/_UpgradeReport_Files/

@@ -14,10 +14,10 @@ public class AnalyticsManager : MonoBehaviour
     [SerializeField] private float ambientTemperatureCelsius = 25.0f; // Fed from smartphone weather API
 
     // Internal scoring aggregates (Requirement 4.3)
-    private float _totalSyncSum = 0.0f;
-    private int   _totalSyncCount = 0;
-    private float _currentKmSyncSum = 0.0f;
-    private int   _currentKmSyncCount = 0;
+    // 時間重み付き・doubleで積算(SyncAverage)。フレーム数で割るとフレームが落ちた区間ほど軽くなり、
+    // floatの合計は60分走で有効桁を超える
+    private readonly SyncAverage _sessionSync = new SyncAverage();
+    private readonly SyncAverage _kmSync = new SyncAverage();
 
     private float _lastEvaluatedKilometerMarker = 0.0f;
     private float _cumulativeFatigueIndex = 0.0f;
@@ -91,10 +91,8 @@ public class AnalyticsManager : MonoBehaviour
             _paceDistanceDeviationMeters);
 
         // Update aggregates instead of adding to a list (Fix: Memory Bloat)
-        _totalSyncSum += _liveSyncRate;
-        _totalSyncCount++;
-        _currentKmSyncSum += _liveSyncRate;
-        _currentKmSyncCount++;
+        _sessionSync.Add(_liveSyncRate, integrationStep);
+        _kmSync.Add(_liveSyncRate, integrationStep);
 
         // 2. Compute Temperature-Compensated Fatigue Index (Requirement 4.3)
         CalculateDynamicFatigue(_liveSyncRate);
@@ -122,13 +120,10 @@ public class AnalyticsManager : MonoBehaviour
         {
             _lastEvaluatedKilometerMarker = Mathf.Floor(totalKilometers);
             
-            float averageSyncForThisKm = _currentKmSyncCount > 0 
-                ? _currentKmSyncSum / _currentKmSyncCount 
-                : 0f;
+            float averageSyncForThisKm = _kmSync.Average;
 
             // Reset window for next km
-            _currentKmSyncSum = 0.0f;
-            _currentKmSyncCount = 0;
+            _kmSync.Reset();
 
             Debug.Log($"[SPLIT ALERT] 1KM Mark Reached. Current Kilometer Sync Rate: {averageSyncForThisKm:F1}%");
 
@@ -146,10 +141,8 @@ public class AnalyticsManager : MonoBehaviour
     /// <summary>再走行対応: 集計値をすべて初期化する。</summary>
     public void ResetSession()
     {
-        _totalSyncSum = 0.0f;
-        _totalSyncCount = 0;
-        _currentKmSyncSum = 0.0f;
-        _currentKmSyncCount = 0;
+        _sessionSync.Reset();
+        _kmSync.Reset();
         _lastEvaluatedKilometerMarker = 0.0f;
         _cumulativeFatigueIndex = 0.0f;
         _paceDistanceDeviationMeters = 0.0f;
@@ -161,16 +154,15 @@ public class AnalyticsManager : MonoBehaviour
 
     public float GetSessionAverageSync()
     {
-        if (_totalSyncCount == 0) return 0f;
-        return _totalSyncSum / _totalSyncCount;
+        return _sessionSync.Average;
     }
 
     public string EvaluateFinalSessionPerformanceRank()
     {
-        if (_totalSyncCount == 0) return "D";
+        if (!_sessionSync.HasSamples) return "D";
 
-        // Calculate overarching mean performance rating
-        float totalAverageSync = _totalSyncSum / _totalSyncCount;
+        // 時間重み付きの平均同期率で評価する
+        float totalAverageSync = _sessionSync.Average;
 
         // Section 4.3 Ranking Matrix Evaluation (S ~ D)
         if (totalAverageSync >= 90.0f) return "S";

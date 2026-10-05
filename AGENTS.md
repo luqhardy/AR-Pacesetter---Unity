@@ -204,6 +204,8 @@ stateDiagram-v2
 - 新規マネージャーは `ARVisionSystemsBootstrap` に登録すればシーン配線不要
 - **Standby はアバターのGameObjectごと非アクティブにする**。走行中ずっと動くべきもの(`RunTelemetryLogger` 等)をアバターに同居させない
 - アバターの色は発光で出すので、アバターのmaterialは **Emission 対応**にする
+- アバターの透過率・発光は `AvatarMaterialSet`(モデル配下の全レンダラーの全マテリアル)で操作する。
+  `renderer.material` は1枚目だけ — Y Bot は2メッシュなので半身しか変わらない
 - GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う。既定値(`true`)は仕様どおりに保つ。
   屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)
 - 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する

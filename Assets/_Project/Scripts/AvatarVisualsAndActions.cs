@@ -27,8 +27,10 @@ public class AvatarVisualsAndActions : MonoBehaviour
     [Tooltip("Optional avatar Animator. Trigger 'CalmDownSign' fires once per overload episode.")]
     [SerializeField] private Animator avatarAnimator;
 
-    private Material _glowMaterial;
+    // 発光・透過率はモデル配下の全マテリアルへ(以前は最初の1枚だけで、Y Botは半身しか色が変わらなかった)
+    private AvatarMaterialSet _glowMaterials;
     private int _currentHeartRate = 60; // Baseline default
+    private bool _hasHeartRate;          // 実際に心拍が届いたか(届くまでは脈動させない)
     private bool _vitalWarningActive = false;
     private string _paceColorState = "Just";
 
@@ -52,7 +54,7 @@ public class AvatarVisualsAndActions : MonoBehaviour
 
     void Update()
     {
-        if (userCamera == null || _glowMaterial == null) return;
+        if (userCamera == null || _glowMaterials == null || _glowMaterials.IsEmpty) return;
 
         // 1. ペースシンクロ・カラー (§7.1): 進行方向へのアバター符号付きリード距離を算出
         Color targetBaseColor = ComputePaceSyncColor();
@@ -78,17 +80,20 @@ public class AvatarVisualsAndActions : MonoBehaviour
             _vitalWarningActive = false;
         }
 
-        // 3. Compute Bio-Luminescence Pulse Frequency using Heart Rate
-        float pulseFrequency = (_currentHeartRate / 60.0f) * Mathf.PI * 2.0f;
-
-        // Use a sine wave to create a smooth, continuous glowing oscillation
-        float sineWave = Mathf.Sin(Time.time * (pulseFrequency / 2.0f));
-        float currentIntensity = baseIntensity + (sineWave * pulseAmplitude);
+        // 3. バイオルミネッセンス(§4.4): 心拍に同期した脈動。心拍が届いていなければ一定、負にはしない
+        float currentIntensity = GlowPulseMath.Intensity(baseIntensity, pulseAmplitude,
+            _hasHeartRate, _currentHeartRate, Time.time);
 
         // 4. Apply Final HDR Color and Light Intensity Matrix to the shader
-        Color finalGlowColor = targetBaseColor * currentIntensity;
-        _glowMaterial.SetColor("_EmissionColor", finalGlowColor);
+        LastGlowIntensity = currentIntensity;
+        _glowMaterials.SetEmission(targetBaseColor * currentIntensity);
     }
+
+    /// <summary>E2E/検証用: 直近に適用した発光の強さ(0以上)。</summary>
+    public float LastGlowIntensity { get; private set; }
+
+    /// <summary>E2E検証用: 発光を適用しているマテリアルの数。</summary>
+    public int GlowMaterialCount => _glowMaterials != null ? _glowMaterials.Count : 0;
 
     private Color ComputePaceSyncColor()
     {
@@ -127,34 +132,26 @@ public class AvatarVisualsAndActions : MonoBehaviour
         avatarRenderer = staticMesh;
         _avatarSkinnedRenderer = skinnedMesh;
 
-        // Reset the cached material reference so it grabs from the new renderer
-        _glowMaterial = null; 
+        // Reset the cached materials so they are collected from the new model
+        _glowMaterials = null;
         RefreshMaterialReference();
     }
 
     private void RefreshMaterialReference()
     {
-        if (_glowMaterial != null) return;
+        if (_glowMaterials != null && !_glowMaterials.IsEmpty) return;
 
-        if (avatarRenderer != null)
-        {
-            _glowMaterial = avatarRenderer.material;
-        }
-        else if (_avatarSkinnedRenderer != null)
-        {
-            _glowMaterial = _avatarSkinnedRenderer.material;
-        }
+        Animator model = AvatarRigLocator.FindBestAnimator(transform);
+        Renderer fallback = avatarRenderer != null ? avatarRenderer : (Renderer)_avatarSkinnedRenderer;
+        _glowMaterials = AvatarMaterialSet.FromModel(model != null ? model.transform : null, fallback);
 
-        if (_glowMaterial != null)
+        if (!_glowMaterials.IsEmpty)
         {
-            _glowMaterial.EnableKeyword("_EMISSION");
+            _glowMaterials.EnableEmissionKeyword();
 
             // 企画書 4.1: 起動時から透過率50%の半透明を適用
             // (マテリアルが透過モードでない場合は視覚上no-op)
-            Color baseColor = _glowMaterial.color;
-            _glowMaterial.color = new Color(
-                baseColor.r, baseColor.g, baseColor.b,
-                GameStateController.AvatarBaseAlpha);
+            _glowMaterials.SetAlpha(GameStateController.AvatarBaseAlpha);
         }
     }
 
@@ -162,5 +159,6 @@ public class AvatarVisualsAndActions : MonoBehaviour
     public void UpdateHeartRate(int newBpm)
     {
         _currentHeartRate = newBpm;
+        if (newBpm > 0) _hasHeartRate = true;
     }
 }
