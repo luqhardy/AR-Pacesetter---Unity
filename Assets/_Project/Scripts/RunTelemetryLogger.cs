@@ -86,6 +86,12 @@ public class RunTelemetryLogger : MonoBehaviour
     public bool IsLogging => _logging;
     public string CurrentFilePath => _filePath;
 
+    /// <summary>
+    /// 展示デモ(BoothDemoController)の走行ではCSVを書かない。中身は合成値で §11.2 の評価に
+    /// 使えず、来場者の数だけファイルが溜まる。ブリッジが StartSession のたびに設定する
+    /// </summary>
+    public bool SuppressLogging { get; set; }
+
     void Awake()
     {
         // ?? は使わない: エディタの GetComponent は未装着でも「偽のnull」オブジェクトを返し、
@@ -193,7 +199,7 @@ public class RunTelemetryLogger : MonoBehaviour
     {
         if (avatarEngine == null) return;
 
-        bool shouldLog = avatarEngine.IsRunMotionActive;
+        bool shouldLog = avatarEngine.IsRunMotionActive && !SuppressLogging;
 
         if (shouldLog && !_logging) StartLogging();
         else if (!shouldLog && _logging) StopLogging();
@@ -429,6 +435,7 @@ public class RunTelemetryLogger : MonoBehaviour
         _bufferedRows = 0;
         _sampleAccumulator = 0f;
         _camInit = false;
+        SuppressLogging = false;
     }
 
     // F-11のCSVは200行(≒2秒)毎にしかディスクへ渡していないため、走行中に

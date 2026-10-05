@@ -26,7 +26,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         public int heartRate;
         public int avatarHeightCm;
         public double forwardOffsetM;
-        public string mode;         // "pace"(既定) | "ghost"
+        public string mode;         // StartSession: "pace"(既定) | "ghost" / StartBoothDemo: "standing"(既定) | "walking"
         public string ghostDateIso; // mode=ghost時: 競走相手のセッションdateIso
         // UpdateMetrics の測位サンプル(§8.1 ロスト判定 / §5.2 CSVログ用)。
         // gpsAccuracy > 0 が有効サンプルの目印(CoreLocation同様、負値/未送信は無効)
@@ -66,6 +66,8 @@ public class ARSessionManagerBridge : MonoBehaviour
     [SerializeField] private GpsSignalMonitor gpsMonitor;
     [SerializeField] private GoalLineController goalLineController;
     [SerializeField] private RunnerTrackingState runnerTracking;
+    [SerializeField] private RunTelemetryLogger telemetryLogger;
+    [SerializeField] private BoothDemoController boothDemo;
 
     /// <summary>
     /// 直近にSwiftへ報告したM2P(ms)。<see cref="MotionToPhotonMath.Unmeasured"/>(-1)は未計測。
@@ -143,6 +145,18 @@ public class ARSessionManagerBridge : MonoBehaviour
         }
         if (cmd == null || string.IsNullOrEmpty(cmd.command)) return;
 
+        // 展示デモの走行中は、Swift(CoreLocation)の実測を流さない。屋内の悪い精度が
+        // 台本のGPSと混ざると、F-09/F-10 が台本と無関係な時刻に発動する
+        if (cmd.command == "UpdateMetrics" && _presentationSession && !_dispatchingPresentation)
+        {
+            if (!_presentationMetricsNoticeLogged)
+            {
+                _presentationMetricsNoticeLogged = true;
+                Debug.Log("[SWIFT BRIDGE] 展示デモ中のため Swift の UpdateMetrics を無視します。");
+            }
+            return;
+        }
+
         switch (cmd.command)
         {
             case "StartSession": HandleStartSession(cmd); break;
@@ -156,6 +170,8 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "ImportVrmAvatar": HandleVrmAvatar(cmd.path); break;
             case "SelectVrmAvatar": HandleVrmAvatar(cmd.path); break;
             case "RequestVrmAvatars": HandleRequestVrmAvatars(); break;
+            case "StartBoothDemo": HandleStartBoothDemo(cmd); break;
+            case "StopBoothDemo": HandleStopBoothDemo(); break;
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown command: {cmd.command}");
                 break;
@@ -183,6 +199,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         // リセットで false に戻るため、必ずリセット後に立てる
         ExternalMetricsActive = true;
         _sessionResultSent = false;
+        ApplyPresentationFlags(_dispatchingPresentation);
 
         // 目標距離: 到達したらUnity側から自動終了する (SessionEnded送信)
         _goalDistanceMeters = cmd.distanceKm > 0 ? cmd.distanceKm * 1000.0 : 0;
@@ -357,10 +374,82 @@ public class ARSessionManagerBridge : MonoBehaviour
             runnerTracking.EndSession();
 
         SendAvatarStateIfChanged("Goal");
+
+        if (_presentationSession)
+        {
+            // 展示デモの結果は SessionEnded にしない — Swift は受信のたびに HealthKit へ
+            // ワークアウトを保存する。終了の通知は BoothDemoController が BoothDemoEnded で送る
+            _sessionResultSent = true;
+            _presentationSession = false;
+            Debug.Log("[SWIFT BRIDGE] EndSession — 展示デモのため結果は送信しません。");
+            return;
+        }
+
         SwiftMessageSender.SendSessionResult(record);
         _sessionResultSent = record != null;
         if (_sessionResultSent) SessionResultSendCount++;
         Debug.Log("[SWIFT BRIDGE] EndSession — result sent to Swift.");
+    }
+
+    // ── 展示デモ(Kobe Calling ブース) ────────────────────────────────────────
+    private bool _presentationSession;
+    private bool _dispatchingPresentation;
+    private bool _presentationMetricsNoticeLogged;
+
+    /// <summary>
+    /// 現在のセッションが展示デモか。結果の送信・履歴・CSVを止め、Swiftの実測を無視する。
+    /// 終了(EndSession)で false に戻る。
+    /// </summary>
+    public bool IsPresentationSession => _presentationSession;
+
+    /// <summary>
+    /// 展示デモ(<see cref="BoothDemoController"/>)専用の入口。Swift と同じコマンドを同じ経路で
+    /// 処理するが、ここから始めた StartSession は展示デモとして扱われ、ここから送った
+    /// UpdateMetrics だけがデモ中に受け付けられる。
+    /// </summary>
+    public void OnPresentationCommand(string json)
+    {
+        _dispatchingPresentation = true;
+        try { OnSwiftCommand(json); }
+        finally { _dispatchingPresentation = false; }
+    }
+
+    private void ApplyPresentationFlags(bool presentation)
+    {
+        _presentationSession = presentation;
+        _presentationMetricsNoticeLogged = false;
+        if (sessionController != null)
+            sessionController.SuppressPersistence = presentation;
+        if (telemetryLogger == null)
+            telemetryLogger = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
+        if (telemetryLogger != null)
+            telemetryLogger.SuppressLogging = presentation;
+    }
+
+    private BoothDemoController ResolveBoothDemo()
+    {
+        if (boothDemo == null)
+            boothDemo = FindFirstObjectByType<BoothDemoController>(FindObjectsInactive.Include);
+        return boothDemo;
+    }
+
+    private void HandleStartBoothDemo(SwiftCommand cmd)
+    {
+        BoothDemoController demo = ResolveBoothDemo();
+        if (demo == null)
+        {
+            Debug.LogError("[SWIFT BRIDGE] StartBoothDemo ignored — BoothDemoController not found.");
+            SwiftMessageSender.SendBoothDemoEnded(cmd.mode ?? "", false, "BoothDemoController がありません");
+            return;
+        }
+        demo.Begin(BoothDemoController.ParseMode(cmd.mode), (float)cmd.targetPaceKmH);
+    }
+
+    private void HandleStopBoothDemo()
+    {
+        BoothDemoController demo = ResolveBoothDemo();
+        if (demo != null)
+            demo.Stop();
     }
 
     /// <summary>

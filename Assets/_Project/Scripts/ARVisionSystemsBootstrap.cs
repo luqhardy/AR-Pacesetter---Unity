@@ -81,6 +81,7 @@ public static class ARVisionSystemsBootstrap
         Ensure<OutdoorSemanticClassifier>(); // 屋外路面の画像分類(ARCore Scene Semantics)。未導入なら休眠
         Ensure<VrmAvatarLoader>(); // 差し替えアバター(VRM)の計測・判定・入れ替え
         Ensure<GoalLineController>(); // 目標距離接近時のARゴールライン(実行時生成)
+        Ensure<BoothDemoController>(); // 展示ブースの体験モード(StartBoothDemo で起動。アバターとは別のGameObject)
 
         // M2P実測(§10)と100Hz IMU(§5.2)のネイティブ窓口。
         // RunTelemetryLogger より先に用意する(Awakeで参照を取りにいくため)

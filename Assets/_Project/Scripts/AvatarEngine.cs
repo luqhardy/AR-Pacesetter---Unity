@@ -306,7 +306,7 @@ public class AvatarEngine : MonoBehaviour
             // スタンバイ(非表示)明けのアバターは消えた地点に置き去りで、走者はその先にいる。
             // そのまま再開すると10m以上離れて「離隔待機」に入り、**前にいる走者を後ろで
             // 手招きし続ける**。非表示だった/大きく離れたときはリード位置へ置き直す
-            Vector3 anchor = userCamera.position + _currentLinearDirection * leadDistanceMeters;
+            Vector3 anchor = userCamera.position + _currentLinearDirection * DisplayedLeadMeters;
             anchor.y = transform.position.y;
             Vector3 offset = transform.position - anchor;
             offset.y = 0f;
@@ -364,7 +364,7 @@ public class AvatarEngine : MonoBehaviour
 
             // ── Compute filtered anchor position ──────────────────────────────────
             Vector3 rawAnchor = userCamera.position
-                              + (_currentLinearDirection * leadDistanceMeters)
+                              + (_currentLinearDirection * DisplayedLeadMeters)
                               + _sidestepOffset;
             rawAnchor.y = transform.position.y;
             filtered  = SmoothSpatialData(rawAnchor);
@@ -939,6 +939,30 @@ public class AvatarEngine : MonoBehaviour
         leadDistanceMeters = Mathf.Clamp(meters, 1.0f, 10.0f);
     }
 
+    // ── 展示デモ用の見かけのずらし(BoothDemoController) ─────────────────────
+    // 立ったままの体験ではユーザーとアバターの距離が変わらず、遅れ(橙→赤・オーラ)も
+    // 追い抜き(青)も起きない。追従位置だけを前後へずらして見せる。
+    // 目標リード(leadDistanceMeters)は変えない — 色・オーラ・弾性バンドはその3.0mとの
+    // 差で判定するので、ずらした分がそのまま「遅れ」「追い抜き」として本番の経路で反応する
+    private const float MinDisplayedLeadMeters = 0.8f; // これより寄るとグラスの視野から外れる
+    private const float MaxDisplayedLeadMeters = WaitForUserEnterMeters - 0.5f; // 離隔待機に入れない
+    private float _presentationLeadOffsetMeters;
+
+    /// <summary>展示デモの見かけのずらし(m、正=前へ)。本番走行では常に0。</summary>
+    public float PresentationLeadOffsetMeters => _presentationLeadOffsetMeters;
+
+    /// <summary>
+    /// 展示デモ専用: 追従位置を目標リードから前後へずらす。<see cref="ResetSession"/> で0へ戻る。
+    /// 実際の追従距離は 0.8m〜9.5m に収める。
+    /// </summary>
+    public void SetPresentationLeadOffset(float meters)
+    {
+        float displayed = Mathf.Clamp(leadDistanceMeters + meters, MinDisplayedLeadMeters, MaxDisplayedLeadMeters);
+        _presentationLeadOffsetMeters = displayed - leadDistanceMeters;
+    }
+
+    private float DisplayedLeadMeters => leadDistanceMeters + _presentationLeadOffsetMeters;
+
     /// <summary>
     /// 追従アンカーの内部状態を外部座標へ再同期する(SilentRouteRecoverer用)。
     /// サイレント復帰の解除時など、アバターの位置を外部が動かした後に呼ぶことで、
@@ -997,6 +1021,7 @@ public class AvatarEngine : MonoBehaviour
         _overtakenTimer = 0f;
         _sprintTimer = 0f;
         _sidestepOffset = Vector3.zero;
+        _presentationLeadOffsetMeters = 0f;
         _effectiveSpeedMultiplier = 1.0f;
         _jitterGuard.Reset();
         _avatarVelocityWindow.Clear();

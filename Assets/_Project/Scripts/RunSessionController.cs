@@ -84,6 +84,13 @@ public class RunSessionController : MonoBehaviour
     public RunSessionRecord LastRecord => _lastRecord;
     public bool IsFinished => _finished;
 
+    /// <summary>
+    /// 展示デモ(BoothDemoController)の走行は履歴・中断スナップショットへ保存しない。
+    /// 来場者ごとの体験で利用者本人の走行履歴やゴーストの候補が埋まらないように。
+    /// ブリッジが StartSession のたびに設定し、<see cref="ResetForNewSession"/> で false に戻る
+    /// </summary>
+    public bool SuppressPersistence { get; set; }
+
     void Awake()
     {
         if (avatarEngine == null)
@@ -124,7 +131,7 @@ public class RunSessionController : MonoBehaviour
     /// <summary>走行中なら現在値を中断スナップショットとして保存する(走行外は何もしない)。</summary>
     public void PersistInterruptedSnapshot()
     {
-        if (!_runActive || _finished) return;
+        if (!_runActive || _finished || SuppressPersistence) return;
         SessionDataStore.SaveInterruptedSnapshot(BuildSessionRecord());
     }
 
@@ -218,6 +225,7 @@ public class RunSessionController : MonoBehaviour
         _paceSamples.Clear();
         _nextPaceSampleTime = 0f;
         ExternalDistanceMeters = -1;
+        SuppressPersistence = false;
         // Swift主導フラグも解除(次がUnity単体走行ならスプリット供給を復帰させる。
         // Swift主導の再走行時はブリッジがリセット直後に再度trueにする)
         ARSessionManagerBridge.ExternalMetricsActive = false;
@@ -265,6 +273,11 @@ public class RunSessionController : MonoBehaviour
 
         RunSessionRecord record = BuildSessionRecord();
         _lastRecord = record;
+        if (SuppressPersistence)
+        {
+            Debug.Log($"[SESSION] Demo run finished — not saved to history (rank {record.rankLabel}).");
+            return;
+        }
         string savedPath = SessionDataStore.SaveSession(record);
 
         // 通常終了したので、背面移行のたびに書いていた中断スナップショットは不要。

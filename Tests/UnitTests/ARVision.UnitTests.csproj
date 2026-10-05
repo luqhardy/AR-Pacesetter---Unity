@@ -54,5 +54,6 @@
     <Compile Include="..\..\Assets\_Project\Scripts\RecentVelocityWindow.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GlowPulseMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\SyncAverage.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\BoothDemoScript.cs" />
   </ItemGroup>
 </Project>

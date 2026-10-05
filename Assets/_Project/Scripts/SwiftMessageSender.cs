@@ -101,6 +101,25 @@ public static class SwiftMessageSender
             "\"report\":\"{2}\",\"reason\":\"{3}\"}}",
             accepted ? "true" : "false", Escape(name), Escape(report), Escape(reason)));
 
+    /// <summary>
+    /// 展示デモの進行(スタッフ画面用)。beat は BoothDemoScript.Beat の名前
+    /// (歩行モードは "Walking")。totalSeconds は台本の長さ(START以降、カウントダウンを含まない)。
+    /// </summary>
+    public static void SendBoothDemoProgress(string mode, string beat, float elapsedSeconds, float totalSeconds)
+        => SendRaw(string.Format(CultureInfo.InvariantCulture,
+            "{{\"event\":\"BoothDemoProgress\",\"mode\":\"{0}\",\"beat\":\"{1}\"," +
+            "\"elapsedSeconds\":{2:F1},\"totalSeconds\":{3:F0}}}",
+            Escape(mode), Escape(beat), elapsedSeconds, totalSeconds));
+
+    /// <summary>
+    /// 展示デモの終了。completed=false はスタッフの中断・開始失敗。
+    /// 本番の SessionEnded と違い、Swift は HealthKit へ保存しない。
+    /// </summary>
+    public static void SendBoothDemoEnded(string mode, bool completed, string reason)
+        => SendRaw(string.Format(CultureInfo.InvariantCulture,
+            "{{\"event\":\"BoothDemoEnded\",\"mode\":\"{0}\",\"completed\":{1},\"reason\":\"{2}\"}}",
+            Escape(mode), completed ? "true" : "false", Escape(reason)));
+
     /// <summary>選べるアバターの一覧(同梱 + 取り込み)。</summary>
     public static void SendVrmAvatarList(System.Collections.Generic.List<string> paths, string current)
     {

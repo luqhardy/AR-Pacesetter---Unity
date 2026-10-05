@@ -91,6 +91,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
    — 開始→走行→バイタル警告→追い抜き→障害物停止→ルート逸脱復帰→離隔待機→**コーナー追従(半径36.5m)**→ゴール(お辞儀)→記録→ゴースト再走→GPS喪失/復帰→履歴→HUD抑制→ジェスチャー3種→フェイクシャドウ→60fps設定を自動判定(終了コード0=全PASS)
 3. **エディタ手動検証**: README「エディタ検証用ショートカットキー一覧」
    - POV一括デモ: `Tools → AR Pacesetter → POV Demo → Start Automatic 60m Run`
+   - 展示ブースの体験モード(立ったまま・実機ビルドにも含む): `Tools → AR Pacesetter → Booth Demo → Start Standing` / iPhoneからは `StartBoothDemo`。[Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
 4. **統合ビルド(Mac)**: SWIFT_INTEGRATION.md の手順②(UaaL)
 
 ## 4. 企画書§6 成功基準との対応
@@ -107,6 +108,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 ## 5. 未完了事項(引き継ぎ時の注意)
 
+- **展示ブースの体験モード(Kobe Calling)はUnity側のみ**: Swiftのスタッフ画面(モード選択・開始・中断・`BoothDemoProgress` の表示)が未実装。Unity側は `StartBoothDemo` / `StopBoothDemo` で動き、履歴・CSV・`SessionEnded` を残さないことまでE2Eで検証済み。実機では未確認。[Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
 - **M2P(Motion-to-Photon)は未計測。CSVの `latency_m2p` 列は `-1` が入る**
 
   `LatencyBenchmarkRunner` は名前に反して M2P を測っていない。4段のうち実測はひとつも無い:

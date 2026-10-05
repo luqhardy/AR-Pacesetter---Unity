@@ -176,6 +176,8 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | `ARSessionManager` | `RequestLogFiles` | — | F-11走行ログCSVの一覧(新しい順・最大30件)を `LogFiles` イベントで返す。CSVは `persistentDataPath/RunLogs/` にあり**アプリからは他に取り出す手段が無い**ため、開発者モードの共有シートで書き出す |
 | `ARSessionManager` | `ImportVrmAvatar` / `SelectVrmAvatar` | `path` (string) | 差し替えアバター(VRM)を適用する。`path` は**サンドボックス内の絶対パス** — ドキュメントピッカーが返すURLはセキュリティスコープ付きでUnityからは読めないため、Swift側で `Documents/Avatars/` へコピーしてから渡す。結果は `VrmImportResult` で返る |
 | `ARSessionManager` | `RequestVrmAvatars` | — | 選べるアバターの一覧(同梱 + 取り込み)を `VrmAvatarList` で返す |
+| `ARSessionManager` | `StartBoothDemo` | `mode`("standing" 既定 / "walking"), `targetPaceKmH`(任意。0ならモードの既定 12 / 6 km/h) | 展示ブースの体験モード(`BoothDemoController`)。`standing` は約65秒の台本(ジャスト→遅れ→追い抜き→GPSロスト→復帰→ゴール)を本番と同じ経路で流す。`walking` は来場者自身の移動(ARKit)で追従させ、GPSロスト判定を止めて60秒で終わる。実行中に送るとやり直し。**デモの走行は履歴・CSV・`SessionEnded` を残さない**(HealthKitへ保存されない)。デモ中はSwiftの `UpdateMetrics` をUnityが無視する。利用者の走行中は開始せず `BoothDemoEnded(completed:false)` を返す。詳細は [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md) |
+| `ARSessionManager` | `StopBoothDemo` | — | 体験モードを中断する(スタッフ操作)。GPSロスト演出の途中でも、アバターは見える状態に戻る |
 | `DeviceManager` | `ConnectXREAL` | `model`(任意), `pixelWidth`(任意), `pixelHeight`(任意), `refreshHz`(任意) | ReadyチェックのARグラスをConnectedへ。併せて**グラスの画角で描く出力リグ**(`GlassViewRig`)を起動する — iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えないため。画角はグラスから取得できないので解像度・リフレッシュレートから機種を推定し、1920×1080(One/One Pro/Air2で共通)は **XREAL One** を既定とする。`model`があればそれが優先。詳細は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) |
 | `DeviceManager` | `DisconnectXREAL` | — | §8.3: スタンバイ移行でアバターを消去。**走行セッションは終了させない**ためF-11のCSVログはBG継続。再接続だけではアバターを復帰させない(安全のため`ResumeSession`が必要) |
 | `DeviceManager` | `UpdateGlassPose` | `yaw`, `pitch`, `roll`, `timestamp` | グラス実機の頭部姿勢(度)。**現状iOSに供給元は無い**(XREAL SDKはAndroid専用・USB-HIDはiOSから触れない)ため将来用の受け口。0.25秒途切れれば自動で §4.1 の移動平均済み進行方向へ戻る。グラスの画面モードが Anchor のときはグラス自身が頭回転を打ち消すためUnity側は採用しない(二重補正の回避) |
@@ -200,6 +202,8 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 | `LatencyReport` | `ms` (double), `maxMs`・`overBudgetRatio`・`sampleCount`(実測サンプルがある時のみ) | 走行中 1Hz。**F-11のCSV `latency_m2p` と同じ `SensorTimingBridge` の実測値**(ARKitフレームのセンサー時刻と `CADisplayLink.targetTimestamp` の差)。`ms = -1` は未計測で、合成値は一切入らない。`maxMs`/`overBudgetRatio` は1Hzの瞬時値では拾えない超過を捉えるための区間統計 |
 | `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答(目標距離の自動終了を含む)。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
 | `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
+| `BoothDemoProgress` | `mode`, `beat`(OnPace/FallingBehind/CatchingUp/Overtaking/Settling/GpsLost/GpsRecovering/FinalStretch。歩行は Walking), `elapsedSeconds`, `totalSeconds` | 体験モードの区間が変わるたび(スタッフ画面の進行表示用) |
+| `BoothDemoEnded` | `mode`, `completed`(最後まで進んだか), `reason`(中断・開始失敗の理由) | 体験モードの終了時。**`SessionEnded` の代わりに送る** — Swiftはこれを受けてもHealthKitへ保存しない |
 | `LowBattery` | — | **現在発火しない** — 唯一の送出元 `SafetyAndSystemController` が実行時に生成されないため(HANDOVER.md §5)。Swift側の購読は将来の有効化に備えて残置。※HUDのバッテリー黄色点滅(`PeripheralHUDManager`)は別実装で正常動作 |
 | `VoiceAlert` | `kind`("Signal"/"Intersection"), `ttc` | 音声警告要求 → Swift側`VoiceAlertSpeaker`がAVSpeechSynthesizerで発話。重複時はTTCが短い方が割込(企画書4.3)。信号は長め振動併用 |
 

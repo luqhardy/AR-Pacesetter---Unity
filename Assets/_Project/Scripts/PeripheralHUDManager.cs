@@ -89,6 +89,13 @@ public class PeripheralHUDManager : MonoBehaviour
     public float DistanceMeters => _cumulativeDistanceMeters;
     public int CurrentHeartRate => _simulatedHeartRate;
 
+    /// <summary>
+    /// 展示デモ(BoothDemoController)が表示させる距離(m)。負なら自前のカメラ計測を表示する。
+    /// 立ったままの体験では自前計測が0のまま動かないため、台本の距離を見せる。
+    /// 表示だけを差し替え、<see cref="DistanceMeters"/>(記録のフォールバック元)は変えない
+    /// </summary>
+    public float PresentationDistanceMeters { get; set; } = -1f;
+
     /// <summary>HUDの現在可視度(1=通常、首振り抑制中は0.15へフェード)。E2E検証用。</summary>
     public float CurrentHudVisibility => _hudVisibility;
 
@@ -97,6 +104,7 @@ public class PeripheralHUDManager : MonoBehaviour
     {
         _elapsedTimeSeconds = 0.0f;
         _cumulativeDistanceMeters = 0.0f;
+        PresentationDistanceMeters = -1f;
         _runStartUtc = System.DateTime.MinValue;
         _wasRunInProgress = false;
         _smoothedSpeedMps = 0f;
@@ -226,7 +234,10 @@ public class PeripheralHUDManager : MonoBehaviour
 
         if (textDistance != null)
         {
-            float totalKm = _cumulativeDistanceMeters / 1000f;
+            float shownMeters = PresentationDistanceMeters >= 0f
+                ? PresentationDistanceMeters
+                : _cumulativeDistanceMeters;
+            float totalKm = shownMeters / 1000f;
             textDistance.text = string.Format("{0:F2} km", totalKm);
         }
 
@@ -405,6 +416,9 @@ public class PeripheralHUDManager : MonoBehaviour
     /// <summary>E2E/検証用: F-10の警告が今表示されているか。</summary>
     public bool IsSafetyWarningVisible =>
         textSafetyWarning != null && textSafetyWarning.gameObject.activeSelf;
+
+    /// <summary>E2E/検証用: 距離表示の文字列。</summary>
+    public string CurrentDistanceText => textDistance != null ? textDistance.text : string.Empty;
 
     /// <summary>E2E/検証用: 現在ペース表示の文字列。</summary>
     public string CurrentPaceText => textPace != null ? textPace.text : string.Empty;

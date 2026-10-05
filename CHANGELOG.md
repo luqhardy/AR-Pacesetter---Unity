@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-05 (4) — 展示ブースの体験モード(Kobe Calling): 立ったまま / 数歩あるく(Unity側)
+
+実物のグラスを掛けて走らずに体験する `BoothDemoController`(実機ビルドにも含む。`StartBoothDemo`/`StopBoothDemo`)。立ったままは約65秒の台本(`BoothDemoScript`・純ロジック)を本番の経路へ流し、遅れ・追い抜きは `AvatarEngine.SetPresentationLeadOffset` で追従位置だけずらす(色・オーラの基準3.0mは不変)。歩行はARKitの移動で追従・GPSロスト判定OFF。
+デモの走行は履歴・CSV・`SessionEnded`(HealthKit)を残さず、デモ中のSwiftの `UpdateMetrics` は無視する。HUDの距離は台本値を表示。エディタ予備: `Tools → AR Pacesetter → Booth Demo`。Swiftのスタッフ画面は未実装。
+検証: tools/verify.sh 全通過(dotnet test 403/403、Swift 24、E2E 270/270 — 新規39件)。前回の実行で既存の「GPS復帰時に後退しない」が1回だけ失敗(1.11m・展示デモとは無関係な経路)
+
 ### 2026-10-05 (3) — 監査の低優先度: 半身だけのフェード/色・負の発光・同期率平均の精度
 
 フェード・透過率・ペースシンクロ色が最初のレンダラーの1枚目のマテリアルだけに掛かっていた。Y Bot は2メッシュ(Alpha_Surface/Alpha_Joints)なので半身しか色が変わらず、F-10のフェード中も半身は不透明のままスタンバイで消えていた → `AvatarMaterialSet` でモデル配下の全マテリアルへ。発光強度は周期の約27%が負になっていた・心拍が無くても仮の60bpmで脈動していた → `GlowPulseMath`(0で下限、心拍が届くまで一定)。同期率の平均はフレーム数割り・float積算 → `SyncAverage`(時間重み・double)。監査で挙げた「開始時の不透明度1.0」は誤り(開始時も0.5)で変更なし。無関係な `install.cmd`(Antigravity CLIのインストーラ)と `UpgradeLog.htm` を削除。
