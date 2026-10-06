@@ -51,9 +51,14 @@
 
 ## 起動の仕方
 
-- **iPhone(本番の流れ)**: Swiftの体験モード画面から `StartBoothDemo {"mode":"standing"|"walking"}` を送る。
-  中断は `StopBoothDemo`。進行は `BoothDemoProgress`、終了は `BoothDemoEnded` で返る
-  (契約は [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION.md))。**Swift側の画面は未実装**(下記)。
+- **iPhone(本番の流れ)**: ホームのメニュー → **体験モード(展示)**(`BoothDemoView`)。スタッフが操作する。
+  1. グラスを挿す(上部のチップが「グラス接続中」になる)。モードと「開始までの猶予」(既定10秒)を選ぶ
+  2. **開始** → 猶予のあいだに iPhone を来場者の胸のマウントへ入れる → グラスで 3・2・1・START
+  3. 実行中は「いまの区間」と、来場者へかける一言(何が見えているか)を大きく出す。残り秒数と区間の一覧つき
+  4. ゴールで自動終了 →「次の方を開始」。途中で止めるときは **中断**
+  - 画面は体験モード中ずっと自動ロックしない(消えるとグラスへの出力も止まる)
+  - 送るのは `StartBoothDemo {"mode":"standing"|"walking"}` / `StopBoothDemo`、受けるのは `BoothDemoProgress` / `BoothDemoEnded`
+    (契約は [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION.md))。走行用の CoreLocation / HealthKit は起動しない
 - **Windowsノート+グラス(Macが無いときの予備・立ったままのみ)**: XREAL One をノートにUSB-Cで挿し、
   Unityエディタで `Tools → AR Pacesetter → Booth Demo → Start Standing`。Game ビューをグラス側の画面へ
   出して最大化する。黒はグラスでは透明になる。来場者の動きは追えない(ARKitが無い)ので歩行モードは使えない。
@@ -69,7 +74,7 @@
 
 ## 未完了
 
-- **Swiftの体験モード画面**(スタッフ用: モード選択・開始・中断・進行表示)。デモ中のHealthKit心拍購読も不要。
-- **実機で一度も見ていない**。特に、立ったまま静止したiPhoneでの見え方と、ブースの照明でのARKit追跡。
+- **実機で一度も見ていない**。特に、立ったまま静止したiPhoneでの見え方、ブースの照明でのARKit追跡、
+  スタッフ画面(`BoothDemoView`)の型検査(WindowsではSwiftの構文検査しかできない — Macで初回ビルドすること)。
 - アバターの前方距離は仕様どおり 3.0m(`BoothDemoController.leadDistanceMeters`)。全身をグラスに収めるには
   約3.7m必要だが、どちらを譲るかはチーム判断待ち(AGENTS.md §7-1)。

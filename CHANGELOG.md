@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-05 (5) — 展示ブースの体験モード: Swiftのスタッフ画面(BoothDemoView)
+
+ホームのメニュー → 体験モード(展示)。モード選択・開始までの猶予(既定10秒 — iPhoneは来場者の胸のマウントに入るため、押してから入れる時間をとる)・実行中の区間と来場者へかける一言・残り秒数・中断・「次の方を開始」。体験中は自動ロックしない。`UnityBridge` に `startBoothDemo`/`stopBoothDemo` と `BoothDemoProgress`/`BoothDemoEnded` の受信を追加(HealthKitへは保存しない)。走行用の CoreLocation/HealthKit は起動しない。
+検証: tools/verify.sh 全通過(dotnet test 403/403、Swift 25(構文のみ — 型検査はMacで要確認)、E2E 270/270)
+
 ### 2026-10-05 (4) — 展示ブースの体験モード(Kobe Calling): 立ったまま / 数歩あるく(Unity側)
 
 実物のグラスを掛けて走らずに体験する `BoothDemoController`(実機ビルドにも含む。`StartBoothDemo`/`StopBoothDemo`)。立ったままは約65秒の台本(`BoothDemoScript`・純ロジック)を本番の経路へ流し、遅れ・追い抜きは `AvatarEngine.SetPresentationLeadOffset` で追従位置だけずらす(色・オーラの基準3.0mは不変)。歩行はARKitの移動で追従・GPSロスト判定OFF。

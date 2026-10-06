@@ -56,6 +56,12 @@ final class UnityBridge: NSObject, ObservableObject {
     /// 直近の取り込み/選択の結果。UIはこれを見て成否と理由を出す
     @Published var lastVrmResult: VrmImportResult?
 
+    // MARK: 展示ブースの体験モード (Kobe Calling)
+    /// 体験モードの進行(Unity BoothDemoController の BoothDemoProgress)
+    @Published var boothDemoProgress: BoothDemoProgress?
+    /// 直近の体験モードの終了(BoothDemoEnded)。スタッフ画面が成否と理由を出す
+    @Published var lastBoothDemoEnd: BoothDemoEnd?
+
     // MARK: Types
     enum AvatarState: String {
         case idle = "Idle"
@@ -94,6 +100,35 @@ final class UnityBridge: NSObject, ObservableObject {
         let report: String
         /// 断った理由。成功時は空
         let reason: String
+    }
+
+    /// 展示ブースの体験モード。立ったまま(台本)/ 数歩あるく(ARKitの移動で追従)
+    enum BoothDemoMode: String, CaseIterable, Identifiable {
+        case standing, walking
+        var id: String { rawValue }
+    }
+
+    /// 体験モードの区間。`beat` は Unity の BoothDemoScript.Beat の名前(歩行は "Walking")。
+    /// Unity は区間が変わったときだけ送るので、経過は受信時刻から補間する
+    struct BoothDemoProgress {
+        let mode: String
+        let beat: String
+        let elapsedSeconds: Double
+        let totalSeconds: Double
+        let receivedAt: Date
+
+        /// 受信時刻からの補間込みの経過秒(区間の途中でもバーが進むように)
+        func elapsed(at now: Date) -> Double {
+            min(totalSeconds, elapsedSeconds + max(0, now.timeIntervalSince(receivedAt)))
+        }
+    }
+
+    /// 体験モードの終了。completed=false はスタッフの中断(reason "stopped")か開始失敗
+    struct BoothDemoEnd {
+        let mode: String
+        let completed: Bool
+        let reason: String
+        var wasStoppedByStaff: Bool { !completed && reason == "stopped" }
     }
 
     struct DiagnosticRow: Identifiable {
@@ -330,6 +365,26 @@ final class UnityBridge: NSObject, ObservableObject {
                     payload: ["command": "RequestVrmAvatars"])
     }
 
+    /// 展示ブースの体験モードを開始する。実行中に送ると Unity 側で中断してやり直す。
+    ///
+    /// 体験モードの走行は履歴・CSV・`SessionEnded`(=HealthKit保存)を残さない。
+    /// 走行用の `ARSessionManager`(CoreLocation/HealthKit)は使わない — 送っても
+    /// デモ中の `UpdateMetrics` は Unity が無視する。
+    /// - Parameter targetPaceKmH: 0 ならモードの既定(立ったまま 12 / 歩行 6 km/h)
+    func startBoothDemo(mode: BoothDemoMode, targetPaceKmH: Double = 0) {
+        boothDemoProgress = nil
+        lastBoothDemoEnd = nil
+        var payload: [String: Any] = ["command": "StartBoothDemo", "mode": mode.rawValue]
+        if targetPaceKmH > 0 { payload["targetPaceKmH"] = targetPaceKmH }
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand", payload: payload)
+    }
+
+    /// 体験モードを中断する。Unity は `BoothDemoEnded`(completed=false, reason "stopped")を返す。
+    func stopBoothDemo() {
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "StopBoothDemo"])
+    }
+
     /// Request past run history from Unity's session store (HistoryData event).
     func requestHistory() {
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
@@ -420,6 +475,21 @@ final class UnityBridge: NSObject, ObservableObject {
                     distanceKm: result.distanceKm,
                     elapsedSeconds: result.elapsedSeconds,
                     calories: result.calories
+                )
+            case "BoothDemoProgress":
+                self.boothDemoProgress = BoothDemoProgress(
+                    mode: dict["mode"] as? String ?? "",
+                    beat: dict["beat"] as? String ?? "",
+                    elapsedSeconds: (dict["elapsedSeconds"] as? NSNumber)?.doubleValue ?? 0,
+                    totalSeconds: (dict["totalSeconds"] as? NSNumber)?.doubleValue ?? 0,
+                    receivedAt: Date()
+                )
+            case "BoothDemoEnded":
+                // SessionEnded と違い HealthKit へは保存しない(来場者の体験は記録ではない)
+                self.lastBoothDemoEnd = BoothDemoEnd(
+                    mode: dict["mode"] as? String ?? "",
+                    completed: dict["completed"] as? Bool ?? false,
+                    reason: dict["reason"] as? String ?? ""
                 )
             case "LowBattery":
                 self.lowBatteryMode = true
@@ -533,6 +603,10 @@ final class UnityBridge: NSObject, ObservableObject {
                 self.motionToPhotonMs = -1
             case "EndSession":
                 self.avatarState = .goal
+            case "StopBoothDemo":
+                // 未リンク時は進行(BoothDemoProgress)を作らない — 偽の進行は実機の動作と
+                // 見分けがつかない。中断の応答だけ返して画面を待機へ戻せるようにする
+                self.lastBoothDemoEnd = BoothDemoEnd(mode: "", completed: false, reason: "stopped")
             case "ConnectXREAL":
                 self.gpsStatus = .searching
             case "RequestHistory":

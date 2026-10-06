@@ -11,6 +11,7 @@ enum AppScreen {
     case running
     case stats
     case history
+    case boothDemo
 }
 
 struct ContentView: View {
@@ -50,7 +51,8 @@ struct ContentView: View {
                     onHistory:    { historyOrigin = .home; screen = .history },
                     onDevices:    { screen = .deviceConnect },
                     onTutorial:   { isReviewing = true; screen = .onboarding },
-                    onDisclaimer: { isReviewing = true; screen = .disclaimer }
+                    onDisclaimer: { isReviewing = true; screen = .disclaimer },
+                    onBoothDemo:  { screen = .boothDemo }
                 )
 
             // 1. Three-page tutorial (初回のみ自動表示 / ホームからいつでも再表示)
@@ -135,6 +137,11 @@ struct ContentView: View {
                     onBack: { screen = historyOrigin },
                     onStartGhost: { screen = .running } // ゴースト競走を開始
                 )
+
+            // 8. 展示ブースの体験モード(Kobe Calling)— スタッフが操作する。
+            //    走行フロー(ARSessionManager)は通らず、履歴・HealthKitにも残らない
+            case .boothDemo:
+                BoothDemoView(onExit: { screen = .home })
             }
         }
         .animation(.easeInOut(duration: 0.3), value: screen)

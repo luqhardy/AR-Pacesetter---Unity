@@ -203,7 +203,7 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 | `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答(目標距離の自動終了を含む)。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
 | `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
 | `BoothDemoProgress` | `mode`, `beat`(OnPace/FallingBehind/CatchingUp/Overtaking/Settling/GpsLost/GpsRecovering/FinalStretch。歩行は Walking), `elapsedSeconds`, `totalSeconds` | 体験モードの区間が変わるたび(スタッフ画面の進行表示用) |
-| `BoothDemoEnded` | `mode`, `completed`(最後まで進んだか), `reason`(中断・開始失敗の理由) | 体験モードの終了時。**`SessionEnded` の代わりに送る** — Swiftはこれを受けてもHealthKitへ保存しない |
+| `BoothDemoEnded` | `mode`, `completed`(最後まで進んだか), `reason`(中断・開始失敗の理由) | 体験モードの終了時。**`SessionEnded` の代わりに送る** — Swiftはこれを受けてもHealthKitへ保存しない。受け側はスタッフ画面 `BoothDemoView` |
 | `LowBattery` | — | **現在発火しない** — 唯一の送出元 `SafetyAndSystemController` が実行時に生成されないため(HANDOVER.md §5)。Swift側の購読は将来の有効化に備えて残置。※HUDのバッテリー黄色点滅(`PeripheralHUDManager`)は別実装で正常動作 |
 | `VoiceAlert` | `kind`("Signal"/"Intersection"), `ttc` | 音声警告要求 → Swift側`VoiceAlertSpeaker`がAVSpeechSynthesizerで発話。重複時はTTCが短い方が割込(企画書4.3)。信号は長め振動併用 |
 

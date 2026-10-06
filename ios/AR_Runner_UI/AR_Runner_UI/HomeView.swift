@@ -63,6 +63,8 @@ struct HomeView: View {
     let onDevices: () -> Void
     let onTutorial: () -> Void
     let onDisclaimer: () -> Void
+    /// 展示ブースの体験モード(Kobe Calling)。メニューの開発者モードの隣に置く
+    var onBoothDemo: () -> Void = {}
 
     @ObservedObject private var bridge = UnityBridge.shared
     @ObservedObject private var external = ExternalDisplayManager.shared
@@ -144,6 +146,9 @@ struct HomeView: View {
                 // 開発者モード: 走行ログCSVの取り出しと実機の状態確認。
                 // 第1期の成果物(CSV)はサンドボックス内にあり、これが唯一の取り出し口
                 Divider()
+                Button { onBoothDemo() } label: {
+                    Label("体験モード(展示)", systemImage: "person.wave.2")
+                }
                 Button { showDevMode = true } label: {
                     Label("開発者モード", systemImage: "wrench.and.screwdriver")
                 }
