@@ -82,7 +82,8 @@ Open `ios/ARRunner.xcworkspace`. Both projects must appear in the navigator.
    (pick it from the Unity project's products, don't browse to a path), then set it to **Embed & Sign**.
    Leaving it "Do Not Embed" builds fine and crashes at launch with `dyld: Library not loaded`.
 2. **Unity-iPhone project → `Data` folder → File Inspector → Target Membership → `UnityFramework`.**
-   Without this you get undefined-symbol link errors.
+   Without this the build succeeds and the app **crashes when Unity starts** (`runEmbedded`) — `Data` is
+   resources, not code, so it never shows up as a link error.
 3. Build the **host app's scheme**, to a **physical device**.
 
 Redo 1 and 2 whenever you replace the exported folder. They live in the *exported* project, which you
@@ -203,7 +204,7 @@ which makes the failure look arbitrary.
 | Symptom | Cause |
 |---|---|
 | `dyld: Library not loaded` at launch | UnityFramework not set to **Embed & Sign** |
-| Undefined symbols at link | `Data` folder's Target Membership isn't UnityFramework |
+| Builds fine, crashes when Unity starts | `Data` folder's Target Membership isn't UnityFramework (`tools/relink-unity-export.sh`) |
 | `ld: framework not found UnityFramework` | Framework never built — add a target dependency |
 | Target missing from every picker | Simulator destination selected; Unity exports device-only |
 | `Undefined symbol: __mh_execute_header` | Use `_dyld_get_image_header(0)` instead |

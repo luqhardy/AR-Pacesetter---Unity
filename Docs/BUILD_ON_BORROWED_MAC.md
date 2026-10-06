@@ -105,7 +105,8 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 
       `ios/UnityExport/` は生成物なので、エクスポートのたびに作り直されて設定が消える。
       `Data` は既定で **Unity-iPhone**(Unity単体アプリ)に付いており、UaaLでは
-      **UnityFramework** へ移さないとリンクが undefined symbols で落ちる。
+      **UnityFramework** へ移さないと、ビルドは通るのに**Unityの読み込み中にアプリが落ちる**
+      (`Data` はリソースでありコードではないため、リンクエラーにはならない)。
       Xcodeで手作業するなら `Unity-iPhone` プロジェクト → `Data` を選択 →
       右ペインの **Target Membership** を UnityFramework に変更。
       **スクリプトは冪等**なので、迷ったら実行しておけばよい
@@ -161,8 +162,8 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 | 症状 | 原因と対処 |
 |---|---|
 | 起動直後にクラッシュ(dyld: Library not loaded) | UnityFrameworkが **Embed & Sign** になっていない(手順3) |
-| リンクエラー(undefined symbols) | `Data` の Target Membership が未変更。`./tools/relink-unity-export.sh` を実行(手順3) |
-| 走行画面が暗く「未リンク」と出る | 同上。Unityが実際には繋がっていない状態 |
+| ビルドは通るが、Unityの読み込み中(走行画面へ入るとき)にクラッシュ | `Data` の Target Membership が未変更。**再エクスポートのたびに**`./tools/relink-unity-export.sh` を実行(手順3)。Clean Build Folder では直らない(設定はエクスポートされたプロジェクト側にあるため)。直前のXcodeコンソールに `Data/` や `global-metadata.dat` が見つからない旨が出ることが多い |
+| 走行画面が暗く「未リンク」と出る | UnityFramework が読み込めていない。Embed & Sign を確認(手順3の注記) |
 | 直したはずの不具合が実機で直っていない | **エクスポートが古い**。Unity側のC#を変えたら再エクスポートが必要。CIも古いエクスポートに対して緑になるため気づきにくい(警告は出る) |
 | 署名エラー(HealthKit) | 手順2のスクリプトを実行していない |
 | 署名エラー(Bundle IDが使用中) | Bundle IDを更にユニークなものへ |

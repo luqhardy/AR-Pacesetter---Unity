@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-06 — Data の Target Membership 未変更の症状をドキュメントで訂正
+
+「リンク時に undefined symbols」と書いていたが、実際はビルドが通り Unity の読み込み中(`runEmbedded`)にクラッシュする(Data はリソースでありリンク対象ではない)。症状から原因に辿り着けなかったため、BUILD_ON_BORROWED_MAC / UNITY_AS_A_LIBRARY(英・日)/ relink スクリプトのコメントを訂正。「未リンク」表示の行は Embed & Sign を指すよう修正。
+検証: ドキュメントとコメントのみ(コード変更なし)。relink-unity-export.sh を本日のエクスポートの複製に実行し、Data が UnityFramework の Resources に入ることを確認
+
 ### 2026-10-05 (5) — 展示ブースの体験モード: Swiftのスタッフ画面(BoothDemoView)
 
 ホームのメニュー → 体験モード(展示)。モード選択・開始までの猶予(既定10秒 — iPhoneは来場者の胸のマウントに入るため、押してから入れる時間をとる)・実行中の区間と来場者へかける一言・残り秒数・中断・「次の方を開始」。体験中は自動ロックしない。`UnityBridge` に `startBoothDemo`/`stopBoothDemo` と `BoothDemoProgress`/`BoothDemoEnded` の受信を追加(HealthKitへは保存しない)。走行用の CoreLocation/HealthKit は起動しない。
