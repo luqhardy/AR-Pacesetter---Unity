@@ -2,8 +2,9 @@ using NUnit.Framework;
 
 /// <summary>
 /// 展示ブースの「立ったまま体験」台本(BoothDemoScript)の検証。
-/// 台本の値は本番の判定ロジック(色・オーラ・HUDペース・F-09/F-10)に見せ場を
+/// 台本の値は本番の判定ロジック(色・オーラ・HUDペース)に見せ場を
 /// 起こさせるためのもの — その閾値と噛み合っていることをここで縛る。
+/// アバターは体験中に一度も消さない(2026-10-07 チーム判断)。
 /// </summary>
 [TestFixture]
 public class BoothDemoScriptTests
@@ -26,8 +27,6 @@ public class BoothDemoScriptTests
         Assert.AreEqual(BoothDemoScript.Beat.CatchingUp, BoothDemoScript.BeatAt(BoothDemoScript.CatchingUpStart));
         Assert.AreEqual(BoothDemoScript.Beat.Overtaking, BoothDemoScript.BeatAt(BoothDemoScript.OvertakingStart));
         Assert.AreEqual(BoothDemoScript.Beat.Settling, BoothDemoScript.BeatAt(BoothDemoScript.SettlingStart));
-        Assert.AreEqual(BoothDemoScript.Beat.GpsLost, BoothDemoScript.BeatAt(BoothDemoScript.GpsLostStart));
-        Assert.AreEqual(BoothDemoScript.Beat.GpsRecovering, BoothDemoScript.BeatAt(BoothDemoScript.GpsRecoveringStart));
         Assert.AreEqual(BoothDemoScript.Beat.FinalStretch, BoothDemoScript.BeatAt(BoothDemoScript.FinalStretchStart));
         Assert.AreEqual(BoothDemoScript.Beat.Finished, BoothDemoScript.BeatAt(BoothDemoScript.TotalSeconds));
     }
@@ -50,8 +49,8 @@ public class BoothDemoScriptTests
     public void LeadOffset_IsZero_OutsideTheShowcaseBeats()
     {
         Assert.AreEqual(0f, BoothDemoScript.LeadOffsetAt(5f), 1e-5f);
-        Assert.AreEqual(0f, BoothDemoScript.LeadOffsetAt(45f), 1e-5f, "GPSロスト中は慣性移動に任せる");
-        Assert.AreEqual(0f, BoothDemoScript.LeadOffsetAt(60f), 1e-5f, "最後の直線はジャストで走る");
+        Assert.AreEqual(0f, BoothDemoScript.LeadOffsetAt(45f), 1e-5f, "最後の直線はジャストで走る");
+        Assert.AreEqual(0f, BoothDemoScript.LeadOffsetAt(60f), 1e-5f, "ゴール後もずらさない");
     }
 
     [Test]
@@ -101,14 +100,23 @@ public class BoothDemoScriptTests
     }
 
     [Test]
-    public void GpsLost_LastsLongEnoughToShowTheFadeAndTheWarning()
+    public void Script_HasNoBeatThatHidesTheAvatar()
     {
-        // F-09 慣性5秒 + F-10 フェード1秒 の後、スタンバイの警告を2秒以上見せる
-        float lostSeconds = BoothDemoScript.GpsRecoveringStart - BoothDemoScript.GpsLostStart;
-        Assert.GreaterOrEqual(lostSeconds, 5f + 1f + 2f);
-        Assert.IsFalse(BoothDemoScript.GpsAvailableAt(BoothDemoScript.GpsLostStart + 0.1f));
-        Assert.IsTrue(BoothDemoScript.GpsAvailableAt(BoothDemoScript.GpsRecoveringStart));
-        Assert.IsTrue(BoothDemoScript.GpsAvailableAt(0f), "最初に良い測位を掴ませないとロスト判定が働かない");
+        // 来場者には「消えた=壊れた」に見える。GPSロスト(F-09/F-10)の区間を戻さないこと
+        foreach (string name in System.Enum.GetNames(typeof(BoothDemoScript.Beat)))
+            StringAssert.DoesNotContain("Gps", name);
+    }
+
+    [Test]
+    public void LeadOffset_StaysInsideTheVisibleRange_ForTheWholeScript()
+    {
+        // 0.8m より近いとグラスの視野から外れ、10m で離隔待機(手招き)に変わる
+        for (float t = 0f; t <= BoothDemoScript.TotalSeconds + 1f; t += 0.05f)
+        {
+            float lead = TargetLead + BoothDemoScript.LeadOffsetAt(t);
+            Assert.GreaterOrEqual(lead, 0.8f, $"t={t:F2}s");
+            Assert.Less(lead, WaitForUserEnterMeters - 0.5f, $"t={t:F2}s");
+        }
     }
 
     [Test]
@@ -137,7 +145,7 @@ public class BoothDemoScriptTests
         double atFinalStretch = BoothDemoScript.DistanceAt(BoothDemoScript.FinalStretchStart, SpeedMps);
         Assert.IsFalse(GoalLineMath.ShouldShow(route, atFinalStretch, revealMeters),
             "最後の直線に入る前からゴールが出ていると見せ場が重なる");
-        Assert.IsTrue(GoalLineMath.ShouldShow(route, BoothDemoScript.DistanceAt(60f, SpeedMps), revealMeters));
+        Assert.IsTrue(GoalLineMath.ShouldShow(route, BoothDemoScript.DistanceAt(BoothDemoScript.TotalSeconds - 2f, SpeedMps), revealMeters));
     }
 
     [TestCase(0f)]

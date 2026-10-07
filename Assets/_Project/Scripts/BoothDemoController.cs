@@ -7,12 +7,17 @@ using UnityEngine;
 /// 「走っているときの見え方」を体験する。実機ビルドにも含める(Swiftの体験モード画面から起動)。
 ///
 /// <list type="bullet">
-/// <item><b>Standing(立ったまま)</b>: <see cref="BoothDemoScript"/> の台本どおりのペース・距離・GPS精度を
+/// <item><b>Standing(立ったまま)</b>: <see cref="BoothDemoScript"/> の台本どおりのペース・距離を
 /// 本番と同じブリッジ経路(StartSession / UpdateMetrics)へ流す。遅れ・追い抜きはアバターの
-/// 追従位置をずらして見せる。約65秒(+カウントダウン)でゴールし自動終了する。</item>
+/// 追従位置をずらして見せる。約52秒(+カウントダウン)でゴールし自動終了する。</item>
 /// <item><b>Walking(数歩あるく)</b>: 来場者自身の移動(ARKit)でアバターが3m前方を追従する。
-/// 屋内なのでGPSロスト判定は止め、合成値は流さない。<see cref="walkingDurationSeconds"/> で終了。</item>
+/// 合成値は流さない。<see cref="walkingDurationSeconds"/> で終了。</item>
 /// </list>
+///
+/// <para><b>アバターは体験中に一度も消さない</b>(2026-10-07 チーム判断): どちらのモードも
+/// GPSロスト判定(F-09/F-10)を止め、アバターを来場者の正面に保つ
+/// (<see cref="AvatarEngine.SetPresentationFollowsView"/> — 立ったまま向きを変えても視野から外れない)。
+/// 走行本番の F-10 は仕様どおり。</para>
 ///
 /// デモの走行は履歴・CSV・HealthKit に残さない(<see cref="ARSessionManagerBridge.IsPresentationSession"/>)。
 /// 終了は BoothDemoEnded で Swift へ通知する(SessionEnded は送らない)。
@@ -39,10 +44,8 @@ public sealed class BoothDemoController : MonoBehaviour
              "(AGENTS.md §7-1 — チーム判断待ちのため既定は仕様どおり)")]
     [SerializeField, Range(2f, 6f)] private float leadDistanceMeters = 3.0f;
     [SerializeField, Range(0.05f, 1f)] private float metricIntervalSeconds = 0.2f;
-    [Tooltip("良好な測位として送る水平精度(m)。復帰ゲート5m以内")]
+    [Tooltip("合成の測位として送る水平精度(m)。良好(5m以内)にしておく")]
     [SerializeField] private float goodAccuracyMeters = 3f;
-    [Tooltip("GPSロスト区間に送る水平精度(m)。ロスト判定10m以上")]
-    [SerializeField] private float lostAccuracyMeters = 25f;
     [Tooltip("カウントダウン完了(START)を待つ上限(秒)")]
     [SerializeField] private float startTimeoutSeconds = 8f;
     [SerializeField] private double originLatitude = 34.690083;   // 神戸(合成座標の原点。表示はされない)
@@ -122,11 +125,11 @@ public sealed class BoothDemoController : MonoBehaviour
         float speed = paceKmH / 3.6f;
         float routeMeters = BoothDemoScript.RouteDistanceMeters(speed);
 
-        // 台本どおりに F-09/F-10 を起こすため、ロスト判定は必ずON
-        OverrideGpsHandling(true);
+        // 体験中はアバターを消さない。合成GPSは常に良好だが、念のため判定自体を止める
+        OverrideGpsHandling(false);
         StartSession(paceKmH, routeMeters / 1000f);
 
-        // カウントダウン中から良い測位を送る(掴んでいない信号はロストできない — GpsSignalMonitor)
+        // カウントダウン中もペース・距離0を送り、HUDに目標ペースを出しておく
         float nextMetricAt = 0f;
         float waitUntil = Time.time + startTimeoutSeconds;
         while (!avatarEngine.IsRunMotionActive)
@@ -142,7 +145,7 @@ public sealed class BoothDemoController : MonoBehaviour
             if (Time.time >= nextMetricAt)
             {
                 nextMetricAt = Time.time + metricIntervalSeconds;
-                SendMetrics(0f, paceKmH, 0f, gpsAvailable: true);
+                SendMetrics(0f, paceKmH);
             }
             yield return null;
         }
@@ -153,7 +156,6 @@ public sealed class BoothDemoController : MonoBehaviour
         Debug.Log($"[BOOTH DEMO] 立ったまま体験を開始 — {paceKmH:F1}km/h, ゴール {routeMeters:F0}m, {BoothDemoScript.TotalSeconds:F0}秒");
 
         nextMetricAt = 0f;
-        float lastReportedDistance = 0f;
         while (true)
         {
             float t = Time.time - startTime;
@@ -173,10 +175,7 @@ public sealed class BoothDemoController : MonoBehaviour
             if (Time.time >= nextMetricAt)
             {
                 nextMetricAt = Time.time + metricIntervalSeconds;
-                bool gps = BoothDemoScript.GpsAvailableAt(t);
-                // GPSが無い間は距離が届かない(実機と同じ)。HUDの距離も止まり、復帰で追いつく
-                if (gps) lastReportedDistance = BoothDemoScript.DistanceAt(t, speed);
-                SendMetrics(lastReportedDistance, paceKmH * BoothDemoScript.PaceRatioAt(t), t, gps);
+                SendMetrics(BoothDemoScript.DistanceAt(t, speed), paceKmH * BoothDemoScript.PaceRatioAt(t));
             }
             yield return null;
         }
@@ -185,10 +184,10 @@ public sealed class BoothDemoController : MonoBehaviour
         avatarEngine.SetPresentationLeadOffset(0f);
         ElapsedSeconds = BoothDemoScript.TotalSeconds;
         CurrentBeat = BoothDemoScript.Beat.Finished;
-        SendMetrics(routeMeters, paceKmH, BoothDemoScript.TotalSeconds, gpsAvailable: true);
+        SendMetrics(routeMeters, paceKmH);
         if (!avatarEngine.IsSessionEnded)
         {
-            // 届かなかった場合(GPS再集積が終わっていない等)も体験は締める
+            // 届かなかった場合も体験は締める
             Debug.LogWarning("[BOOTH DEMO] 目標到達で終了しなかったため EndSession を送ります。");
             EndSessionIfActive();
         }
@@ -239,7 +238,7 @@ public sealed class BoothDemoController : MonoBehaviour
         ElapsedSeconds = -1f;
         CurrentBeat = BoothDemoScript.Beat.OnPace;
 
-        // 前の来場者がGPSロストの途中(スタンバイ=アバター非表示)で中断していても、
+        // 前の状態が通常追従以外(スタンバイ=アバター非表示 等)でも、
         // 新しい走行はアバターが見える通常状態から始める
         if (stateController != null && stateController.currentState != GameStateController.ARVisionState.Normal)
             stateController.TransitionToState(GameStateController.ARVisionState.Normal);
@@ -251,13 +250,16 @@ public sealed class BoothDemoController : MonoBehaviour
             paceKmH, goalKm, leadDistanceMeters) + "}";
         bridge.OnPresentationCommand(json);
 
+        // StartSession は前の走行をリセットするので、正面追従はその後に立てる
+        avatarEngine.SetPresentationFollowsView(true);
+
         if (hudManager != null && _mode == Mode.Standing)
             hudManager.PresentationDistanceMeters = 0f;
     }
 
-    private void SendMetrics(float distanceMeters, float paceKmH, float t, bool gpsAvailable)
+    private void SendMetrics(float distanceMeters, float paceKmH)
     {
-        if (hudManager != null && gpsAvailable)
+        if (hudManager != null)
             hudManager.PresentationDistanceMeters = distanceMeters;
 
         // 合成座標は真北へ一直線(CSVは書かないので表示にもログにも出ない)
@@ -267,8 +269,7 @@ public sealed class BoothDemoController : MonoBehaviour
             "\"distanceKm\":{1:F6},\"gpsLatitude\":{2:F7},\"gpsLongitude\":{3:F7}," +
             "\"gpsAccuracy\":{4:F2},\"locationSampleFresh\":{5},\"speedSampleValid\":{5}",
             paceKmH, distanceMeters / 1000.0, latitude, originLongitude,
-            gpsAvailable ? goodAccuracyMeters : lostAccuracyMeters,
-            gpsAvailable ? "true" : "false") + "}";
+            goodAccuracyMeters, "true") + "}";
         bridge.OnPresentationCommand(json);
     }
 
@@ -282,9 +283,12 @@ public sealed class BoothDemoController : MonoBehaviour
     {
         LastRunCompleted = completed;
         if (avatarEngine != null)
+        {
             avatarEngine.SetPresentationLeadOffset(0f);
+            avatarEngine.SetPresentationFollowsView(false);
+        }
 
-        // 中断がGPSロストの途中なら、次の来場者を待つ間もアバターを見える状態に戻す
+        // 通常追従以外で終わっていても、次の来場者を待つ間はアバターを見える状態に戻す
         if (stateController != null && stateController.currentState != GameStateController.ARVisionState.Normal)
             stateController.TransitionToState(GameStateController.ARVisionState.Normal);
 
@@ -329,7 +333,10 @@ public sealed class BoothDemoController : MonoBehaviour
             _routine = null;
         }
         if (avatarEngine != null)
+        {
             avatarEngine.SetPresentationLeadOffset(0f);
+            avatarEngine.SetPresentationFollowsView(false);
+        }
         RestoreGpsHandling();
     }
 }

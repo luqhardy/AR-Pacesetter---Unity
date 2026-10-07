@@ -23,11 +23,37 @@ final class ExternalDisplayManager: ObservableObject {
     @Published private(set) var displayPixelSize: CGSize = .zero
     @Published private(set) var displayRefreshHz: Double = 0
 
+    /// グラスは挿さっているのに、iOS がアプリ専用の画面(外部ディスプレイのシーン)を作らず
+    /// **iPhoneの画面をミラーリングしている**か。診断表示用。
+    ///
+    /// このときグラスには iPhone の画面(カメラ映像・ボタン)がそのまま映り、`isGlassesConnected`
+    /// は false のまま — 「グラス未接続」と区別がつかないと原因に辿り着けない(2026-10-07 実機で発生)。
+    @Published private(set) var isMirroring = false
+
     fileprivate var externalWindow: UIWindow?
     /// 移設前(iPhone)の描画スケール。切断時に戻すために保持する
     private var phoneContentScale: CGFloat?
 
-    private init() {}
+    private init() {
+        // UIScreen の接続通知と UIScreen.screens は iOS 16 で非推奨だが、シーンを持たない
+        // (=ミラーリング中の)画面を知る手段は他に無い。診断表示にだけ使う
+        for name in [UIScreen.didConnectNotification, UIScreen.didDisconnectNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshMirroring()
+            }
+        }
+        DispatchQueue.main.async { [weak self] in self?.refreshMirroring() }
+    }
+
+    /// 外部画面はあるのに専用シーンが無い = ミラーリング
+    func refreshMirroring() {
+        let hasExternalScreen = UIScreen.screens.count > 1
+        isMirroring = hasExternalScreen && !isGlassesConnected
+        if isMirroring {
+            print("[ExternalDisplay] 外部画面は接続されているが、iOSはミラーリング中 — " +
+                  "外部ディスプレイのシーンが作られていない(Info.plist の UIApplicationSceneManifest を確認)")
+        }
+    }
 
     fileprivate func externalDisplayConnected(scene: UIWindowScene) {
         let window = UIWindow(windowScene: scene)
@@ -37,6 +63,7 @@ final class ExternalDisplayManager: ObservableObject {
         window.isHidden = false
         externalWindow = window
         isGlassesConnected = true
+        isMirroring = false
 
         // 実解像度(points × scale)とリフレッシュレート。XREAL Oneは1920×1080で受ける
         let screen = scene.screen
@@ -59,6 +86,7 @@ final class ExternalDisplayManager: ObservableObject {
     fileprivate func externalDisplayDisconnected() {
         externalWindow = nil
         isGlassesConnected = false
+        refreshMirroring()
         displayPixelSize = .zero
         displayRefreshHz = 0
         print("[ExternalDisplay] ARグラス切断 — ARビューをiPhoneへ戻します")
@@ -163,6 +191,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      configurationForConnecting connectingSceneSession: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        // グラスがミラーリングになるとき、ここに外部ディスプレイの役割が来ているかが切り分けの起点
+        print("[ExternalDisplay] シーン構成の要求: role=\(connectingSceneSession.role.rawValue)")
         if connectingSceneSession.role == .windowExternalDisplayNonInteractive {
             let config = UISceneConfiguration(name: "ARGlassDisplay",
                                               sessionRole: connectingSceneSession.role)

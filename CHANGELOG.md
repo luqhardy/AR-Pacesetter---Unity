@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-07 — 体験モードでアバターを消さない / グラスがミラーリングになる件
+
+実機: 体験モードがグラスを検出せず、グラスにはiPhone画面のミラーリング。外部ディスプレイのシーン定義を Info.plist の `UIApplicationSceneManifest` へ静的に記述し自動生成をNOに(AppDelegateの動的構成だけでは iOS 26 で作られなかった)。`ExternalDisplayManager.isMirroring` で「未接続」と区別し体験モード画面に表示。準備画面のARグラス行はタップで偽の「接続済み」になるため気づけなかった。
+アバターは体験中に消さない(チーム判断): 台本からGPSロスト区間を削除(52秒)・両モードでロスト判定OFF・向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView` — §4.1 Gaze Lock の展示デモ限定の例外)。走行本番の F-10 は仕様どおり。
+検証: tools/verify.sh 全通過(dotnet test 404/404、Swift 25(構文のみ)、E2E 268/268 — 台本の全1041フレームで可視・90°向きを変えても1°以内に正面へ)。ミラーリングの解消は実機で要確認
+
 ### 2026-10-06 — Data の Target Membership 未変更の症状をドキュメントで訂正
 
 「リンク時に undefined symbols」と書いていたが、実際はビルドが通り Unity の読み込み中(`runEmbedded`)にクラッシュする(Data はリソースでありリンク対象ではない)。症状から原因に辿り着けなかったため、BUILD_ON_BORROWED_MAC / UNITY_AS_A_LIBRARY(英・日)/ relink スクリプトのコメントを訂正。「未リンク」表示の行は Embed & Sign を指すよう修正。

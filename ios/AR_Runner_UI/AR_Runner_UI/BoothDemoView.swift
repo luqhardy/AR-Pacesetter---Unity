@@ -5,7 +5,7 @@ import Combine
 // MARK: - 展示ブースの体験モード (Kobe Calling) — スタッフ画面
 //
 // 来場者は実物のARグラスを掛け、走らずに「走っているときの見え方」を体験する。
-// アバター・HUD・色・GPSロストのフェードは Unity の本番実装そのもので、偽物なのは入力だけ
+// アバター・HUD・色・オーラは Unity の本番実装そのもので、偽物なのは入力だけ。アバターは体験中に消さない
 // (Unity BoothDemoController。詳細は Docs/KOBE_CALLING_DEMO.md)。
 //
 // この画面はスタッフが操作する。iPhone は体験中、来場者の**胸のマウント**に入る
@@ -147,14 +147,20 @@ struct BoothDemoView: View {
 
     private var statusChips: some View {
         HStack(spacing: 8) {
-            chip(icon: "eyeglasses",
-                 text: external.isGlassesConnected ? "グラス接続中" : "グラス未接続(iPhoneに表示)",
-                 ok: external.isGlassesConnected)
+            chip(icon: "eyeglasses", text: glassesStatusText, ok: external.isGlassesConnected)
             if !hasUnityView && !unity.isPreparing {
                 chip(icon: "exclamationmark.triangle", text: "Unity未起動", ok: false)
             }
             Spacer()
         }
+    }
+
+    /// ミラーリングを「未接続」と分けて出す。ミラーリング中はグラスに iPhone の画面
+    /// (この操作パネルとカメラ映像)がそのまま映るので、体験には使えない
+    private var glassesStatusText: String {
+        if external.isGlassesConnected { return "グラス接続中" }
+        if external.isMirroring { return "ミラーリング中 — グラス専用の画面になっていません" }
+        return "グラス未接続(iPhoneに表示)"
     }
 
     private func chip(icon: String, text: String, ok: Bool) -> some View {
@@ -224,9 +230,9 @@ struct BoothDemoView: View {
     private var modeDescription: String {
         switch mode {
         case .standing:
-            return "その場に立ったまま約70秒。遅れ・追い抜き・GPSロスト・ゴールを順に見せます。"
+            return "その場に立ったまま約55秒。遅れ・追い抜き・ゴールを順に見せます。アバターは体験中ずっと正面に見えています。"
         case .walking:
-            return "来場者が数歩あるくと、アバターが3m前を追従します。60秒で終了。"
+            return "来場者が数歩あるくと、アバターが3m前を追従します。向きを変えても正面に回り込みます。60秒で終了。"
         }
     }
 
@@ -427,15 +433,12 @@ private enum BoothBeat: String, CaseIterable {
     case catchingUp = "CatchingUp"
     case overtaking = "Overtaking"
     case settling = "Settling"
-    case gpsLost = "GpsLost"
-    case gpsRecovering = "GpsRecovering"
     case finalStretch = "FinalStretch"
     case finished = "Finished"
     case walking = "Walking"
 
     static let standingOrder: [BoothBeat] = [
-        .onPace, .fallingBehind, .catchingUp, .overtaking, .settling,
-        .gpsLost, .gpsRecovering, .finalStretch
+        .onPace, .fallingBehind, .catchingUp, .overtaking, .settling, .finalStretch
     ]
 
     var order: Int { BoothBeat.allCases.firstIndex(of: self) ?? 0 }
@@ -447,8 +450,6 @@ private enum BoothBeat: String, CaseIterable {
         case .catchingUp:    return "追い上げ"
         case .overtaking:    return "追い抜き"
         case .settling:      return "ジャストへ"
-        case .gpsLost:       return "GPSロスト"
-        case .gpsRecovering: return "GPS復帰"
         case .finalStretch:  return "ゴール前"
         case .finished:      return "ゴール"
         case .walking:       return "歩行体験"
@@ -463,8 +464,6 @@ private enum BoothBeat: String, CaseIterable {
         case .catchingUp:    return "追い上げてジャストへ戻ります。"
         case .overtaking:    return "追い抜きかけている想定です。アバターが近づき、青みがかって脚が速まります。"
         case .settling:      return "ジャストの位置へ戻ります。"
-        case .gpsLost:       return "GPSが途切れた想定です。5秒は惰性で走り、その後フェードアウト。下に赤字の警告が出ます。"
-        case .gpsRecovering: return "GPSが戻りました。光の粒が集まってアバターが戻ってきます。"
         case .finalStretch:  return "最後の直線です。前方にゴールラインが見えてきます。"
         case .finished:      return "ゴールです。"
         case .walking:       return "ゆっくり歩いてみてください。アバターが3m前を追従します。向きを変えるとアバターも曲がります。"
@@ -475,7 +474,6 @@ private enum BoothBeat: String, CaseIterable {
         switch self {
         case .fallingBehind: return Color(red: 1.0, green: 0.35, blue: 0.25)
         case .overtaking:    return Color(red: 0.35, green: 0.65, blue: 1.0)
-        case .gpsLost:       return .orange
         default:             return .arYellow
         }
     }

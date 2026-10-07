@@ -1497,12 +1497,24 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(demo.IsRunning && demo.CurrentMode == BoothDemoController.Mode.Standing,
               "booth: StartBoothDemo starts the standing script");
         Check(bridge.IsPresentationSession, "booth: the session is marked as a demo");
+        StartCoroutine(WatchBoothVisibility(demo, engine, fsm));
 
         yield return WaitForDemoTime(demo, 5f);
         Check(engine.IsRunMotionActive, "booth: countdown completed and the avatar is running");
         Check(telemetry == null || !telemetry.IsLogging, "booth: no CSV is written for a demo run");
         Check(visuals == null || visuals.PaceColorState == "Just",
               $"booth: on-pace beat is green ({(visuals != null ? visuals.PaceColorState : "-")})");
+        Check(gps == null || !gps.AutoLostHandlingEnabled,
+              "booth: GPS-loss handling is off for the whole standing demo (the avatar never fades)");
+
+        // 立ったまま体の向きを90°変えても、アバターは正面へ回り込む(部屋に置き去りにしない)
+        FaceRig(Quaternion.Euler(0f, 90f, 0f) * CamForwardFlat());
+        yield return WaitScaled(3.0f);
+        Vector3 ahead = engine.transform.position - cam.position;
+        ahead.y = 0f;
+        float offAxis = Vector3.Angle(ahead, CamForwardFlat());
+        Check(offAxis < 15f,
+              $"booth: after the visitor turns 90°, the avatar comes back in front ({offAxis:F0}° off-centre)");
 
         // Swift の実測(屋内の悪い精度)は無視される — 台本と無関係にアバターが消えないこと
         bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":3,\"distanceKm\":0.001," +
@@ -1534,22 +1546,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(hud == null || hud.CurrentPaceState == PaceHudDisplay.PaceState.Maintaining,
               "booth: HUD pace is green while overtaking");
 
-        // ── GPSロスト: 慣性 → フェード → スタンバイ+警告 → 復帰 ──
-        yield return WaitForDemoTime(demo, 43f);
-        Check(fsm.currentState == GameStateController.ARVisionState.InertialMovement,
-              $"booth: GPS loss starts inertial movement (F-09) ({fsm.currentState})");
-        yield return WaitForDemoTime(demo, 47.8f);
-        Check(fsm.currentState == GameStateController.ARVisionState.Standby,
-              $"booth: 5s of loss fades the avatar out into standby (F-10) ({fsm.currentState})");
-        Check(hud == null || hud.IsSafetyWarningVisible, "booth: the red GPS warning is shown during standby");
-        yield return WaitForDemoTime(demo, 52.5f);
-        Check(fsm.currentState == GameStateController.ARVisionState.Normal,
-              $"booth: restored GPS brings the avatar back ({fsm.currentState})");
-        Check(engine.gameObject.activeInHierarchy, "booth: the avatar is visible again after recovery");
-
         // ── ゴール: 自動終了・何も保存しない ──
         float deadline = Time.time + 30f;
         while (demo.IsRunning && Time.time < deadline) yield return null;
+        Check(_boothWatchedFrames > 0 && _boothHiddenFrames == 0,
+              $"booth: the avatar stayed visible on every frame of the standing demo " +
+              $"({_boothHiddenFrames} hidden / {_boothWatchedFrames} frames; first: {_boothFirstHiddenReason})");
         Check(!demo.IsRunning && demo.LastRunCompleted, "booth: the standing script reaches the goal and ends itself");
         Check(engine.IsSessionEnded, "booth: the session is ended at the goal");
         Check(!bridge.IsPresentationSession, "booth: the demo flag clears when the session ends");
@@ -1560,18 +1562,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(gps == null || gps.AutoLostHandlingEnabled == gpsHandlingBefore,
               "booth: GPS-loss handling is restored afterwards");
 
-        // ── 次の来場者: GPSロストの途中(アバター非表示)で中断しても見える状態に戻る ──
+        // ── 次の来場者: 遅れ区間の途中で中断しても、次の人のために元へ戻る ──
         demo.Begin(BoothDemoController.Mode.Standing);
-        yield return WaitForDemoTime(demo, 47.8f);
-        Check(fsm.currentState == GameStateController.ARVisionState.Standby,
-              $"booth: second visitor reaches standby before the stop ({fsm.currentState})");
+        yield return WaitForDemoTime(demo, 15f);
+        Check(engine.PresentationFollowsView, "booth: a new visitor's run keeps the avatar in front");
         bridge.OnSwiftCommand("{\"command\":\"StopBoothDemo\"}");
         yield return null;
         Check(!demo.IsRunning && !demo.LastRunCompleted, "booth: StopBoothDemo ends the script early");
         Check(fsm.currentState == GameStateController.ARVisionState.Normal && engine.gameObject.activeInHierarchy,
-              "booth: stopping mid-loss leaves the avatar visible for the next visitor");
-        Check(Mathf.Approximately(engine.PresentationLeadOffsetMeters, 0f),
-              "booth: the lead offset is cleared after a stop");
+              "booth: stopping mid-run leaves the avatar visible for the next visitor");
+        Check(Mathf.Approximately(engine.PresentationLeadOffsetMeters, 0f) && !engine.PresentationFollowsView,
+              "booth: the lead offset and face-forward override are cleared after a stop");
 
         // ── 数歩あるく: 来場者の移動でアバターが3m前を追従、ロスト判定は止める ──
         demo.Begin(BoothDemoController.Mode.Walking);
@@ -1603,6 +1604,38 @@ public class E2EScenarioBehaviour : MonoBehaviour
               "booth: walking mode restores GPS-loss handling");
         Check(SessionDataStore.LoadAllSessions().Count == historyBefore && CountRunLogs() == csvBefore,
               "booth: none of the demo runs left history or CSV behind");
+    }
+
+    private int _boothWatchedFrames;
+    private int _boothHiddenFrames;
+    private string _boothFirstHiddenReason = "-";
+
+    /// <summary>
+    /// 立ったまま体験の START からゴールまで、アバターが毎フレーム見えていたかを数える。
+    /// 「消えない」は台本の特定時刻だけを測っても縛れない(2026-10-07 チーム判断)
+    /// </summary>
+    private IEnumerator WatchBoothVisibility(BoothDemoController demo, AvatarEngine engine, GameStateController fsm)
+    {
+        _boothWatchedFrames = 0;
+        _boothHiddenFrames = 0;
+        _boothFirstHiddenReason = "-";
+        while (demo.IsRunning)
+        {
+            if (engine.IsRunMotionActive)
+            {
+                _boothWatchedFrames++;
+                string why = null;
+                if (!engine.gameObject.activeInHierarchy) why = "avatar inactive";
+                else if (fsm.currentState != GameStateController.ARVisionState.Normal) why = "FSM " + fsm.currentState;
+                else if (fsm.AvatarMaterials.Alpha < 0.4f) why = $"alpha {fsm.AvatarMaterials.Alpha:F2}";
+                if (why != null)
+                {
+                    if (_boothHiddenFrames == 0) _boothFirstHiddenReason = $"{why} at t={demo.ElapsedSeconds:F1}s";
+                    _boothHiddenFrames++;
+                }
+            }
+            yield return null;
+        }
     }
 
     private IEnumerator WaitForDemoTime(BoothDemoController demo, float scriptSeconds)

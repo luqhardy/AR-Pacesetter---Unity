@@ -219,6 +219,7 @@ stateDiagram-v2
   BLEは近く(-70dBm以上)の1台にだけ繋ぐ — トラックでは他の走者のストラップも同じサービスを広告している
 - `SessionDataStore.SaveSession` は失敗しても例外を投げず null を返す。走行終了処理(Swiftへの `SessionEnded`)を止めないため
 - **展示デモの走行(`ARSessionManagerBridge.IsPresentationSession`)は何も残さない**: 履歴・CSV・`SessionEnded`(=HealthKit保存)を止めている。走行の記録や送信を新しく足すときはこのフラグを見る
+- **展示デモではアバターを一度も消さない**(GPSロスト判定OFF)。向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView`)— §4.1 Gaze Lock の**唯一の例外**で、走行には持ち込まない
 - `tools/prepare-free-signing.sh` の実行結果(Bundle ID・署名設定の一時改変)はコミットしない。CIが検知して落とす
 
 ### ペース単位の規約
