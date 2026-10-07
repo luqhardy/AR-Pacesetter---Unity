@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 // MARK: - 開発者モード
 //
@@ -24,8 +25,8 @@ struct DevModeView: View {
     @State private var shareItem: ShareItem?
     @State private var autoRefresh = true
 
-    private let accent = Color(hex: "#c7f219")
-    private let cardColor = Color(hex: "#1C1C1E")
+    private let accent = Color(red: 199.0 / 255.0, green: 242.0 / 255.0, blue: 25.0 / 255.0)
+    private let cardColor = Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 30.0 / 255.0)
     private let secondaryText = Color.white.opacity(0.5)
 
     /// 1秒ごとの自動更新(走行中の値が動くのを見たいため)
