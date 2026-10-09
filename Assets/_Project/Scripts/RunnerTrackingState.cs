@@ -277,7 +277,13 @@ public sealed class RunnerTrackingState : MonoBehaviour
             return;
 
         double segmentMeters = RunnerTrackingMath.DistanceMeters(eastMeters, northMeters);
-        if (segmentMeters < minimumGpsSegmentMeters)
+
+        // 区間が精度に対して短い(立ち止まり中の測位ノイズ等)なら方位に使わない。
+        // 参照点は進めないので、区間は十分な長さになるまで積み上がる = 待つだけで
+        // 方位が飢えることはない。以前は0.75mの固定ゲートだけで、精度8mの測位が
+        // 1秒ごとに数m「動く」のを素通しし、無作為な方位が65%の重みで混ざっていた
+        // (実機で「アバターがユーザーの周りを3mの半径で振り回される」原因)
+        if (!HeadingGateMath.IsGpsSegmentUsableForHeading(segmentMeters, accuracyMeters, minimumGpsSegmentMeters))
             return;
 
         if (segmentMeters > maximumGpsSegmentMeters)
@@ -295,10 +301,13 @@ public sealed class RunnerTrackingState : MonoBehaviour
                             * Mathf.Rad2Deg;
         if (!_hasWorldAlignment)
         {
-            Vector3 alignmentDirection = arDelta.magnitude >= minimumArAlignmentMeters
-                ? arDelta.normalized
-                : HorizontalCameraForward();
-            float arYaw = Mathf.Atan2(alignmentDirection.x, alignmentDirection.z) * Mathf.Rad2Deg;
+            // AR↔GPS のヨー対応は「ARで実際に動いた方向」と「地理的な方位」を突き合わせて
+            // 初めて決まる。ARの移動が無い状態でカメラの向きを代用すると、無作為な方位との
+            // 対応が固定され、以降のGPS方位が全部ずれる。決められないなら次の区間まで待つ
+            if (!HeadingGateMath.CanSeedWorldAlignment(arDelta.magnitude, minimumArAlignmentMeters))
+                return;
+
+            float arYaw = Mathf.Atan2(arDelta.x, arDelta.z) * Mathf.Rad2Deg;
             _worldFromGpsYawDegrees = Mathf.DeltaAngle(geographicYaw, arYaw);
             _hasWorldAlignment = true;
         }
@@ -372,7 +381,8 @@ public sealed class RunnerTrackingState : MonoBehaviour
         foreach (MotionSample sample in _arMotion)
             integratedArMotion += sample.delta;
 
-        bool hasArHeading = integratedArMotion.magnitude > 0.02f;
+        // 1.5秒で2cmでは手ブレでも方位が立つ。歩き出し(0.5m)からにする
+        bool hasArHeading = HeadingGateMath.IsArMotionUsableForHeading(integratedArMotion.magnitude);
         bool hasGpsHeading = HasFreshGpsHeading;
         Vector3 candidate;
 

@@ -45,7 +45,13 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         manager.activityType = .fitness
-        manager.distanceFilter = 2 // 2m毎に更新
+        // distanceFilter は None にする(以前は 2m)。
+        // UnityのGPSロスト判定(F-09 §8.1)は「更新が1.5秒途絶えたらロスト」で、
+        // 2m移動しないと測位が届かない設定だと、**1.33m/s(4.8km/h)より遅い歩行や
+        // 立ち止まり**で必ず「途絶」になる。5秒後にフェードアウト→スタンバイで
+        // アバターが消え、屋内の歩行検証では「壁があると消える」に見えていた。
+        // None なら CoreLocation は静止中でも約1Hzで測位を返し、途絶=本当の信号断だけになる
+        manager.distanceFilter = kCLDistanceFilterNone
     }
 
     func start() {
@@ -108,12 +114,10 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
                   location.horizontalAccuracy <= maxAcceptableAccuracyMeters else { continue }
             latestFixAcceptedForMetrics = true
 
-            if let last = lastLocation {
-                let delta = location.distance(from: last)
-                // 静止ジッター(<0.5m)は無視、テレポート(>50m)はGPS飛びとして棄却
-                if delta > 0.5 && delta < 50 {
-                    totalDistanceKm += delta / 1000
-                }
+            if let last = lastLocation,
+               Self.shouldAccumulate(distanceMeters: location.distance(from: last),
+                                     elapsedSeconds: location.timestamp.timeIntervalSince(last.timestamp)) {
+                totalDistanceKm += location.distance(from: last) / 1000
             }
             lastLocation = location
 
@@ -125,6 +129,21 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
 
         // 実測が届いたタイミングでUnityへ送る(バックグラウンドでも動く経路)
         onNewFix?()
+    }
+
+    /// 走者として物理的にあり得る上限速度(m/s)。これを超える移動はGPSの飛びとして棄却する
+    static let maxPlausibleSpeedMetersPerSecond: Double = 12.0 // 43km/h
+
+    /// 2点間の移動を距離に積むか。
+    ///
+    /// 以前は「50m以上はテレポート」と**距離だけ**で棄却していた。GPSが途切れた後
+    /// (トンネル・スタンド下など)の次の良好な測位は、走っていた分だけ離れているのが正常で、
+    /// 3.3m/sなら約15秒の途絶で50mを超え、**その区間の距離が丸ごと失われていた**。
+    /// 経過時間で割った速度で判定すれば、途絶後の移動は残り、本物の飛びだけを落とせる。
+    static func shouldAccumulate(distanceMeters: Double, elapsedSeconds: Double) -> Bool {
+        guard distanceMeters > 0.5 else { return false }   // 静止ジッター
+        guard elapsedSeconds > 0 else { return false }      // 同時刻・逆行のサンプル
+        return distanceMeters / elapsedSeconds <= maxPlausibleSpeedMetersPerSecond
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

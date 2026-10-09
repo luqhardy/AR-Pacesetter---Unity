@@ -114,6 +114,12 @@ final class UnityLauncher: ObservableObject {
 
         ufw = framework
         isRunning = true
+
+        // 通常はUnityが最初のシーンを読み込んだ時点で UnityReady を送り、UnityBridge が
+        // 起動待ちのコマンドを流す。届かない場合(古いエクスポート)の保険
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            UnityBridge.shared.flushIfReadySignalMissing()
+        }
     }
 
     /// 走行画面より前の画面で Unity を先に温めておく（初回のコストを前倒しする）。
@@ -243,6 +249,12 @@ struct UnityContainerView: UIViewRepresentable {
                 unityView.frame = container.bounds
                 unityView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 container.addSubview(unityView)
+
+                // グラスから戻ってきた直後はレンダリング面がグラスのスケール(@1x)・
+                // 横長のままなので、iPhoneの画面に合わせて作り直させる
+                let screen = container.window?.windowScene?.screen ?? UIScreen.main
+                ExternalDisplayManager.shared.matchRenderScale(of: unityView, to: screen,
+                                                               label: "phone")
             }
             placeholder?.isHidden = true
         }

@@ -6,10 +6,11 @@
 #   Xcode上で手作業したことは全て消える。中でも `Data` フォルダの
 #   Target Membership は既定で **Unity-iPhone**(Unity単体アプリのターゲット)に
 #   付いており、UaaL では **UnityFramework** に付け替えないと
-#   ホストアプリのリンクが undefined symbols で落ちる。
+#   ビルドは通るのに、Unityの起動時(runEmbedded)にアプリが落ちる
+#   (Unityは Data をフレームワークのバンドル内に探す。リソースなのでリンクエラーにはならない)。
 #
-#   毎回Xcodeでクリックし直す運用は忘れやすく、失敗の症状(リンクエラー)からは
-#   原因が分かりにくいため、ここで機械的に適用する。
+#   毎回Xcodeでクリックし直す運用は忘れやすく、失敗の症状(読み込み中のクラッシュ)からは
+#   原因が分かりにくい(Clean Build Folder でも直らない)ため、ここで機械的に適用する。
 #
 # 使い方:  ./tools/relink-unity-export.sh [project.pbxproj のパス]
 # 冪等: 何度実行しても結果は同じ。

@@ -69,6 +69,10 @@ public class PeripheralHUDManager : MonoBehaviour
     private GameStateController _gameState;
     private PaceHudDisplay.PaceState _currentPaceState = PaceHudDisplay.PaceState.Unknown;
     private bool _peripheralLayoutApplied;
+
+    /// <summary>有効表示域の比率。1.0=iPhone画面 / ARグラス接続中はプロファイルのセーフエリア。</summary>
+    private float _edgeInsetFraction = 1f;
+    private RectTransform _hudCanvasRect;
     private bool _hudHidden;
 
     // HUD自動抑制 (企画書 2. スタビライズ — 横を向いた際は表示を自動抑制)
@@ -85,6 +89,13 @@ public class PeripheralHUDManager : MonoBehaviour
     public float DistanceMeters => _cumulativeDistanceMeters;
     public int CurrentHeartRate => _simulatedHeartRate;
 
+    /// <summary>
+    /// 展示デモ(BoothDemoController)が表示させる距離(m)。負なら自前のカメラ計測を表示する。
+    /// 立ったままの体験では自前計測が0のまま動かないため、台本の距離を見せる。
+    /// 表示だけを差し替え、<see cref="DistanceMeters"/>(記録のフォールバック元)は変えない
+    /// </summary>
+    public float PresentationDistanceMeters { get; set; } = -1f;
+
     /// <summary>HUDの現在可視度(1=通常、首振り抑制中は0.15へフェード)。E2E検証用。</summary>
     public float CurrentHudVisibility => _hudVisibility;
 
@@ -93,6 +104,7 @@ public class PeripheralHUDManager : MonoBehaviour
     {
         _elapsedTimeSeconds = 0.0f;
         _cumulativeDistanceMeters = 0.0f;
+        PresentationDistanceMeters = -1f;
         _runStartUtc = System.DateTime.MinValue;
         _wasRunInProgress = false;
         _smoothedSpeedMps = 0f;
@@ -222,7 +234,10 @@ public class PeripheralHUDManager : MonoBehaviour
 
         if (textDistance != null)
         {
-            float totalKm = _cumulativeDistanceMeters / 1000f;
+            float shownMeters = PresentationDistanceMeters >= 0f
+                ? PresentationDistanceMeters
+                : _cumulativeDistanceMeters;
+            float totalKm = shownMeters / 1000f;
             textDistance.text = string.Format("{0:F2} km", totalKm);
         }
 
@@ -325,14 +340,8 @@ public class PeripheralHUDManager : MonoBehaviour
         if (textSafetyWarning == null) return;
         if (_hudHidden) return; // Unity側HUDが非表示のときはSwiftのバナーが担当する
 
-        bool gpsLost = false;
-        if (_gameState != null)
-        {
-            var st = _gameState.currentState;
-            gpsLost = st == GameStateController.ARVisionState.InertialMovement
-                   || st == GameStateController.ARVisionState.FadeOut
-                   || st == GameStateController.ARVisionState.Standby;
-        }
+        // グラス切断・低バッテリーのスタンバイでは「GPS信号を探索中」を出さない
+        bool gpsLost = _gameState != null && _gameState.IsGpsLossState;
 
         // 走行中のみ。準備画面・終了後に警告を残さない
         bool running = avatarEngine != null && avatarEngine.HasStarted && !avatarEngine.IsSessionEnded;
@@ -408,6 +417,9 @@ public class PeripheralHUDManager : MonoBehaviour
     public bool IsSafetyWarningVisible =>
         textSafetyWarning != null && textSafetyWarning.gameObject.activeSelf;
 
+    /// <summary>E2E/検証用: 距離表示の文字列。</summary>
+    public string CurrentDistanceText => textDistance != null ? textDistance.text : string.Empty;
+
     /// <summary>E2E/検証用: 現在ペース表示の文字列。</summary>
     public string CurrentPaceText => textPace != null ? textPace.text : string.Empty;
 
@@ -437,17 +449,68 @@ public class PeripheralHUDManager : MonoBehaviour
         SetReadoutVisible(textFatigueIndex, false);
         SetReadoutVisible(textGrade, false);
 
+        ApplyPeripheralAnchors();
+
+        Debug.Log("[HUD] F-07 周辺視野レイアウトを適用: 補助表示5件を非表示、時間/距離=左上・ペース=右上へ再配置");
+    }
+
+    /// <summary>
+    /// F-07の四隅配置を(セーフエリアぶんの余白を足して)反映する。
+    /// 余白はARグラス接続時だけ効き、iPhone画面では0。
+    /// </summary>
+    private void ApplyPeripheralAnchors()
+    {
+        Vector2 inset = EdgeInsetPixels();
+
         // 左上: 時間・距離 / 右上: 現在ペース
-        AnchorTo(textTime,     new Vector2(0f, 1f), new Vector2(100f, -100f), TextAlignmentOptions.TopLeft);
-        AnchorTo(textDistance, new Vector2(0f, 1f), new Vector2(100f, -170f), TextAlignmentOptions.TopLeft);
-        AnchorTo(textPace,     new Vector2(1f, 1f), new Vector2(-100f, -100f), TextAlignmentOptions.TopRight);
+        AnchorTo(textTime,     new Vector2(0f, 1f), new Vector2(100f + inset.x, -(100f + inset.y)), TextAlignmentOptions.TopLeft);
+        AnchorTo(textDistance, new Vector2(0f, 1f), new Vector2(100f + inset.x, -(170f + inset.y)), TextAlignmentOptions.TopLeft);
+        AnchorTo(textPace,     new Vector2(1f, 1f), new Vector2(-(100f + inset.x), -(100f + inset.y)), TextAlignmentOptions.TopRight);
 
         // スプリット通知は上部中央へ退避(元は右下で Text_Pitch と重なっていた)。
         // 下部は F-10 の警告専用ゾーンなので使わない
-        AnchorTo(textNotificationAlert, new Vector2(0.5f, 1f), new Vector2(0f, -260f),
+        AnchorTo(textNotificationAlert, new Vector2(0.5f, 1f), new Vector2(0f, -(260f + inset.y)),
                  TextAlignmentOptions.Center);
+    }
 
-        Debug.Log("[HUD] F-07 周辺視野レイアウトを適用: 補助表示5件を非表示、時間/距離=左上・ペース=右上へ再配置");
+    /// <summary>
+    /// ARグラスのセーフエリアをHUDへ適用する(1.0=余白なし / 0.90=外周5%ずつを空ける)。
+    ///
+    /// <para>なぜ必要か: バードバス光学系のグラスは最外周で歪み・減光が出るうえ、
+    /// アイボックスから僅かにずれただけで四隅から欠ける。iPhone画面用の
+    /// 「隅から100px」のままグラスへ出すと、時間・ペースが読めない位置に載る。</para>
+    /// </summary>
+    public void ApplyEdgeInsetFraction(float safeAreaFraction)
+    {
+        float f = Mathf.Clamp(safeAreaFraction, 0.5f, 1f);
+        if (Mathf.Approximately(f, _edgeInsetFraction)) return;
+
+        _edgeInsetFraction = f;
+        if (_peripheralLayoutApplied)
+            ApplyPeripheralAnchors();
+
+        Debug.Log($"[HUD] セーフエリアを適用: 有効表示域 {f * 100f:F0}% (余白 {EdgeInsetPixels()})");
+    }
+
+    /// <summary>E2E/検証用: 現在のセーフエリア率(1.0=iPhone画面)。</summary>
+    public float EdgeInsetFraction => _edgeInsetFraction;
+
+    /// <summary>セーフエリアぶんの余白(キャンバス単位)。上下左右へ均等に効く。</summary>
+    private Vector2 EdgeInsetPixels()
+    {
+        if (_edgeInsetFraction >= 0.999f) return Vector2.zero;
+
+        if (_hudCanvasRect == null)
+        {
+            Canvas canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
+            if (canvas != null) _hudCanvasRect = canvas.transform as RectTransform;
+        }
+
+        float width = _hudCanvasRect != null ? _hudCanvasRect.rect.width : Screen.width;
+        float height = _hudCanvasRect != null ? _hudCanvasRect.rect.height : Screen.height;
+        float margin = (1f - _edgeInsetFraction) * 0.5f;
+
+        return new Vector2(width * margin, height * margin);
     }
 
     private static void SetReadoutVisible(TextMeshProUGUI text, bool visible)

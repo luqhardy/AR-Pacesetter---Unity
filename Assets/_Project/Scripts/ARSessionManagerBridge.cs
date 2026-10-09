@@ -26,7 +26,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         public int heartRate;
         public int avatarHeightCm;
         public double forwardOffsetM;
-        public string mode;         // "pace"(既定) | "ghost"
+        public string mode;         // StartSession: "pace"(既定) | "ghost" / StartBoothDemo: "standing"(既定) | "walking"
         public string ghostDateIso; // mode=ghost時: 競走相手のセッションdateIso
         // UpdateMetrics の測位サンプル(§8.1 ロスト判定 / §5.2 CSVログ用)。
         // gpsAccuracy > 0 が有効サンプルの目印(CoreLocation同様、負値/未送信は無効)
@@ -37,6 +37,12 @@ public class ARSessionManagerBridge : MonoBehaviour
         // 表示面の所有権: true でUnity側HUDを隠しSwiftUIへ譲る。
         // 未送信(false)なら従来どおりUnityがHUDを描く — エディタ/E2Eは影響を受けない
         public bool hideUnityHud;
+
+        // SetGpsLostHandling: F-09/F-10 の自動判定を実行時に切る(屋内デモ・可視性検証用)
+        public bool enabled;
+
+        // ImportVrmAvatar / SelectVrmAvatar: 差し替えアバターの絶対パス
+        public string path;
 
         // true only when CoreLocation delivered a genuinely new fix. Cached timer
         // retransmissions must not refresh Unity's 5-second freshness windows.
@@ -53,10 +59,21 @@ public class ARSessionManagerBridge : MonoBehaviour
     [SerializeField] private GameStateController gameStateController;
     [SerializeField] private PeripheralHUDManager hudManager;
     [SerializeField] private LatencyBenchmarkRunner latencyRunner;
+    [Tooltip("M2Pの実測元(§10)。CSVと同じ値をSwiftへ報告するための唯一の供給元")]
+    [SerializeField] private SensorTimingBridge sensorTiming;
+
     [SerializeField] private GhostPaceDriver ghostDriver;
     [SerializeField] private GpsSignalMonitor gpsMonitor;
     [SerializeField] private GoalLineController goalLineController;
     [SerializeField] private RunnerTrackingState runnerTracking;
+    [SerializeField] private RunTelemetryLogger telemetryLogger;
+    [SerializeField] private BoothDemoController boothDemo;
+
+    /// <summary>
+    /// 直近にSwiftへ報告したM2P(ms)。<see cref="MotionToPhotonMath.Unmeasured"/>(-1)は未計測。
+    /// 「捏造値が混ざっていないこと」をE2Eで縛るための検証用。
+    /// </summary>
+    public double LastReportedMotionToPhotonMs { get; private set; } = MotionToPhotonMath.Unmeasured;
 
     private const float ReportIntervalSeconds = 1.0f;
     private const float BaselineAvatarHeightCm = 175f; // 企画書 §4.1
@@ -105,6 +122,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (gameStateController == null) gameStateController = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
         if (hudManager == null) hudManager = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
         if (latencyRunner == null) latencyRunner = FindFirstObjectByType<LatencyBenchmarkRunner>(FindObjectsInactive.Include);
+        if (sensorTiming == null) sensorTiming = FindFirstObjectByType<SensorTimingBridge>(FindObjectsInactive.Include);
         if (ghostDriver == null) ghostDriver = FindFirstObjectByType<GhostPaceDriver>(FindObjectsInactive.Include);
         if (gpsMonitor == null) gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
         if (goalLineController == null) goalLineController = FindFirstObjectByType<GoalLineController>(FindObjectsInactive.Include);
@@ -127,6 +145,18 @@ public class ARSessionManagerBridge : MonoBehaviour
         }
         if (cmd == null || string.IsNullOrEmpty(cmd.command)) return;
 
+        // 展示デモの走行中は、Swift(CoreLocation)の実測を流さない。屋内の悪い精度が
+        // 台本のGPSと混ざると、F-09/F-10 が台本と無関係な時刻に発動する
+        if (cmd.command == "UpdateMetrics" && _presentationSession && !_dispatchingPresentation)
+        {
+            if (!_presentationMetricsNoticeLogged)
+            {
+                _presentationMetricsNoticeLogged = true;
+                Debug.Log("[SWIFT BRIDGE] 展示デモ中のため Swift の UpdateMetrics を無視します。");
+            }
+            return;
+        }
+
         switch (cmd.command)
         {
             case "StartSession": HandleStartSession(cmd); break;
@@ -134,6 +164,14 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "EndSession": HandleEndSession(); break;
             case "RequestHistory": HandleRequestHistory(); break;
             case "ResumeSession": HandleResumeSession(); break;
+            case "SetGpsLostHandling": HandleSetGpsLostHandling(cmd); break;
+            case "RequestDiagnostics": SwiftMessageSender.SendRaw(DevDiagnostics.BuildSnapshotJson()); break;
+            case "RequestLogFiles": SwiftMessageSender.SendRaw(DevDiagnostics.BuildLogFilesJson()); break;
+            case "ImportVrmAvatar": HandleVrmAvatar(cmd.path); break;
+            case "SelectVrmAvatar": HandleVrmAvatar(cmd.path); break;
+            case "RequestVrmAvatars": HandleRequestVrmAvatars(); break;
+            case "StartBoothDemo": HandleStartBoothDemo(cmd); break;
+            case "StopBoothDemo": HandleStopBoothDemo(); break;
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown command: {cmd.command}");
                 break;
@@ -160,6 +198,8 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         // リセットで false に戻るため、必ずリセット後に立てる
         ExternalMetricsActive = true;
+        _sessionResultSent = false;
+        ApplyPresentationFlags(_dispatchingPresentation);
 
         // 目標距離: 到達したらUnity側から自動終了する (SessionEnded送信)
         _goalDistanceMeters = cmd.distanceKm > 0 ? cmd.distanceKm * 1000.0 : 0;
@@ -298,8 +338,25 @@ public class ARSessionManagerBridge : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// このセッションで走行結果(SessionEnded)をSwiftへ送ったか。StartSessionで戻る。
+    /// Swiftは受信のたびにHealthKitへワークアウトを保存するため、**1走行1回**を守る —
+    /// 目標距離の自動終了の直後に利用者が「終了」を押すと、以前は2件保存されていた
+    /// </summary>
+    public bool SessionResultSent => _sessionResultSent;
+    private bool _sessionResultSent;
+
+    /// <summary>起動以来 SessionEnded を送った回数(E2E検証用)。</summary>
+    public int SessionResultSendCount { get; private set; }
+
     private void HandleEndSession()
     {
+        if (_sessionResultSent)
+        {
+            Debug.Log("[SWIFT BRIDGE] EndSession — この走行の結果は送信済みのため無視します(HealthKitの二重保存防止)。");
+            return;
+        }
+
         if (!_goalReached && goalLineController != null)
             goalLineController.HideImmediately();
 
@@ -317,14 +374,152 @@ public class ARSessionManagerBridge : MonoBehaviour
             runnerTracking.EndSession();
 
         SendAvatarStateIfChanged("Goal");
+
+        if (_presentationSession)
+        {
+            // 展示デモの結果は SessionEnded にしない — Swift は受信のたびに HealthKit へ
+            // ワークアウトを保存する。終了の通知は BoothDemoController が BoothDemoEnded で送る
+            _sessionResultSent = true;
+            _presentationSession = false;
+            Debug.Log("[SWIFT BRIDGE] EndSession — 展示デモのため結果は送信しません。");
+            return;
+        }
+
         SwiftMessageSender.SendSessionResult(record);
+        _sessionResultSent = record != null;
+        if (_sessionResultSent) SessionResultSendCount++;
         Debug.Log("[SWIFT BRIDGE] EndSession — result sent to Swift.");
+    }
+
+    // ── 展示デモ(Kobe Calling ブース) ────────────────────────────────────────
+    private bool _presentationSession;
+    private bool _dispatchingPresentation;
+    private bool _presentationMetricsNoticeLogged;
+
+    /// <summary>
+    /// 現在のセッションが展示デモか。結果の送信・履歴・CSVを止め、Swiftの実測を無視する。
+    /// 終了(EndSession)で false に戻る。
+    /// </summary>
+    public bool IsPresentationSession => _presentationSession;
+
+    /// <summary>
+    /// 展示デモ(<see cref="BoothDemoController"/>)専用の入口。Swift と同じコマンドを同じ経路で
+    /// 処理するが、ここから始めた StartSession は展示デモとして扱われ、ここから送った
+    /// UpdateMetrics だけがデモ中に受け付けられる。
+    /// </summary>
+    public void OnPresentationCommand(string json)
+    {
+        _dispatchingPresentation = true;
+        try { OnSwiftCommand(json); }
+        finally { _dispatchingPresentation = false; }
+    }
+
+    private void ApplyPresentationFlags(bool presentation)
+    {
+        _presentationSession = presentation;
+        _presentationMetricsNoticeLogged = false;
+        if (sessionController != null)
+            sessionController.SuppressPersistence = presentation;
+        if (telemetryLogger == null)
+            telemetryLogger = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
+        if (telemetryLogger != null)
+            telemetryLogger.SuppressLogging = presentation;
+    }
+
+    private BoothDemoController ResolveBoothDemo()
+    {
+        if (boothDemo == null)
+            boothDemo = FindFirstObjectByType<BoothDemoController>(FindObjectsInactive.Include);
+        return boothDemo;
+    }
+
+    private void HandleStartBoothDemo(SwiftCommand cmd)
+    {
+        BoothDemoController demo = ResolveBoothDemo();
+        if (demo == null)
+        {
+            Debug.LogError("[SWIFT BRIDGE] StartBoothDemo ignored — BoothDemoController not found.");
+            SwiftMessageSender.SendBoothDemoEnded(cmd.mode ?? "", false, "BoothDemoController がありません");
+            return;
+        }
+        demo.Begin(BoothDemoController.ParseMode(cmd.mode), (float)cmd.targetPaceKmH);
+    }
+
+    private void HandleStopBoothDemo()
+    {
+        BoothDemoController demo = ResolveBoothDemo();
+        if (demo != null)
+            demo.Stop();
     }
 
     /// <summary>
     /// §8.3: グラス切断でスタンバイ中の走行を、準備画面での再スタート操作後に再開する。
     /// 新規セッションは開始せず(記録・CSVログは継続)、表示状態のみNormalへ戻す。
     /// </summary>
+    /// <summary>
+    /// F-09/F-10 の自動判定を実行時に切り替える(既定はON = 基本設計書どおり)。
+    ///
+    /// <para>屋内デモや可視性の目視確認では、精度が常に10m超でロスト判定が成立しアバターが
+    /// 消えてしまう。その主因は <c>RequireInitialFixBeforeLost</c> で恒久的に解消してあるが、
+    /// 「掴んだ後に意図的に消えないでほしい」場面のための明示的なスイッチとして残す。
+    /// <b>コード変更なしで戻せる</b>ことが要点 — 定数を書き換える運用は戻し忘れを生む。</para>
+    /// </summary>
+    private void HandleSetGpsLostHandling(SwiftCommand cmd)
+    {
+        if (gpsMonitor == null)
+            gpsMonitor = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        if (gpsMonitor == null)
+        {
+            Debug.LogWarning("[SWIFT BRIDGE] SetGpsLostHandling ignored — GpsSignalMonitor not found.");
+            return;
+        }
+
+        gpsMonitor.AutoLostHandlingEnabled = cmd.enabled;
+        Debug.Log($"[SWIFT BRIDGE] SetGpsLostHandling — F-09/F-10 自動判定を{(cmd.enabled ? "ON" : "OFF")}へ");
+    }
+
+    /// <summary>
+    /// 差し替えアバターを読み込んで適用する。取り込み(Swiftがコピーしたファイル)も
+    /// 一覧からの選択も、やることは同じ「絶対パスを読む」なので1つの経路に閉じる。
+    /// </summary>
+    private void HandleVrmAvatar(string path)
+    {
+        var loader = FindFirstObjectByType<VrmAvatarLoader>(FindObjectsInactive.Include);
+        if (loader == null)
+        {
+            SwiftMessageSender.SendVrmImportResult(false, "", "", "VrmAvatarLoader がシーンにありません");
+            return;
+        }
+        if (string.IsNullOrEmpty(path))
+        {
+            SwiftMessageSender.SendVrmImportResult(false, "", "", "パスが空です");
+            return;
+        }
+
+        string name = VrmAvatarCatalog.DisplayName(path);
+
+        if (!VrmAvatarLoader.IsRuntimeLoadAvailable)
+        {
+            // ここで黙って失敗すると「壊れている」と誤解される。原因を名指しする
+            SwiftMessageSender.SendVrmImportResult(false, name, "",
+                "UniVRM が未導入のビルドです。アバターの読み込みにはUniVRMを含めた再ビルドが必要です");
+            return;
+        }
+
+        bool ok = loader.TryLoadFromFile(path, out VrmRejectReason reason);
+        SwiftMessageSender.SendVrmImportResult(ok, name, loader.LastReport,
+            ok ? "" : VrmAvatarPolicy.ReasonText(reason));
+    }
+
+    /// <summary>選べるアバターの一覧をSwiftへ返す。</summary>
+    private void HandleRequestVrmAvatars()
+    {
+        var loader = FindFirstObjectByType<VrmAvatarLoader>(FindObjectsInactive.Include);
+        VrmAvatarCatalog.EnsureImportedDirectory();
+        SwiftMessageSender.SendVrmAvatarList(VrmAvatarCatalog.ListAllFiles(),
+                                             loader != null ? loader.CurrentAvatarName : "");
+    }
+
     private void HandleResumeSession()
     {
         if (avatarEngine == null || !avatarEngine.HasStarted || avatarEngine.IsSessionEnded)
@@ -369,14 +564,24 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         // M2Pは実測できたときだけ送る。-1 = 未計測。
         //
-        // 以前は LatencyBenchmarkRunner の合成値を「実測M2P」として送り、
-        // 無ければ平滑化フレーム時間で埋めていた。どちらもM2Pではないのに、
-        // 受け手(Swiftの motionToPhotonMs)には実測として届いていた。
-        // 合成値の中身と、実測経路の作り方は LatencyBenchmarkRunner を参照
-        double measuredM2p = LatencyBenchmarkRunner.ProvidesRealMotionToPhoton && latencyRunner != null
-            ? latencyRunner.AverageSyntheticTotalMs
-            : -1.0;
-        SwiftMessageSender.SendLatency(measuredM2p);
+        // 供給元は F-11 のCSVと同じ SensorTimingBridge(ARKitフレームのセンサー時刻と
+        // CADisplayLink.targetTimestamp の差)。**CSVとSwiftで同じ値が出ることが重要** —
+        // 片方だけが実測だと、§11.2 ③ の評価をどちらで行ったのかが後から判らなくなる。
+        //
+        // かつてはここが LatencyBenchmarkRunner の合成値を「実測M2P」として送っていた。
+        // その捏造は 2026-09-08 に止めたが、代わりに置かれた
+        // ProvidesRealMotionToPhoton が常に false のため、実測経路が出来た後も
+        // **Swiftへは -1 しか流れていなかった**(FIELD_TEST_PLAN T2 はこの経路で
+        // 1HzのLatencyReportを記録する計画なので、そのままでは何も取れない)
+        double measuredM2p = MotionToPhotonMath.Unmeasured;
+        if (sensorTiming != null)
+            sensorTiming.TryGetLatencyMs(out measuredM2p);
+        LastReportedMotionToPhotonMs = measuredM2p;
+
+        // 1Hzの瞬時値だけでは、サンプルの谷間で起きた超過を取りこぼす。
+        // 区間の最大値と超過率を併せて送り、p95評価(T2)が実態を外さないようにする
+        MotionToPhotonStats stats = sensorTiming != null ? sensorTiming.Stats : null;
+        SwiftMessageSender.SendLatency(measuredM2p, stats);
         SendAvatarStateIfChanged(DeriveAvatarState());
 
         // エディタ/スタンドアロン走行ではUnity自身の距離計測でもゴール判定する
@@ -408,9 +613,8 @@ public class ARSessionManagerBridge : MonoBehaviour
     {
         if (gameStateController == null) return;
 
-        bool gpsLost = gameStateController.currentState == GameStateController.ARVisionState.InertialMovement
-                    || gameStateController.currentState == GameStateController.ARVisionState.FadeOut
-                    || gameStateController.currentState == GameStateController.ARVisionState.Standby;
+        // グラス切断のスタンバイ(§8.3)はGPS喪失ではない — 以前はSwiftに「GPS再取得中」が出ていた
+        bool gpsLost = gameStateController.IsGpsLossState;
 
         if (gpsLost && !_gpsWasLost)
         {

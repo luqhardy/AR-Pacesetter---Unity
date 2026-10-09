@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Unityを開かずにゲームプレイC#(Assets/_Project/Scripts)をコンパイル検証する。
+    実行: dotnet build tools/compile-check   (Windows / macOS 共通)
+
+    前提: Unity 6000.3.17f1 がUnity Hubの既定の場所に入っていること、
+    かつプロジェクトを一度Unityで開いて Library/ScriptAssemblies が生成済みであること。
+    別の場所に入れている場合: dotnet build tools/compile-check -p:UnityManagedDir=<.../Managed/UnityEngine>
+
+    注意: UnityEditor.dll は参照しない。UnityEngineフォルダに UnityEditor.CoreModule が含まれており、
+    両方を参照すると型が重複してコンパイルが通らない。
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AssemblyName>ARVision.CompileCheck</AssemblyName>
+    <!-- Unityの警告(未使用フィールド等)はここでは関心外。エラーだけを見る -->
+    <NoWarn>$(NoWarn);CS0414;CS0169;CS0649;CS0618;CS0067;CS0108;CS0162;CS0219;CS1998;CS4014</NoWarn>
+
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../'))</RepoRoot>
+    <UnityVersion>6000.3.17f1</UnityVersion>
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">C:\Program Files\Unity\Hub\Editor\$(UnityVersion)\Editor\Data\Managed\UnityEngine</UnityManagedDir>
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">/Applications/Unity/Hub/Editor/$(UnityVersion)/Unity.app/Contents/Managed/UnityEngine</UnityManagedDir>
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">$(HOME)/Unity/Hub/Editor/$(UnityVersion)/Editor/Data/Managed/UnityEngine</UnityManagedDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(RepoRoot)Assets/_Project/Scripts/**/*.cs" />
+    <Reference Include="$(UnityManagedDir)/*.dll" Private="false" />
+    <Reference Include="$(RepoRoot)Library/ScriptAssemblies/*.dll"
+               Exclude="$(RepoRoot)Library/ScriptAssemblies/Assembly-CSharp*.dll"
+               Private="false" />
+  </ItemGroup>
+
+  <Target Name="CheckUnityInstall" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(UnityManagedDir)')"
+           Text="Unity $(UnityVersion) が見つかりません: $(UnityManagedDir)。-p:UnityManagedDir=... で場所を指定してください" />
+    <Error Condition="!Exists('$(RepoRoot)Library/ScriptAssemblies')"
+           Text="Library/ScriptAssemblies がありません。プロジェクトを一度Unityで開いて(またはE2Eを1回実行して)生成してください" />
+  </Target>
+</Project>

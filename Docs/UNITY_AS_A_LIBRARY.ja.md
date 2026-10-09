@@ -43,7 +43,7 @@ repo/
 この工程はUnityが動く環境ならどこでも実行でき、**Windowsでも可能**です。Macが要るのは手順2だけ。
 
 ```bash
-Unity.exe -batchmode -quit -projectPath <repo> \
+Unity.exe -batchmode -quit -buildTarget iOS -projectPath <repo> \
   -executeMethod IOSBuildExporter.ExportIOS -logFile export.log
 ```
 
@@ -83,7 +83,7 @@ Player Settingsの使用目的文は、ホストアプリ側の `INFOPLIST_KEY_*
    (パスを辿るのではなくUnityプロジェクトの成果物から選ぶ)。追加後 **Embed & Sign** にする。
    "Do Not Embed" のままだとビルドは通り、起動時に `dyld: Library not loaded` で落ちます
 2. **Unity-iPhone プロジェクト → `Data` フォルダ → File Inspector → Target Membership → `UnityFramework`**。
-   これを忘れると undefined symbols のリンクエラーになります
+   これを忘れるとビルドは通り、**Unityの起動時(`runEmbedded`)にクラッシュ**します(`Data` はリソースなのでリンクエラーにはならない)
 3. **ホストアプリのスキーム**を選び、**実機**へビルド
 
 エクスポート産物を作り直したら1と2はやり直しです。設定は*エクスポート側*のプロジェクトにあり、
@@ -206,7 +206,7 @@ xattr -dr com.apple.quarantine ios/UnityExport   # ダウンロード由来の�
 | 症状 | 原因 |
 |---|---|
 | 起動直後に `dyld: Library not loaded` | UnityFrameworkが **Embed & Sign** になっていない |
-| リンク時に undefined symbols | `Data` フォルダの Target Membership が UnityFramework でない |
+| ビルドは通るが、Unityの起動時にクラッシュ | `Data` フォルダの Target Membership が UnityFramework でない。現在のエクスポータは自動で付け替える — 再エクスポートするか、古いエクスポートなら `tools/relink-unity-export.sh` |
 | `ld: framework not found UnityFramework` | UnityFrameworkが未ビルド。ターゲット依存を追加する |
 | 候補一覧にターゲットが出ない | Destinationがシミュレータ。Unityは実機専用で書き出す |
 | `Undefined symbol: __mh_execute_header` | `_dyld_get_image_header(0)` を使う |

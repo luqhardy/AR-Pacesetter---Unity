@@ -22,15 +22,21 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 ## 1. Windows側で事前に済ませる
 
 - [ ] 最新の状態をpush済みにする(Macでは浅いcloneを使う)
-- [ ] **Unityエクスポートを実行する**
+- [ ] **Unityエクスポートを実行する(飛ばさない)**
+      `ios/UnityExport/` は生成物でgit管理外のため、**C#を1行でも変えたら作り直す**。
+      古いまま持って行くと**ビルドも起動も成功するのに、変更が何ひとつ入っていない**
+      アプリができあがる。最も気づきにくい失敗。
 
       ```
       "C:\Program Files\Unity\Hub\Editor\6000.3.17f1\Editor\Unity.exe" -batchmode -quit ^
-        -projectPath "C:\Users\luqma\AR Pacesetter" ^
+        -buildTarget iOS -projectPath "C:\Users\luqma\AR Pacesetter" ^
         -executeMethod IOSBuildExporter.ExportIOS -logFile export.log
       ```
 
-      終了コード0で成功。`ios/UnityExport/` が生成される
+      終了コード0で成功。`ios/UnityExport/` が**毎回作り直される**(古いエクスポートへ上書きしない)。
+      **`-buildTarget iOS` は必須** — iOS がアクティブでないとエクスポータが止まる(ARKitのネイティブ
+      プラグインは `UNITY_IOS` 定義で入るため、無いまま書き出すとARKitが動かない)。
+      エディタのメニューから実行するときは、先に Build Profiles でアクティブなプラットフォームを iOS にする
 - [ ] エクスポート後に `git diff ProjectSettings/ProjectSettings.asset` を確認。
       `preloadedAssets` が空になっていたら**元に戻す**(空のままだとXR(ARKit)ローダーが初期化されない)
 - [ ] **`ios/UnityExport/` をUSBメモリにコピーする(約1.5GB)**
@@ -94,15 +100,18 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
       - [ ] Team: 自分のApple ID(Personal Team)を選択
       - [ ] "Automatically manage signing" がON
       - [ ] エラーが出る場合はBundle IDを更にユニークなものへ変更
-- [ ] **`Data` フォルダの Target Membership を付け替える**(エクスポートのたびに必要)
+- [ ] **`Data` フォルダの Target Membership は自動で UnityFramework になる**(2026-10-07〜)。
+      エクスポート後処理(`Assets/Editor/AddBluetoothFramework.cs`)が付け替える。
+      それより古いエクスポートや、手でXcodeプロジェクトを作り直したときだけ下を実行する
 
       ```bash
-      ./tools/relink-unity-export.sh
+      sh tools/relink-unity-export.sh
       ```
 
       `ios/UnityExport/` は生成物なので、エクスポートのたびに作り直されて設定が消える。
       `Data` は既定で **Unity-iPhone**(Unity単体アプリ)に付いており、UaaLでは
-      **UnityFramework** へ移さないとリンクが undefined symbols で落ちる。
+      **UnityFramework** へ移さないと、ビルドは通るのに**Unityの読み込み中にアプリが落ちる**
+      (`Data` はリソースでありコードではないため、リンクエラーにはならない)。
       Xcodeで手作業するなら `Unity-iPhone` プロジェクト → `Data` を選択 →
       右ペインの **Target Membership** を UnityFramework に変更。
       **スクリプトは冪等**なので、迷ったら実行しておけばよい
@@ -133,10 +142,23 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
       → 終了時にクラッシュしないこと(修正済みのC1がここで効く)
 - [ ] 統計画面に結果が出る
 - [ ] **CSVログを回収する**(PoCの成果物)
-      Xcode → Window → Devices and Simulators → 対象デバイス → Installed Apps →
-      AR_Runner_UI → 歯車 → **Download Container…** →
-      `.xcappdata` を右クリック → パッケージの内容を表示 →
-      `AppData/Documents/RunLogs/Log_*.csv`
+      **ホーム右上メニュー → 開発者モード → ログ一覧をタップ → 共有**
+      (AirDrop / ファイルへ保存 / メール)。**Mac不要でその場から取り出せる**(2026-09-17 追加)。
+      開発者モードが出ない古いビルドの場合のみ、Xcode → Window → Devices and Simulators →
+      対象デバイス → Installed Apps → AR_Runner_UI → 歯車 → **Download Container…** →
+      `.xcappdata` を右クリック → パッケージの内容を表示 → `AppData/Documents/RunLogs/Log_*.csv`
+- [ ] **開発者モードで実機の状態を確認する**(実機でしか分からないことがここに集まる)
+      - `m2p.lastMs` が **-1 以外** = M2Pが実測できている(§10の評価はこの値が要る)
+      - `csv.imuSource` が `device` か `native`(`approximated` はエディタ用の近似)
+      - `gps.autoLostHandling` が **ON**
+- [ ] **ARグラスを繋ぐ場合**(XREAL One)
+      - [ ] グラス側の画面モードを **Follow(固定)** にする ※Anchorだと二重補正になる
+      - [ ] iPhone 15以降なら**ハブ無しで直結**でよい(グラスはiPhoneからバスパワー給電)
+      - [ ] **iPhoneの縦画面がそのまま出ていたら失敗**(ミラーリング)。
+            外部ディスプレイのシーンが生成されていない
+      - [ ] 開発者モードで `glass.output = グラスへ出力中` /
+            `glass.fillsScreen = 一致(画面を埋めている)` を確認
+      - [ ] `glass.fit` に光学適合の実測が出る(3.0m前方のアバターは全身が入らない — 既知)
 - [ ] CSVを開き、`imu_accel_x/y/z` が **0以外の実測値**で埋まっていることを確認
       (実機ではCoreMotionから100Hzで供給される)
 
@@ -144,9 +166,10 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 
 | 症状 | 原因と対処 |
 |---|---|
+| リンクエラー: duplicate symbol(同じ関数が2つ) | Finder の「両方とも残す」で出来た `… 2.cpp` 等の衝突コピーがビルドに混ざっている。`ios/UnityExport` を上書きコピー・マージしない。現在のエクスポータは出力先を毎回作り直し、Unityのキャッシュに衝突コピーがあれば消してから書き出す |
 | 起動直後にクラッシュ(dyld: Library not loaded) | UnityFrameworkが **Embed & Sign** になっていない(手順3) |
-| リンクエラー(undefined symbols) | `Data` の Target Membership が未変更。`./tools/relink-unity-export.sh` を実行(手順3) |
-| 走行画面が暗く「未リンク」と出る | 同上。Unityが実際には繋がっていない状態 |
+| ビルドは通るが、Unityの読み込み中(走行画面へ入るとき)にクラッシュ | `Data` の Target Membership が未変更。現在のエクスポータは自動で付け替えるので、まず**再エクスポート**。古いエクスポートなら `sh tools/relink-unity-export.sh`(手順3)。Clean Build Folder では直らない(設定はエクスポートされたプロジェクト側にあるため)。直前のXcodeコンソールに `Data/` や `global-metadata.dat` が見つからない旨が出ることが多い |
+| 走行画面が暗く「未リンク」と出る | UnityFramework が読み込めていない。Embed & Sign を確認(手順3の注記) |
 | 直したはずの不具合が実機で直っていない | **エクスポートが古い**。Unity側のC#を変えたら再エクスポートが必要。CIも古いエクスポートに対して緑になるため気づきにくい(警告は出る) |
 | 署名エラー(HealthKit) | 手順2のスクリプトを実行していない |
 | 署名エラー(Bundle IDが使用中) | Bundle IDを更にユニークなものへ |

@@ -2,12 +2,14 @@ import SwiftUI
 
 // MARK: - Running Settings Screen
 struct RunningSettingsView: View {
-    let onNext: () -> Void
-    let onBack: () -> Void
-
+    // 値はこの画面のローカル状態で持ち、「次へ」で RunSettings.shared へ確定する。
+    // hsu/main は RunConfiguration という別の器を導入していたが、Unityへ引き渡す
+    // 共有ストアが既に RunSettings.shared にあるため、同じ3値の置き場を2つ作らない
     @State private var timeSeconds: Int = 3600
     @State private var distanceKm: Double = 10.0
     @State private var paceKmh: Double = 8.0
+    let onNext: () -> Void
+    let onBack: () -> Void
 
     @State private var editingTime = false
     @State private var editingDistance = false
@@ -119,7 +121,9 @@ struct RunningSettingsView: View {
                             focusedField = .distance
                         },
                         onCommit: {
-                            if let v = Double(distanceInput), v > 0 { distanceKm = min(200.0, max(0.5, v)) }
+                            if let v = Double(distanceInput), v > 0 {
+                                distanceKm = min(200.0, max(0.5, v))
+                            }
                             editingDistance = false
                             focusedField = nil
                         }
@@ -143,7 +147,9 @@ struct RunningSettingsView: View {
                             focusedField = .pace
                         },
                         onCommit: {
-                            if let v = Double(paceInput), v > 0 { paceKmh = min(30.0, max(1.0, v)) }
+                            if let v = Double(paceInput), v > 0 {
+                                paceKmh = min(30.0, max(1.0, v))
+                            }
                             editingPace = false
                             focusedField = nil
                         }
@@ -177,13 +183,18 @@ struct RunningSettingsView: View {
                 Spacer()
 
                 // Next button
-                Button(action: {
-                    // 設定値を共有ストアへ反映（RunningViewがUnityへ引き渡す）
+                Button {
+                    // 入力中の値を先に確定する。キーボードを開いたまま「次へ」を押すと
+                    // 打ち込んだ数値が捨てられていた(hsu/main 由来の修正)
+                    finishEditing()
+
+                    // 確定後の値を共有ストアへ反映（RunningViewがUnityへ引き渡す）。
+                    // 順序が逆だと確定前の古い値がUnityへ流れる
                     RunSettings.shared.paceKmH = paceKmh
                     RunSettings.shared.distanceKm = distanceKm
                     RunSettings.shared.timeSeconds = timeSeconds
                     onNext()
-                }) {
+                } label: {
                     ZStack {
                         Circle()
                             .fill(Color.arYellow)
@@ -210,6 +221,24 @@ struct RunningSettingsView: View {
         .onAppear { UnityLauncher.shared.prewarm() }
     }
 
+    private func finishEditing() {
+        switch focusedField {
+        case .time:
+            applyTimeInput()
+        case .distance:
+            applyDistanceInput()
+        case .pace:
+            applyPaceInput()
+        case nil:
+            break
+        }
+
+        editingTime = false
+        editingDistance = false
+        editingPace = false
+        focusedField = nil
+    }
+
     private func applyTimeInput() {
         let parts = timeInput.split(separator: ":").map { Int($0) ?? 0 }
         switch parts.count {
@@ -217,6 +246,18 @@ struct RunningSettingsView: View {
         case 2: timeSeconds = max(60, parts[0] * 60 + parts[1])
         case 1: timeSeconds = max(60, parts[0] * 60)
         default: break
+        }
+    }
+
+    private func applyDistanceInput() {
+        if let value = Double(distanceInput), value > 0 {
+            distanceKm = min(200.0, max(0.5, value))
+        }
+    }
+
+    private func applyPaceInput() {
+        if let value = Double(paceInput), value > 0 {
+            paceKmh = min(30.0, max(1.0, value))
         }
     }
 }

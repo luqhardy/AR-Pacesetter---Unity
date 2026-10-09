@@ -61,6 +61,12 @@ public class RunAudioEngine : MonoBehaviour
     private bool _goalPlayed = false;
     private string _lastGoalJingleName = string.Empty;
 
+    // 周囲の騒音に合わせて音量を上げる機能(企画書由来・第1期スコープ外)は既定OFF。
+    // ONにすると起動から終了までマイクが開きっぱなしになり(iOSのオレンジ表示・電池)、
+    // Player設定「Force iOS Speakers When Recording」がOFFだと音が受話口へ回る恐れがある
+    [Tooltip("マイクで周囲の騒音を測り音量を自動調整する(第1期スコープ外・既定OFF)")]
+    [SerializeField] private bool adaptiveVolumeFromMicrophone = false;
+
     // Device microphone sampling state
     private AudioClip _micClip;
     private float[] _micBuffer = new float[256];
@@ -92,7 +98,7 @@ public class RunAudioEngine : MonoBehaviour
             _lastAvatarPos = avatarTransform.position;
 
 #if !UNITY_EDITOR
-        StartMicrophoneMonitoring();
+        if (adaptiveVolumeFromMicrophone) StartMicrophoneMonitoring();
 #endif
     }
 
@@ -130,6 +136,13 @@ public class RunAudioEngine : MonoBehaviour
     {
         if (Microphone.devices.Length == 0) return;
         _micClip = Microphone.Start(null, true, 1, 16000);
+    }
+
+    private void OnDestroy()
+    {
+        if (_micClip == null) return;
+        Microphone.End(null);
+        _micClip = null;
     }
 
     // 自己出力(足音・呼吸音)がマイクに回り込んで騒音判定→音量アップ→さらに

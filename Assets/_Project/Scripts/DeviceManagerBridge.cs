@@ -4,9 +4,13 @@ using UnityEngine;
 /// <summary>
 /// Swift → Unity デバイス管理ブリッジ (AR-runner の UnityBridge.swift 契約)。
 /// GameObject名は必ず "DeviceManager"。
-///   ConnectXREAL {}    — XREALグラス接続 → ReadyチェックをConnectedへ
+///   ConnectXREAL {model?, pixelWidth?, pixelHeight?, refreshHz?}
+///                      — XREALグラス接続 → ReadyチェックをConnectedへ。
+///                        表示メトリクスがあればグラスの画角で描くプロファイルを選ぶ
 ///   DisconnectXREAL {} — グラス切断(§8.3) → スタンバイ移行(アバター消去)。
 ///                        走行セッションは終了させず、CSVログ書き出しは継続する
+///   UpdateGlassPose {yaw, pitch, roll, timestamp}
+///                      — グラス実機の頭部姿勢(将来用。iOSでは現状供給元が無い)
 /// </summary>
 public class DeviceManagerBridge : MonoBehaviour
 {
@@ -16,6 +20,18 @@ public class DeviceManagerBridge : MonoBehaviour
     private class SwiftCommand
     {
         public string command;
+
+        // ConnectXREAL の表示メトリクス (iOSが知っている値のみ。画角はグラスから取得できない)
+        public string model;
+        public int pixelWidth;
+        public int pixelHeight;
+        public float refreshHz;
+
+        // UpdateGlassPose (度)
+        public float yaw;
+        public float pitch;
+        public float roll;
+        public float timestamp;
     }
 
     [SerializeField] private ReadyCheckController readyCheck;
@@ -58,6 +74,17 @@ public class DeviceManagerBridge : MonoBehaviour
                 // 現実の上に「現実の動画」を重ねると二重像になり全体が濁るため
                 SetPassthrough(false);
 
+                // グラスの画角・眼の位置で描く出力リグへ切り替える。
+                // iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えない
+                EnableGlassOutput(cmd);
+
+                // HUDの所有者: グラスに出ている間はUnityのF-07 HUD(Swiftの hideUnityHud と同じ規則)。
+                // StartSession時にしか決めていなかったため、iPhoneで走り出してから
+                // グラスを挿すとグラスにHUDが出なかった。表示メトリクスがある = 実際の外部
+                // ディスプレイ接続のときだけ切り替える(準備画面の手動「接続」には付かない)
+                if (cmd.pixelWidth > 0 && cmd.pixelHeight > 0)
+                    SetUnityHudVisible(true);
+
                 // §8.3: 再接続でも即座にアバターを出現させない。Swiftが準備画面へ戻り、
                 // ユーザー操作後に ResumeSession/StartSession が来てから復帰する
                 Debug.Log("[SWIFT BRIDGE] ConnectXREAL — glass Connected (アバター復帰は再スタート操作を待つ)。");
@@ -66,13 +93,27 @@ public class DeviceManagerBridge : MonoBehaviour
             case "DisconnectXREAL":
                 // iPhone表示へ戻るのでカメラ映像を復帰させる(ビデオシースルー)
                 SetPassthrough(true);
+                DisableGlassOutput();
+                // iPhone表示に戻ればSwiftUIがHUDを持つ(二重表示しない)
+                SetUnityHudVisible(false);
                 HandleGlassDisconnected();
+                break;
+
+            case "UpdateGlassPose":
+                ApplyGlassPose(cmd);
                 break;
 
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown device command: {cmd.command}");
                 break;
         }
+    }
+
+    private void SetUnityHudVisible(bool visible)
+    {
+        var hud = FindFirstObjectByType<PeripheralHUDManager>(FindObjectsInactive.Include);
+        if (hud != null && hud.IsHudVisible != visible)
+            hud.SetHudVisible(visible);
     }
 
     /// <summary>パススルー表示の切り替え(コントローラ未配置でも落ちない)。</summary>
@@ -84,10 +125,56 @@ public class DeviceManagerBridge : MonoBehaviour
     }
 
     /// <summary>
+    /// 接続ペイロードから表示プロファイルを決めて出力リグを起動する。
+    ///
+    /// <para>解像度・リフレッシュレートはiOSが知っているが、<b>機種名も画角もグラスからは取得できない</b>
+    /// (XREALのSDKはAndroid専用)。メトリクスが無い場合や未知の解像度の場合は、本プロジェクトの
+    /// 実機である XREAL One として扱う — 画角を上書きしない方が確実に見え方を外すため。</para>
+    /// </summary>
+    private void EnableGlassOutput(SwiftCommand cmd)
+    {
+        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (rig == null) return;
+
+        GlassDisplayProfile profile =
+            GlassDisplayProfile.Resolve(cmd.model, cmd.pixelWidth, cmd.pixelHeight, cmd.refreshHz);
+
+        if (profile == null)
+        {
+            profile = GlassDisplayProfile.XrealOne.WithDisplayMode(cmd.pixelWidth, cmd.pixelHeight, cmd.refreshHz);
+            Debug.Log($"[SWIFT BRIDGE] 表示メトリクスから機種を特定できないため既定プロファイルを使用: {profile}");
+        }
+
+        rig.EnableGlassOutput(profile);
+    }
+
+    private void DisableGlassOutput()
+    {
+        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (rig != null) rig.DisableGlassOutput();
+    }
+
+    /// <summary>
+    /// グラス実機の頭部姿勢を出力リグへ渡す(将来用)。
+    /// 供給が途切れれば自動で §4.1 の進行方向ヨーへ落ちるので、欠測しても破綻しない。
+    /// </summary>
+    private void ApplyGlassPose(SwiftCommand cmd)
+    {
+        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (rig == null) return;
+
+        // 鮮度判定はUnityの時間軸で行う。Swiftの timestamp は CACurrentMediaTime 系で
+        // 起点が違うためそのまま渡すと必ず「古い」と判定される — 到着時刻で刻む(0を渡す)
+        rig.SetExternalHeadPose(Quaternion.Euler(cmd.pitch, cmd.yaw, cmd.roll), 0f);
+    }
+
+    /// <summary>
     /// §8.3 ARグラス切断時の緊急処理:
     /// スタンバイへ移行してアバターを消去する。走行セッション自体は終了させないため、
-    /// F-11のCSVログ書き出し(RunTelemetryLoggerはHasStarted && !IsSessionEndedで動作)は
-    /// バックグラウンドで継続する。再接続時は即復帰させず準備画面からの再スタートを待つ。
+    /// F-11のCSVログ書き出し(RunTelemetryLogger はアバターとは別のGameObjectで
+    /// IsRunMotionActive の間動作)はバックグラウンドで継続する。
+    /// 再接続時は即復帰させず準備画面からの再スタートを待つ — 原因を GlassDisconnected として
+    /// 残すので、その間にGPSが復帰しても GpsSignalMonitor はアバターを戻さない。
     /// </summary>
     private void HandleGlassDisconnected()
     {
@@ -99,7 +186,7 @@ public class DeviceManagerBridge : MonoBehaviour
         bool running = avatarEngine != null && avatarEngine.HasStarted && !avatarEngine.IsSessionEnded;
         if (running && stateController != null)
         {
-            stateController.TransitionToState(GameStateController.ARVisionState.Standby);
+            stateController.EnterStandby(GameStateController.StandbyCause.GlassDisconnected);
             Debug.LogWarning("[SWIFT BRIDGE] DisconnectXREAL — スタンバイ移行(アバター消去)。CSVログは継続。");
         }
         else

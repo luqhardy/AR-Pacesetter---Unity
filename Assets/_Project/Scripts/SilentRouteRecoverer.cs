@@ -145,12 +145,16 @@ public class SilentRouteRecoverer : MonoBehaviour
         // Fix: Use current Y to prevent floating to eye level
         trailPos.y = transform.position.y;
         
-        transform.position = Vector3.Lerp(transform.position, trailPos, Time.deltaTime * 3.0f);
+        // k=3.0 は333msで、k=5.0(回転)は200msで補間係数が1に飽和する。走行中の最大フレームは
+        // 実測328〜333msなので、ここは現実的に飽和し「ユーザー背後へワープ」になっていた
+        transform.position = Vector3.Lerp(transform.position, trailPos,
+                                          FrameSmoothing.Factor(Time.deltaTime, 3.0f));
 
         if (dirToRoute != Vector3.zero)
         {
             Quaternion targetRot = Quaternion.LookRotation(dirToRoute);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * 5.0f);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot,
+                                                  FrameSmoothing.Factor(Time.deltaTime, 5.0f));
         }
     }
 

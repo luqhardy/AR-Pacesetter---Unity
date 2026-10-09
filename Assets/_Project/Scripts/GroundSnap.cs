@@ -42,8 +42,10 @@ public class GroundSnap : MonoBehaviour
     private float maxCameraToFloorMeters = GroundFloorTracker.DefaultMaxCameraToFloorMeters;
 
     [Tooltip("前方の壁・断崖でアバターを足踏み停止させる(基本設計書 §4.2)。" +
-             "陸上トラックのように壁が単なる背景の環境ではOFFにすると素直に走り続ける")]
-    [SerializeField] private bool haltOnObstacles = true;
+             "陸上トラックのように壁が単なる背景の環境ではOFFにすると素直に走り続ける。" +
+             "第1期(トラック検証)の既定はOFF — 室内では前方3m以内の壁で必ず停止し、" +
+             "ユーザーが追い越してアバターが視界から消えるため")]
+    [SerializeField] private bool haltOnObstacles = false;
 
     // 床面高さの確定・保持(純ロジック)。実測が途切れてもカメラに追従させないための要
     private readonly GroundFloorTracker _floor = new GroundFloorTracker();
@@ -62,6 +64,16 @@ public class GroundSnap : MonoBehaviour
     /// <summary>再走行時などに床の確定をやり直す。</summary>
     public void ResetFloor() => _floor.Reset();
 
+    /// <summary>
+    /// 前方の壁・断崖での足踏み停止(§4.2)を行うか。**第1期の既定はOFF**。
+    /// 屋内デモや仕様どおりの挙動を確認したいときは実行時にtrueへ戻せる。
+    /// </summary>
+    public bool HaltOnObstacles
+    {
+        get => haltOnObstacles;
+        set => haltOnObstacles = value;
+    }
+
     /// <summary>E2E/エディタ検証用: 障害物検知の強制ON/OFF(Cキーと同じ)。</summary>
     public bool SimulateObstacle
     {
@@ -75,13 +87,13 @@ public class GroundSnap : MonoBehaviour
     
     /// <summary>これ以上「上向き」の面のみ地面として採用する(cos45°≒0.7)。
     /// 壁・天井を床と誤認するとアバターが壁の高さへ跳ね上がり視界から消える。</summary>
-    private const float GroundNormalMinDot = 0.7f;
+    private const float GroundNormalMinDot = CliffMath.GroundNormalMinDot;
 
     /// <summary>これ以下の「上向き成分」なら壁とみなす。床や緩斜面を障害物にしない。</summary>
     private const float WallNormalMaxDot = 0.5f;
 
     private static RaycastHit[] s_RaycastHits = new RaycastHit[32];
-    private static RaycastHit[] s_SphereCastHits = new RaycastHit[32];
+    private static RaycastHit[] s_ObstacleCastHits = new RaycastHit[32];
 
     [Header("Terrain Alignment")]
     [SerializeField] private bool alignWithTerrainNormal = true;
@@ -90,14 +102,17 @@ public class GroundSnap : MonoBehaviour
 
     private Vector3 _currentNormal = Vector3.up;
     private ARRaycastManager _arRaycastManager;
+    private ARPlaneManager _arPlaneManager;
     private static List<ARRaycastHit> s_Hits = new List<ARRaycastHit>();
 
     private void Start()
     {
 #if UNITY_2023_1_OR_NEWER
         _arRaycastManager = Object.FindFirstObjectByType<ARRaycastManager>();
+        _arPlaneManager = Object.FindFirstObjectByType<ARPlaneManager>();
 #else
         _arRaycastManager = Object.FindObjectOfType<ARRaycastManager>();
+        _arPlaneManager = Object.FindObjectOfType<ARPlaneManager>();
 #endif
         if (_arRaycastManager == null && userCamera != null)
         {
@@ -213,7 +228,9 @@ public class GroundSnap : MonoBehaviour
         // 4. Terrain Normal Alignment
         if (alignWithTerrainNormal)
         {
-            _currentNormal = Vector3.Slerp(_currentNormal, groundNormal, Time.deltaTime * alignmentSpeed);
+            // 長いフレームで係数が1に飽和すると傾きが1フレームで飛ぶ(FrameSmoothing 参照)
+            _currentNormal = Vector3.Slerp(_currentNormal, groundNormal,
+                                           FrameSmoothing.Factor(Time.deltaTime, alignmentSpeed));
             
             // Limit tilt angle
             float tilt = Vector3.Angle(Vector3.up, _currentNormal);
@@ -223,7 +240,8 @@ public class GroundSnap : MonoBehaviour
             }
 
             Quaternion targetRot = Quaternion.FromToRotation(transform.up, _currentNormal) * transform.rotation;
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * alignmentSpeed);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot,
+                                                  FrameSmoothing.Factor(Time.deltaTime, alignmentSpeed));
         }
 
         ApplyFloorVisibilityGate();
@@ -317,6 +335,7 @@ public class GroundSnap : MonoBehaviour
         int hitCount = Physics.RaycastNonAlloc(rayOrigin, Vector3.down, s_RaycastHits, 20.0f, environmentLayerMask, QueryTriggerInteraction.Ignore);
         float highestGround = -1000f;
         bool found = false;
+        int bestSemanticPriority = 0;
         
         for (int i = 0; i < hitCount; i++)
         {
@@ -327,6 +346,12 @@ public class GroundSnap : MonoBehaviour
             // Fix: Ignore the user camera's root as well to prevent snapping to the player's head/body
             if (userCamera != null && h.transform.root == userCamera.root) continue;
 
+            // LiDARメッシュ/ARPlaneが明示的に Ceiling/Table/Seat 等と分類した面は
+            // 高さと法線が床らしくても採用しない。未分類の屋外路面は幾何判定へ残す。
+            int semanticPriority = SurfaceSemanticMath.GroundPriority(
+                ARMeshSemanticSurface.FromRaycastHit(h, OutdoorSemantics));
+            if (semanticPriority == 0) continue;
+
             // 壁・天井を床と誤認しない。ARKitは垂直平面もコライダー付きで生成するため、
             // 面の向きを見ないと壁の上端を「最も高い地面」として拾ってしまい、
             // アバターが壁の高さへ跳ね上がって視界から消える
@@ -336,8 +361,10 @@ public class GroundSnap : MonoBehaviour
             // 高さ帯を外れた候補(カメラより上・遠すぎる下)はここで確実に落とす
             if (!Plausible(h.point.y)) continue;
 
-            if (h.point.y > highestGround)
+            if (semanticPriority > bestSemanticPriority
+                || (semanticPriority == bestSemanticPriority && h.point.y > highestGround))
             {
+                bestSemanticPriority = semanticPriority;
                 highestGround = h.point.y;
                 normal = h.normal;
                 found = true;
@@ -359,8 +386,13 @@ public class GroundSnap : MonoBehaviour
             {
                 // Find the highest point
                 highestGround = -1000f;
+                bestSemanticPriority = 0;
                 foreach (var hit in s_Hits)
                 {
+                    int semanticPriority = SurfaceSemanticMath.GroundPriority(
+                        SemanticForPlane(hit.trackableId, hit.pose.position));
+                    if (semanticPriority == 0) continue;
+
                     // 垂直平面(壁)は地面にしない
                     if (Vector3.Dot(hit.pose.up, Vector3.up) < GroundNormalMinDot) continue;
 
@@ -368,8 +400,10 @@ public class GroundSnap : MonoBehaviour
                     // 高さ帯で落とさないと、室内では常に天井が「最も高い面」として勝つ
                     if (!Plausible(hit.pose.position.y)) continue;
 
-                    if (hit.pose.position.y > highestGround)
+                    if (semanticPriority > bestSemanticPriority
+                        || (semanticPriority == bestSemanticPriority && hit.pose.position.y > highestGround))
                     {
+                        bestSemanticPriority = semanticPriority;
                         highestGround = hit.pose.position.y;
                         // For planes, we could use hit.pose.up but Vector3.up is safe
                         normal = Vector3.up; 
@@ -397,9 +431,14 @@ public class GroundSnap : MonoBehaviour
                 bool got = false;
                 float bestY = 0f;
                 float bestDelta = float.MaxValue;
+                int bestPriority = 0;
 
                 foreach (var hit in s_Hits)
                 {
+                    int semanticPriority = SurfaceSemanticMath.GroundPriority(
+                        SemanticForPlane(hit.trackableId, hit.pose.position));
+                    if (semanticPriority == 0) continue;
+
                     if (Vector3.Dot(hit.pose.up, Vector3.up) < GroundNormalMinDot) continue;
 
                     // 無限延長は天井を床一面に広げてしまうため、高さ帯の適用は必須
@@ -409,8 +448,10 @@ public class GroundSnap : MonoBehaviour
                     // 床が確定していれば「それに近い面」、未確定なら「低い面」を優先する
                     float delta = _floor.HasFloor ? Mathf.Abs(y - _floor.FloorY) : -y;
 
-                    if (!got || delta < bestDelta)
+                    if (!got || semanticPriority > bestPriority
+                        || (semanticPriority == bestPriority && delta < bestDelta))
                     {
+                        bestPriority = semanticPriority;
                         bestDelta = delta;
                         bestY = y;
                         got = true;
@@ -444,22 +485,40 @@ public class GroundSnap : MonoBehaviour
 
         if (userCamera == null) return false;
 
-        // 2. Continuous LiDAR-like spatial scanning
-        // Perform a horizontal spherecast/raycast from the user camera forward vector
+        // 2. LiDAR/ARPlaneコライダーに対する走行コリドー走査
         Vector3 rayOrigin = userCamera.position;
-        Vector3 rayDirection = userCamera.forward;
+        // 見回しで障害物方向が変わらないよう、アバターと同じ浄化済み走行方位を使う。
+        Vector3 rayDirection = avatarEngine != null ? avatarEngine.CurrentHeading : userCamera.forward;
         rayDirection.y = 0; // Lock to horizontal tracking plane
+        if (rayDirection.sqrMagnitude < 0.0001f)
+            rayDirection = userCamera.forward;
+        rayDirection.y = 0;
         rayDirection.Normalize();
 
-        // Cast a sphere forward up to 3.0 meters (Requirement 4.2)
-        int sphereHitCount = Physics.SphereCastNonAlloc(rayOrigin, 0.4f, rayDirection, s_SphereCastHits, obstacleDetectionDistance, obstacleLayerMask, QueryTriggerInteraction.Ignore);
-        for (int i = 0; i < sphereHitCount; i++)
+        // 足元付近から頭部までのカプセルを前方3mへ投影する。
+        // 旧来のカメラ高1本のSphereCastでは、縁石・低い障害物を丸ごと見落としていた。
+        float knownFloorY = _floor.HasFloor
+            ? _floor.FloorY
+            : userCamera.position.y - assumedCameraHeightMeters;
+        Vector3 corridorXZ = new Vector3(rayOrigin.x, 0f, rayOrigin.z);
+        Vector3 capsuleBottom = corridorXZ + Vector3.up * (knownFloorY + 0.4f);
+        Vector3 capsuleTop = corridorXZ + Vector3.up * (knownFloorY + 1.5f);
+        const float corridorRadius = 0.3f;
+        int obstacleHitCount = Physics.CapsuleCastNonAlloc(
+            capsuleBottom, capsuleTop, corridorRadius, rayDirection,
+            s_ObstacleCastHits, obstacleDetectionDistance,
+            obstacleLayerMask, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < obstacleHitCount; i++)
         {
-            var h = s_SphereCastHits[i];
+            var h = s_ObstacleCastHits[i];
             if (h.transform.root == transform.root) continue;
 
             // 開始位置がコライダー内部だと normal が零ベクトルで返り、壁と誤判定される
             if (h.distance <= 0.0001f) continue;
+
+            SurfaceSemantic semantic = ARMeshSemanticSurface.FromRaycastHit(h, OutdoorSemantics);
+            if (semantic == SurfaceSemantic.Floor || semantic == SurfaceSemantic.Ceiling) continue;
+            if (SurfaceSemanticMath.IsExplicitObstacle(semantic)) return true;
 
             // ほぼ垂直な面(=進路を塞ぐ壁)のみを障害物とみなす。
             // 床や緩斜面のコライダーを「高さ1.5m以上」だけで障害物にしない
@@ -477,51 +536,90 @@ public class GroundSnap : MonoBehaviour
         }
 
         // 3. Under-foot Cliff Drop checking
-        // Perform a vertical raycast down exactly 3.0 meters ahead along user path of progression.
-        // If the ground drops dramatically (cliff edge) or is missing, halt progression.
+        // 「ユーザー真下の地面」と「進行方向3m先の地面」の落差で断崖を判定する。
+        //
+        // 地面の選び方は CliffMath に委譲する。以前は真下のレイの**最初のヒット**を
+        // 地面にしていたため、頭上に天井コライダー(ARKitは天井も「水平・法線上向き」で
+        // コライダー付きに返す)があると「ユーザーの地面 = 天井高」になり、3m先の天井が
+        // 未検出の室内では「天井 − 床 ≒ 2m 以上」が断崖として成立していた。アバターは
+        // 足踏み停止し、ユーザーが追い越して視界から消える(=「壁・天井でアバターが消える」)。
+        // 地面は「上向きの面」かつ「カメラより下」— この幾何的事実だけで天井・壁・机を弾く
+        float cameraY = userCamera.position.y;
+
         Vector3 checkAheadPoint = userCamera.position + (rayDirection * obstacleDetectionDistance);
-        int cliffHitCount = Physics.RaycastNonAlloc(checkAheadPoint + (Vector3.up * 2.0f), Vector3.down, s_RaycastHits, 10.0f, environmentLayerMask, QueryTriggerInteraction.Ignore);
-        
-        bool foundGroundAhead = false;
-        float groundLevelAhead = -1000f;
-        for (int i = 0; i < cliffHitCount; i++)
+        bool foundGroundAhead = TryFindGroundBelow(checkAheadPoint + (Vector3.up * 2.0f), 10.0f, cameraY,
+                                                   out float groundLevelAhead);
+
+        // 前方に地面が「見つからない」ことは断崖の証拠にならない。
+        // ARKitの平面検出はまばらで、平坦な床でも3m先が未検出のことが普通にある。
+        // ここで停止させていたため屋内では未検出域のたびにアバターが足踏みを始め、
+        // ユーザーが追い越して視界から消えていた。断崖は**実測された落差**でのみ判定する
+        if (!foundGroundAhead) return false;
+
+        // ユーザー真下の地面。実測できなければ確定済みの床(=アバターが立っている高さ)を使う
+        if (!TryFindGroundBelow(userCamera.position + (Vector3.up * 2.0f), 20.0f, cameraY,
+                                out float userGroundLevel))
+        {
+            userGroundLevel = _floor.HasFloor ? _floor.FloorY : transform.position.y;
+        }
+
+        return CliffMath.IsCliffDrop(userGroundLevel, groundLevelAhead, minObstacleHeight);
+    }
+
+    // CliffMath へ渡すヒット候補。毎フレームの確保を避けるため使い回す
+    private static readonly List<CliffMath.GroundCandidate> s_GroundCandidates = new List<CliffMath.GroundCandidate>(32);
+
+    /// <summary>
+    /// <paramref name="origin"/> から真下へレイを撃ち、全ヒットの中から「地面」を選ぶ。
+    /// 自分自身・ユーザー(カメラのrig)のコライダーは除外し、選択は <see cref="CliffMath.TrySelectGround"/> に委譲する。
+    /// </summary>
+    private bool TryFindGroundBelow(Vector3 origin, float maxDistance, float cameraY, out float groundY)
+    {
+        int hitCount = Physics.RaycastNonAlloc(origin, Vector3.down, s_RaycastHits, maxDistance,
+                                               environmentLayerMask, QueryTriggerInteraction.Ignore);
+        s_GroundCandidates.Clear();
+        for (int i = 0; i < hitCount; i++)
         {
             var h = s_RaycastHits[i];
             if (h.transform.root == transform.root) continue;
-            if (h.point.y > groundLevelAhead)
-            {
-                groundLevelAhead = h.point.y;
-                foundGroundAhead = true;
-            }
+            if (userCamera != null && h.transform.root == userCamera.root) continue;
+
+            if (!SurfaceSemanticMath.CanBeGround(ARMeshSemanticSurface.FromRaycastHit(h, OutdoorSemantics))) continue;
+
+            s_GroundCandidates.Add(new CliffMath.GroundCandidate(h.point.y, Vector3.Dot(h.normal, Vector3.up)));
         }
 
-        float userGroundLevel = transform.position.y;
-        RaycastHit userGroundHit;
-        bool groundUnderUser = Physics.Raycast(userCamera.position + Vector3.up * 2.0f, Vector3.down, out userGroundHit, 20.0f, environmentLayerMask, QueryTriggerInteraction.Ignore);
-        if (groundUnderUser)
-        {
-            userGroundLevel = userGroundHit.point.y;
-        }
-        
-        if (foundGroundAhead)
-        {
-            // Compare ground level ahead with the user's ground level to prevent snapping feedback loop issues
-            if (userGroundLevel - groundLevelAhead >= minObstacleHeight)
-            {
-                return true;
-            }
-        }
-        else
-        {
-            // 前方に地面が「見つからない」ことは断崖の証拠にならない。
-            // ARKitの平面検出はまばらで、平坦な床でも3m先が未検出のことが普通にある。
-            // ここで停止させていたため屋内では未検出域のたびにアバターが足踏みを始め、
-            // ユーザーが追い越して視界から消えていた(=「壁でアバターが消える」の実体)。
-            // 断崖は**実測された落差**でのみ判定する(上の foundGroundAhead 分岐)。
-        }
-
-        return false;
+        return CliffMath.TrySelectGround(s_GroundCandidates, cameraY, minCameraToFloorMeters,
+                                         GroundNormalMinDot, out groundY);
     }
+
+    private SurfaceSemantic SemanticForPlane(TrackableId trackableId, Vector3 worldPoint)
+    {
+        if (_arPlaneManager != null && _arPlaneManager.trackables.TryGetTrackable(trackableId, out ARPlane plane))
+            return ARMeshSemanticSurface.FromPlaneClassifications(plane.classifications, worldPoint, OutdoorSemantics);
+        return SurfaceSemantic.Unknown;
+    }
+
+    /// <summary>
+    /// 屋外の画像分類の供給元(ARCore Scene Semantics)。未導入・未対応なら null 相当で、
+    /// 接地判定は従来の幾何 + ARKit面分類のまま1ミリも変わらない。
+    /// </summary>
+    private IOutdoorSemanticSource OutdoorSemantics
+    {
+        get
+        {
+            if (_outdoorSemantics == null && Time.time >= _nextOutdoorLookupTime)
+            {
+                // Bootstrapの生成順に依存しないよう、見つかるまで1秒間隔で探し直す
+                _nextOutdoorLookupTime = Time.time + 1f;
+                _outdoorSemantics = FindFirstObjectByType<OutdoorSemanticClassifier>(FindObjectsInactive.Include);
+            }
+            return _outdoorSemantics;
+        }
+    }
+
+    private OutdoorSemanticClassifier _outdoorSemantics;
+    private float _nextOutdoorLookupTime;
 
     private void UpdateAnimatorState(bool isHalted)
     {

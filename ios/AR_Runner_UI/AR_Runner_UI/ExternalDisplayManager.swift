@@ -18,9 +18,42 @@ final class ExternalDisplayManager: ObservableObject {
     /// ARグラス(外部ディスプレイ)が接続中かどうか
     @Published private(set) var isGlassesConnected = false
 
-    fileprivate var externalWindow: UIWindow?
+    /// グラス側ディスプレイの実解像度(px)とリフレッシュレート。Unityの画角プロファイル選択に使う。
+    /// iOSから取れるのはここまでで、機種名・画角はグラスからは取得できない。
+    @Published private(set) var displayPixelSize: CGSize = .zero
+    @Published private(set) var displayRefreshHz: Double = 0
 
-    private init() {}
+    /// グラスは挿さっているのに、iOS がアプリ専用の画面(外部ディスプレイのシーン)を作らず
+    /// **iPhoneの画面をミラーリングしている**か。診断表示用。
+    ///
+    /// このときグラスには iPhone の画面(カメラ映像・ボタン)がそのまま映り、`isGlassesConnected`
+    /// は false のまま — 「グラス未接続」と区別がつかないと原因に辿り着けない(2026-10-07 実機で発生)。
+    @Published private(set) var isMirroring = false
+
+    fileprivate var externalWindow: UIWindow?
+    /// 移設前(iPhone)の描画スケール。切断時に戻すために保持する
+    private var phoneContentScale: CGFloat?
+
+    private init() {
+        // UIScreen の接続通知と UIScreen.screens は iOS 16 で非推奨だが、シーンを持たない
+        // (=ミラーリング中の)画面を知る手段は他に無い。診断表示にだけ使う
+        for name in [UIScreen.didConnectNotification, UIScreen.didDisconnectNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshMirroring()
+            }
+        }
+        DispatchQueue.main.async { [weak self] in self?.refreshMirroring() }
+    }
+
+    /// 外部画面はあるのに専用シーンが無い = ミラーリング
+    func refreshMirroring() {
+        let hasExternalScreen = UIScreen.screens.count > 1
+        isMirroring = hasExternalScreen && !isGlassesConnected
+        if isMirroring {
+            print("[ExternalDisplay] 外部画面は接続されているが、iOSはミラーリング中 — " +
+                  "外部ディスプレイのシーンが作られていない(Info.plist の UIApplicationSceneManifest を確認)")
+        }
+    }
 
     fileprivate func externalDisplayConnected(scene: UIWindowScene) {
         let window = UIWindow(windowScene: scene)
@@ -30,18 +63,37 @@ final class ExternalDisplayManager: ObservableObject {
         window.isHidden = false
         externalWindow = window
         isGlassesConnected = true
+        isMirroring = false
+
+        // 実解像度(points × scale)とリフレッシュレート。XREAL Oneは1920×1080で受ける
+        let screen = scene.screen
+        let scale = screen.scale > 0 ? screen.scale : 1
+        displayPixelSize = CGSize(width: screen.bounds.width * scale,
+                                  height: screen.bounds.height * scale)
+        displayRefreshHz = Double(screen.maximumFramesPerSecond)
 
         attachUnityViewIfPossible()
 
-        // Unity側のReadyチェックを実接続で更新(手動タップと同じ経路)
-        UnityBridge.shared.connect()
-        print("[ExternalDisplay] ARグラス接続 — ARビューをグラスへ出力します")
+        // Unity側のReadyチェックを実接続で更新(手動タップと同じ経路)。
+        // 併せて表示メトリクスを渡し、グラスの画角で描かせる
+        UnityBridge.shared.connect(pixelWidth: Int(displayPixelSize.width.rounded()),
+                                   pixelHeight: Int(displayPixelSize.height.rounded()),
+                                   refreshHz: displayRefreshHz)
+        print("[ExternalDisplay] ARグラス接続 — ARビューをグラスへ出力します " +
+              "(\(Int(displayPixelSize.width))x\(Int(displayPixelSize.height)) @\(Int(displayRefreshHz))Hz)")
     }
 
     fileprivate func externalDisplayDisconnected() {
         externalWindow = nil
         isGlassesConnected = false
+        refreshMirroring()
+        displayPixelSize = .zero
+        displayRefreshHz = 0
         print("[ExternalDisplay] ARグラス切断 — ARビューをiPhoneへ戻します")
+
+        // 描画スケールをiPhoneへ戻す(戻さないとグラスの@1xのままiPhoneで描かれ、
+        // Retinaの1/3解像度でぼやける)
+        restorePhoneRenderScale()
 
         // §8.3: Unityをスタンバイへ(アバター消去)。走行記録・CSVログは継続し、
         // 再接続後は準備画面からの再スタートを待つ
@@ -51,15 +103,85 @@ final class ExternalDisplayManager: ObservableObject {
 
     /// Unity起動後・グラス接続後に呼ぶと、ARビューをグラス側ウィンドウへ移設する。
     /// 何度呼んでも安全(既に載っていれば何もしない)。
+    ///
+    /// - Important: **移設しただけでは描画解像度は追従しない**。Unityのレンダリング面
+    ///   (CAMetalLayer)の大きさは「ビューのbounds × contentScaleFactor」で決まるため、
+    ///   iPhone(例: @3x の縦長)のスケールのままグラス(1920×1080 @1x の横長)へ載せると、
+    ///   縦横比が合わずに引き伸ばし/レターボックスになり、しかも描画面積が数倍になって
+    ///   60fpsとM2P 20msの予算を壊す。**スケールを移設先の画面に合わせ、
+    ///   レイアウトを確定させて面を作り直させる**必要がある。
     func attachUnityViewIfPossible() {
         guard isGlassesConnected,
-              let hostView = externalWindow?.rootViewController?.view,
+              let window = externalWindow,
+              let hostView = window.rootViewController?.view,
               let unityView = UnityLauncher.shared.unityRootView,
               unityView.superview !== hostView else { return }
+
+        let screen = window.windowScene?.screen ?? UIScreen.main
+
+        // 移設元(iPhone)のスケールを覚えておき、切断時に正しく戻せるようにする
+        if phoneContentScale == nil { phoneContentScale = unityView.contentScaleFactor }
+
+        window.frame = screen.bounds
+        hostView.frame = window.bounds
 
         unityView.frame = hostView.bounds
         unityView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         hostView.addSubview(unityView)
+
+        applyRenderScale(screen.scale, to: unityView)
+        forceLayout(unityView, label: "attach")
+    }
+
+    /// iPhone側へ戻すときに描画スケールを元へ戻す。
+    /// `UnityContainerView` がビューを回収する前に呼ぶこと。
+    func restorePhoneRenderScale() {
+        guard let unityView = UnityLauncher.shared.unityRootView,
+              let scale = phoneContentScale else { return }
+
+        applyRenderScale(scale, to: unityView)
+        forceLayout(unityView, label: "restore")
+        phoneContentScale = nil
+    }
+
+    // MARK: - 描画面の追従
+
+    /// 移設先の画面に描画スケールを合わせ、レイアウトを確定させる。
+    /// グラス側への移設・iPhone側への回収の**両方**から呼ぶ(片側だけだと解像度がずれたままになる)。
+    func matchRenderScale(of view: UIView, to screen: UIScreen, label: String) {
+        applyRenderScale(screen.scale, to: view)
+        forceLayout(view, label: label)
+    }
+
+    /// Unityのレンダリング面はビュー階層のどこに載っているか(rootView直下とは限らない)ため、
+    /// 子孫まで再帰的にスケールを揃える。Unityの内部型に依存しないのが要点。
+    private func applyRenderScale(_ scale: CGFloat, to view: UIView) {
+        view.contentScaleFactor = scale
+        view.layer.contentsScale = scale
+        for sub in view.subviews { applyRenderScale(scale, to: sub) }
+    }
+
+    /// レイアウトを確定させ、Unityの `layoutSubviews` にレンダリング面を作り直させる。
+    ///
+    /// 2回流すのは、ウィンドウがキーになる前の1回目ではboundsが未確定なことがあるため
+    /// (端末回転時にUnity自身が面を作り直すのと同じ経路に乗せている)。
+    private func forceLayout(_ view: UIView, label: String) {
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+
+        DispatchQueue.main.async { [weak self] in
+            view.setNeedsLayout()
+            view.layoutIfNeeded()
+            self?.logRenderSurface(view, label: label)
+        }
+    }
+
+    private func logRenderSurface(_ view: UIView, label: String) {
+        let px = CGSize(width: view.bounds.width * view.contentScaleFactor,
+                        height: view.bounds.height * view.contentScaleFactor)
+        let aspect = px.height > 0 ? px.width / px.height : 0
+        print("[ExternalDisplay] \(label): 描画面 \(Int(px.width))x\(Int(px.height)) " +
+              "(scale \(view.contentScaleFactor), アスペクト \(String(format: "%.3f", aspect)))")
     }
 }
 
@@ -69,6 +191,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      configurationForConnecting connectingSceneSession: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        // グラスがミラーリングになるとき、ここに外部ディスプレイの役割が来ているかが切り分けの起点
+        print("[ExternalDisplay] シーン構成の要求: role=\(connectingSceneSession.role.rawValue)")
         if connectingSceneSession.role == .windowExternalDisplayNonInteractive {
             let config = UISceneConfiguration(name: "ARGlassDisplay",
                                               sessionRole: connectingSceneSession.role)

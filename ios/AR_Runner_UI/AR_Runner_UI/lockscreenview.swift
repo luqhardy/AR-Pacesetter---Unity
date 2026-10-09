@@ -3,11 +3,14 @@ import SwiftUI
 // MARK: - AR Lock Screen
 // Pure black screen shown while running on AR glasses.
 // Swipe up to unlock and return to the running HUD.
+// A stop button lets the user end the run directly from here too.
 struct LockScreenView: View {
     let onUnlock: () -> Void
+    let onEnd: () -> Void
 
     @State private var dragOffset: CGFloat = 0
     @State private var unlocking = false
+    @State private var showEndAlert = false
 
     // How far the user needs to swipe up to trigger unlock
     private let unlockThreshold: CGFloat = 160
@@ -78,6 +81,24 @@ struct LockScreenView: View {
                         .transition(.opacity)
                 }
             }
+
+            // Stop button, floating top-right
+            VStack {
+                HStack {
+                    Spacer()
+                    Button { showEndAlert = true } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 42, height: 42)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(Color.arBorder, lineWidth: 1))
+                    }
+                    .padding(.trailing, 20)
+                    .padding(.top, 60)
+                }
+                Spacer()
+            }
         }
         .gesture(
             DragGesture(minimumDistance: 10)
@@ -108,6 +129,10 @@ struct LockScreenView: View {
                 }
         )
         .statusBarHidden(true)
+        .alert("ランを終了しますか？", isPresented: $showEndAlert) {
+            Button("終了", role: .destructive) { onEnd() }
+            Button("続ける", role: .cancel) {}
+        }
     }
 
     // 0.0 → 1.0 progress toward unlock threshold

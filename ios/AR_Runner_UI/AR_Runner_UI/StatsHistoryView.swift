@@ -4,6 +4,7 @@ import SwiftUI
 struct StatsView: View {
     let onHistory: () -> Void
     let onBack: () -> Void
+    let onFinish: () -> Void
 
     // Unityから届いた走行結果 (SessionEnded)。無ければモック値で表示(UI単体開発用)
     @ObservedObject private var bridge = UnityBridge.shared
@@ -139,7 +140,7 @@ struct StatsView: View {
                         // Buttons
                         VStack(spacing: 10) {
                             ARButton("履歴を見る", icon: "clock.arrow.circlepath") { onHistory() }
-                            ARButton("終了", style: .secondary) { onBack() }
+                            ARButton("終了", style: .secondary) { onFinish() }
                         }
                         .padding(.horizontal, 24)
                         .padding(.bottom, 52)
