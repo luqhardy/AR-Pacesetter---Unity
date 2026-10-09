@@ -1491,18 +1491,56 @@ public class E2EScenarioBehaviour : MonoBehaviour
         int csvBefore = CountRunLogs();
         bool gpsHandlingBefore = gps != null && gps.AutoLostHandlingEnabled;
 
+        // ブースは実物のグラスで体験する。グラスの視点(GlassViewRig)で向き・俯角を確かめる
+        var glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        var device = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
+        if (device != null)
+            device.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+
         // ── 立ったまま: Swift と同じ入口から起動 ──
         bridge.OnSwiftCommand("{\"command\":\"StartBoothDemo\",\"mode\":\"standing\"}");
         yield return null;
         Check(demo.IsRunning && demo.CurrentMode == BoothDemoController.Mode.Standing,
               "booth: StartBoothDemo starts the standing script");
         Check(bridge.IsPresentationSession, "booth: the session is marked as a demo");
+        StartCoroutine(WatchBoothVisibility(demo, engine, fsm));
 
         yield return WaitForDemoTime(demo, 5f);
         Check(engine.IsRunMotionActive, "booth: countdown completed and the avatar is running");
         Check(telemetry == null || !telemetry.IsLogging, "booth: no CSV is written for a demo run");
         Check(visuals == null || visuals.PaceColorState == "Just",
               $"booth: on-pace beat is green ({(visuals != null ? visuals.PaceColorState : "-")})");
+        Check(gps == null || !gps.AutoLostHandlingEnabled,
+              "booth: GPS-loss handling is off for the whole standing demo (the avatar never fades)");
+        Check(gps == null || !gps.IsMonitoring,
+              "booth: no fake GPS fixes are sent (a synthetic 'north' fix could steer the view direction)");
+        float boothHeight = BoothDemoScript.AvatarHeightCm / 100f;
+        Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - boothHeight) < 0.08f,
+              $"booth: the avatar is {boothHeight:F2}m tall so head-to-feet fits the glasses at 3m " +
+              $"({engine.MeasuredAvatarHeightMeters:F2}m)");
+        bool glassActive = glassRig != null && glassRig.IsGlassOutputActive && glassRig.OutputCamera != null;
+        Check(glassActive, "booth: the glasses output view is active for the booth checks");
+        float pitchAt3m = glassActive ? glassRig.AppliedDownPitchDegrees : 0f;
+
+        // 立ったまま体の向きを90°変えても、アバターは1秒以内に正面へ回り込む(部屋に置き去りにしない)。
+        // 以前は 不感帯12°・45°/s で90°に約2.5秒かかり「すぐ反応しない」と言われた(2026-10-09 実機)
+        FaceRig(Quaternion.Euler(0f, 90f, 0f) * CamForwardFlat());
+        yield return WaitScaled(1.0f);
+        Vector3 ahead = engine.transform.position - cam.position;
+        ahead.y = 0f;
+        float offAxis = Vector3.Angle(ahead, CamForwardFlat());
+        Check(offAxis < 15f,
+              $"booth: within 1s of a 90° turn, the avatar is back in front ({offAxis:F0}° off-centre)");
+        if (glassActive)
+        {
+            // グラスの視点も同じ向きへ回る(以前は開始時の向きに残り、アバターだけが回り込んでいた)
+            Transform outCam = glassRig.OutputCamera.transform;
+            Vector3 outForward = outCam.forward; outForward.y = 0f;
+            Vector3 toAvatar2 = engine.transform.position - outCam.position; toAvatar2.y = 0f;
+            float glassOff = Vector3.Angle(outForward, toAvatar2);
+            Check(glassOff < 15f,
+                  $"booth: the glasses view turns with the visitor and the avatar stays centred ({glassOff:F0}° off-centre)");
+        }
 
         // Swift の実測(屋内の悪い精度)は無視される — 台本と無関係にアバターが消えないこと
         bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":3,\"distanceKm\":0.001," +
@@ -1526,6 +1564,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
               "booth: HUD pace turns red while behind");
         Check(hud == null || (hud.CurrentDistanceText != "0.00 km" && hud.CurrentDistanceText.EndsWith("km")),
               $"booth: HUD distance counts up while standing still ({(hud != null ? hud.CurrentDistanceText : "-")})");
+        if (glassActive)
+        {
+            // 9m先へ離れたら視点の俯角を浅くする(3m前提のままだと頭が視野の上へ切れる)
+            float pitchAt9m = glassRig.AppliedDownPitchDegrees;
+            Check(pitchAt9m < pitchAt3m - 5f,
+                  $"booth: the glasses view tilts up when the avatar is ~9m ahead ({pitchAt3m:F1}° → {pitchAt9m:F1}°)");
+        }
 
         // ── 追い抜き: 寄って緑→青、HUDペース緑 ──
         yield return WaitForDemoTime(demo, 33f);
@@ -1534,22 +1579,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(hud == null || hud.CurrentPaceState == PaceHudDisplay.PaceState.Maintaining,
               "booth: HUD pace is green while overtaking");
 
-        // ── GPSロスト: 慣性 → フェード → スタンバイ+警告 → 復帰 ──
-        yield return WaitForDemoTime(demo, 43f);
-        Check(fsm.currentState == GameStateController.ARVisionState.InertialMovement,
-              $"booth: GPS loss starts inertial movement (F-09) ({fsm.currentState})");
-        yield return WaitForDemoTime(demo, 47.8f);
-        Check(fsm.currentState == GameStateController.ARVisionState.Standby,
-              $"booth: 5s of loss fades the avatar out into standby (F-10) ({fsm.currentState})");
-        Check(hud == null || hud.IsSafetyWarningVisible, "booth: the red GPS warning is shown during standby");
-        yield return WaitForDemoTime(demo, 52.5f);
-        Check(fsm.currentState == GameStateController.ARVisionState.Normal,
-              $"booth: restored GPS brings the avatar back ({fsm.currentState})");
-        Check(engine.gameObject.activeInHierarchy, "booth: the avatar is visible again after recovery");
-
         // ── ゴール: 自動終了・何も保存しない ──
         float deadline = Time.time + 30f;
         while (demo.IsRunning && Time.time < deadline) yield return null;
+        Check(_boothWatchedFrames > 0 && _boothHiddenFrames == 0,
+              $"booth: the avatar stayed visible on every frame of the standing demo " +
+              $"({_boothHiddenFrames} hidden / {_boothWatchedFrames} frames; first: {_boothFirstHiddenReason})");
         Check(!demo.IsRunning && demo.LastRunCompleted, "booth: the standing script reaches the goal and ends itself");
         Check(engine.IsSessionEnded, "booth: the session is ended at the goal");
         Check(!bridge.IsPresentationSession, "booth: the demo flag clears when the session ends");
@@ -1560,18 +1595,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(gps == null || gps.AutoLostHandlingEnabled == gpsHandlingBefore,
               "booth: GPS-loss handling is restored afterwards");
 
-        // ── 次の来場者: GPSロストの途中(アバター非表示)で中断しても見える状態に戻る ──
+        // ── 次の来場者: 遅れ区間の途中で中断しても、次の人のために元へ戻る ──
         demo.Begin(BoothDemoController.Mode.Standing);
-        yield return WaitForDemoTime(demo, 47.8f);
-        Check(fsm.currentState == GameStateController.ARVisionState.Standby,
-              $"booth: second visitor reaches standby before the stop ({fsm.currentState})");
+        yield return WaitForDemoTime(demo, 15f);
+        Check(engine.PresentationFollowsView, "booth: a new visitor's run keeps the avatar in front");
         bridge.OnSwiftCommand("{\"command\":\"StopBoothDemo\"}");
         yield return null;
         Check(!demo.IsRunning && !demo.LastRunCompleted, "booth: StopBoothDemo ends the script early");
         Check(fsm.currentState == GameStateController.ARVisionState.Normal && engine.gameObject.activeInHierarchy,
-              "booth: stopping mid-loss leaves the avatar visible for the next visitor");
-        Check(Mathf.Approximately(engine.PresentationLeadOffsetMeters, 0f),
-              "booth: the lead offset is cleared after a stop");
+              "booth: stopping mid-run leaves the avatar visible for the next visitor");
+        Check(Mathf.Approximately(engine.PresentationLeadOffsetMeters, 0f) && !engine.PresentationFollowsView,
+              "booth: the lead offset and face-forward override are cleared after a stop");
 
         // ── 数歩あるく: 来場者の移動でアバターが3m前を追従、ロスト判定は止める ──
         demo.Begin(BoothDemoController.Mode.Walking);
@@ -1603,6 +1637,38 @@ public class E2EScenarioBehaviour : MonoBehaviour
               "booth: walking mode restores GPS-loss handling");
         Check(SessionDataStore.LoadAllSessions().Count == historyBefore && CountRunLogs() == csvBefore,
               "booth: none of the demo runs left history or CSV behind");
+    }
+
+    private int _boothWatchedFrames;
+    private int _boothHiddenFrames;
+    private string _boothFirstHiddenReason = "-";
+
+    /// <summary>
+    /// 立ったまま体験の START からゴールまで、アバターが毎フレーム見えていたかを数える。
+    /// 「消えない」は台本の特定時刻だけを測っても縛れない(2026-10-07 チーム判断)
+    /// </summary>
+    private IEnumerator WatchBoothVisibility(BoothDemoController demo, AvatarEngine engine, GameStateController fsm)
+    {
+        _boothWatchedFrames = 0;
+        _boothHiddenFrames = 0;
+        _boothFirstHiddenReason = "-";
+        while (demo.IsRunning)
+        {
+            if (engine.IsRunMotionActive)
+            {
+                _boothWatchedFrames++;
+                string why = null;
+                if (!engine.gameObject.activeInHierarchy) why = "avatar inactive";
+                else if (fsm.currentState != GameStateController.ARVisionState.Normal) why = "FSM " + fsm.currentState;
+                else if (fsm.AvatarMaterials.Alpha < 0.4f) why = $"alpha {fsm.AvatarMaterials.Alpha:F2}";
+                if (why != null)
+                {
+                    if (_boothHiddenFrames == 0) _boothFirstHiddenReason = $"{why} at t={demo.ElapsedSeconds:F1}s";
+                    _boothHiddenFrames++;
+                }
+            }
+            yield return null;
+        }
     }
 
     private IEnumerator WaitForDemoTime(BoothDemoController demo, float scriptSeconds)

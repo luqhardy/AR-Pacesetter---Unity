@@ -1,13 +1,17 @@
 /// <summary>
 /// 展示ブース用「立ったまま体験」の台本(Kobe Calling)。Unity非依存の純ロジック。
 ///
-/// <para>来場者は実物のARグラスを掛けてその場に立つ。走るのは入力だけ — ペース・距離・GPS精度を
+/// <para>来場者は実物のARグラスを掛けてその場に立つ。走るのは入力だけ — ペース・距離を
 /// 時刻の関数として作り、本番と同じブリッジ経路へ流す(<c>BoothDemoController</c>)。
-/// 描画・色・オーラ・F-09/F-10 は本番の実装がそのまま反応する。</para>
+/// 描画・色・オーラは本番の実装がそのまま反応する。</para>
 ///
 /// <para>立ったままではユーザーとアバターの距離が変わらず、色は常に「ジャスト(緑)」になる。
 /// そこで「遅れた」「追い抜いた」を見せる区間だけ、アバターの追従位置を前後へずらす
 /// (<see cref="LeadOffsetAt"/>。色の判定基準の3.0mはずらさない)。</para>
+///
+/// <para><b>アバターは体験中に一度も消さない</b>(2026-10-07 チーム判断)。以前は GPSロスト
+/// (F-09 慣性 → F-10 フェードアウト → 警告)の区間を見せていたが、来場者には
+/// 「アバターが消えた=壊れた」に見えた。GPSは常に良好として流す。走行本番の F-10 は仕様どおり。</para>
 ///
 /// 時刻 t はカウントダウンの START からの経過秒。
 /// </summary>
@@ -20,22 +24,24 @@ public static class BoothDemoScript
         CatchingUp,     // 追い上げてジャストへ戻る
         Overtaking,     // ランナーが追い抜きかける → アバターが寄って速まる(緑→青)
         Settling,       // ジャストへ戻る
-        GpsLost,        // F-09 慣性 5秒 → F-10 フェードアウト1秒 → スタンバイ(赤字警告)
-        GpsRecovering,  // 再測位 → 再集積 → 通常
         FinalStretch,   // ゴールラインが見える最後の直線
         Finished
     }
 
+    /// <summary>
+    /// 体験中のアバターの身長(cm)。XREAL One の垂直画角(約25.8°)では、3.0m先の足元が眼高1.55mから
+    /// 27°下にあり175cmでは全身が入らない。145cmなら俯角14.6°(上限15°以内)で頭から足元まで収まる。
+    /// 走行本番の身長・距離(AGENTS.md §7-1)は変えない
+    /// </summary>
+    public const float AvatarHeightCm = 145f;
+
     // ── 区間の境界(秒) ────────────────────────────────────────────────────
-    // GPSロストは 慣性5秒 + フェード1秒 の後もスタンバイと警告を3秒見せるため9秒とる
     public const float FallingBehindStart = 10f;
     public const float CatchingUpStart    = 22f;
     public const float OvertakingStart    = 28f;
     public const float SettlingStart      = 35f;
-    public const float GpsLostStart       = 40f;
-    public const float GpsRecoveringStart = 49f;
-    public const float FinalStretchStart  = 53f;
-    public const float TotalSeconds       = 65f;
+    public const float FinalStretchStart  = 40f;
+    public const float TotalSeconds       = 52f;
 
     // ── アバター位置のずらし(m)。目標リード3.0mへの加算 ──────────────────────
     /// <summary>遅れ区間の最大。リード9.0m: 色は赤(4.5m+3m以上)、オーラ発動(遅延5m以上)。
@@ -64,9 +70,7 @@ public static class BoothDemoScript
         if (t < CatchingUpStart)    return Beat.FallingBehind;
         if (t < OvertakingStart)    return Beat.CatchingUp;
         if (t < SettlingStart)      return Beat.Overtaking;
-        if (t < GpsLostStart)       return Beat.Settling;
-        if (t < GpsRecoveringStart) return Beat.GpsLost;
-        if (t < FinalStretchStart)  return Beat.GpsRecovering;
+        if (t < FinalStretchStart)  return Beat.Settling;
         if (t < TotalSeconds)       return Beat.FinalStretch;
         return Beat.Finished;
     }
@@ -95,13 +99,7 @@ public static class BoothDemoScript
     /// <summary>目標ペースに対する実ペースの速度比。</summary>
     public static float PaceRatioAt(float t) => PaceRatioOf(BeatAt(t));
 
-    /// <summary>GPSが測位できている(良い精度のサンプルを送る)区間か。</summary>
-    public static bool GpsAvailableAt(float t) => BeatAt(t) != Beat.GpsLost;
-
-    /// <summary>
-    /// START からの走行距離(m)。速度比の区分定数を積分する。GPSロスト中も走者は走っているので
-    /// 距離は伸び続ける — 報告されないだけで、復帰後の値には途絶中の分が含まれる(実機と同じ)。
-    /// </summary>
+    /// <summary>START からの走行距離(m)。速度比の区分定数を積分する。</summary>
     public static float DistanceAt(float t, float targetSpeedMetersPerSecond)
     {
         if (t <= 0f || targetSpeedMetersPerSecond <= 0f) return 0f;
@@ -125,7 +123,7 @@ public static class BoothDemoScript
     private static readonly float[] SegmentEnds =
     {
         FallingBehindStart, CatchingUpStart, OvertakingStart, SettlingStart,
-        GpsLostStart, GpsRecoveringStart, FinalStretchStart, TotalSeconds
+        FinalStretchStart, TotalSeconds
     };
 
     private static float PaceRatioOf(Beat beat)

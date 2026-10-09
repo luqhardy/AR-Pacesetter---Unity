@@ -8,5 +8,30 @@
 	<array>
 		<string>location</string>
 	</array>
+
+	<!-- ARグラス(XREAL)を「専用の画面」として受け取るためのシーン定義。
+	     これが無いと iOS はグラスへ iPhone の画面をミラーリングするだけで、
+	     ExternalSceneDelegate が呼ばれない(=グラス未接続扱い・パススルー映像がグラスに出る)。
+	     2026-10-07 実機でミラーリングを確認。AppDelegate の configurationForConnecting だけに
+	     頼っていたのをやめ、外部ディスプレイの役割を静的にも宣言する。
+	     自動生成(INFOPLIST_KEY_UIApplicationSceneManifest_Generation)は NO にしてある —
+	     生成されたマニフェストがこの定義を上書きしないように -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleExternalDisplayNonInteractive</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>ARGlassDisplay</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).ExternalSceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 </dict>
 </plist>

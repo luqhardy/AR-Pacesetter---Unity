@@ -533,6 +533,11 @@ public class AvatarEngine : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     private void UpdatePurifiedHeading()
     {
+        // 展示デモだけの例外。来場者は走らないので移動から進行方向が出ず、立ったまま
+        // 向きを変えるとアバターが部屋の同じ場所に残って視野から消える
+        if (_presentationFollowsView && UpdatePresentationViewHeading())
+            return;
+
         if (runnerTrackingState == null)
             runnerTrackingState = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
 
@@ -753,8 +758,10 @@ public class AvatarEngine : MonoBehaviour
         if (targetDirection.sqrMagnitude < 0.001f) return;
 
         Quaternion targetRot = Quaternion.LookRotation(targetDirection);
+        // 展示デモは位置と同じ速さで体の向きも回す(遅いと横向きのまま走って見える)
+        float turnRate = _presentationFollowsView ? PresentationTurnDegreesPerSecond : maxTurnDegreesPerSecond;
         _smoothRotation      = Quaternion.RotateTowards(_smoothRotation, targetRot,
-                                                        maxTurnDegreesPerSecond * Time.deltaTime);
+                                                        turnRate * Time.deltaTime);
         transform.rotation   = _smoothRotation;
     }
 
@@ -964,6 +971,66 @@ public class AvatarEngine : MonoBehaviour
     private float DisplayedLeadMeters => leadDistanceMeters + _presentationLeadOffsetMeters;
 
     /// <summary>
+    /// 実際にアバターを置いている前方距離(m)= 目標リード + 展示デモのずらし。本番走行では目標リードと同じ。
+    /// グラスの俯角はこの距離で決める(9m先へ離れたとき頭が視野の上へ切れないように)。
+    /// </summary>
+    public float DisplayedLeadDistanceMeters => DisplayedLeadMeters;
+
+    // ── 展示デモ: アバターを来場者の正面に保つ ───────────────────────────────
+    // §4.1 の Gaze Lock(視線を進行方向に使わない)は**走行中の**酔い防止のための約束で、
+    // 走らない展示デモでは逆に「向きを変えるとアバターが消える」原因になる。
+    // ここで使うのは頭ではなくiPhone(胸のマウント)の向き=体の正面。
+    // 呼吸や体の揺れで左右に振れないよう、不感帯を超えてから向き直る。
+    // 走行の旋回上限(45°/s)は酔い防止の値で、立ったまま意図して向きを変える来場者には遅すぎた
+    // (90°で約2.5秒・12°未満は無反応 — 2026-10-09 実機「体を傾けてもすぐ反応しない」)
+    private const float PresentationTurnStartDegrees = 4f;      // これ以上ずれたら向き直り始める
+    private const float PresentationTurnStopDegrees = 1f;       // ここまで揃ったら止める
+    private const float PresentationTurnDegreesPerSecond = 180f; // 90°の向き直りが0.5秒
+    private const float PresentationPositionLerpSpeed = 8f;     // 位置の平滑(時定数0.125秒。走行は2.5)
+    private bool _presentationFollowsView;
+    private bool _presentationTurning;
+
+    /// <summary>展示デモでアバターを来場者の正面に保っているか。本番走行では常に false。</summary>
+    public bool PresentationFollowsView => _presentationFollowsView;
+
+    /// <summary>
+    /// 展示デモ専用: 進行方向を移動ではなく iPhone の正面(体の向き)から取る。
+    /// <see cref="ResetSession"/> で false へ戻る。
+    /// </summary>
+    public void SetPresentationFollowsView(bool follow)
+    {
+        _presentationFollowsView = follow;
+        _presentationTurning = false;
+    }
+
+    /// <returns>正面が取れて進行方向を更新した(=移動からの推定を使わない)か</returns>
+    private bool UpdatePresentationViewHeading()
+    {
+        Vector3 view = userCamera.forward;
+        view.y = 0f;
+        // 真下・真上を向いているときは水平の正面が無い。直前の向きを保つ
+        if (view.sqrMagnitude < 0.01f)
+            return true;
+        view.Normalize();
+
+        float off = Vector3.Angle(_currentLinearDirection, view);
+        if (!_presentationTurning && off > PresentationTurnStartDegrees)
+            _presentationTurning = true;
+
+        if (_presentationTurning)
+        {
+            _currentLinearDirection = Vector3.RotateTowards(
+                _currentLinearDirection, view,
+                PresentationTurnDegreesPerSecond * Mathf.Deg2Rad * Time.deltaTime, 0f);
+            _currentLinearDirection.y = 0f;
+            _currentLinearDirection.Normalize();
+            if (Vector3.Angle(_currentLinearDirection, view) <= PresentationTurnStopDegrees)
+                _presentationTurning = false;
+        }
+        return true;
+    }
+
+    /// <summary>
     /// 追従アンカーの内部状態を外部座標へ再同期する(SilentRouteRecoverer用)。
     /// サイレント復帰の解除時など、アバターの位置を外部が動かした後に呼ぶことで、
     /// 次フレームのペーシング再開時のワープを防ぐ。
@@ -1022,6 +1089,8 @@ public class AvatarEngine : MonoBehaviour
         _sprintTimer = 0f;
         _sidestepOffset = Vector3.zero;
         _presentationLeadOffsetMeters = 0f;
+        _presentationFollowsView = false;
+        _presentationTurning = false;
         _effectiveSpeedMultiplier = 1.0f;
         _jitterGuard.Reset();
         _avatarVelocityWindow.Clear();
@@ -1186,6 +1255,8 @@ public class AvatarEngine : MonoBehaviour
 
     private float GetEffectivePositionLerpSpeed()
     {
+        // 展示デモ(立ったまま向きを変える)は来場者の正面へすぐ回り込ませる
+        if (_presentationFollowsView) return PresentationPositionLerpSpeed;
         // Faster lerp during sprint, slower when waiting for user to catch up
         return _overtakeState == OvertakeState.Overtaking ? 4.0f : 2.5f;
     }

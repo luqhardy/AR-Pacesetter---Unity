@@ -219,6 +219,7 @@ stateDiagram-v2
   BLEは近く(-70dBm以上)の1台にだけ繋ぐ — トラックでは他の走者のストラップも同じサービスを広告している
 - `SessionDataStore.SaveSession` は失敗しても例外を投げず null を返す。走行終了処理(Swiftへの `SessionEnded`)を止めないため
 - **展示デモの走行(`ARSessionManagerBridge.IsPresentationSession`)は何も残さない**: 履歴・CSV・`SessionEnded`(=HealthKit保存)を止めている。走行の記録や送信を新しく足すときはこのフラグを見る
+- **展示デモではアバターを一度も消さない**(GPSロスト判定OFF)。向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView`)— §4.1 Gaze Lock の**唯一の例外**で、走行には持ち込まない
 - `tools/prepare-free-signing.sh` の実行結果(Bundle ID・署名設定の一時改変)はコミットしない。CIが検知して落とす
 
 ### ペース単位の規約
@@ -230,7 +231,8 @@ Swift⇄ブリッジ境界は km/h、Unity内部は 分/km(変換: 分/km = 60 �
 ## 7. 未決事項(チーム判断待ち — エージェントは独断で解決しない)
 
 1. **3.0m前方と画角の両立(F-03 × グラス)**: 身長1.75mのアバターは3.0mで垂直31.1°を占め、グラスの垂直25.7°に全身が入らない
-   (全身には3.7m必要)。§7.2のオーラ(足元)も視野外。距離か見え方か、どちらを譲るかはチームが決める
+   (全身には3.7m必要)。§7.2のオーラ(足元)も視野外。距離か見え方か、どちらを譲るかはチームが決める。
+   展示デモだけは身長145cmで収めた(2026-10-09 チーム判断・`BoothDemoScript.AvatarHeightCm`)— 走行本番は未決のまま
 2. **`SafetyAndSystemController`(TTC警告・低バッテリー退避)は休眠中**: 実行時に生成されない。有効化には
    (a)障害物検知ソースの接続 (b)非検出時にTTCを `ttcScanRange` で計算する誤りの修正が要る —
    そのまま配線すると19.2km/h超で誤警報が出る。詳細は HANDOVER.md §5

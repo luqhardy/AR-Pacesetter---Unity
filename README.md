@@ -276,7 +276,7 @@ SwiftUI画面込みの完成アプリは、常に **AR_Runner_UIスキームか�
 ```
 ① Unityエクスポート（Windows可）
    Unityメニュー Build → Export iOS (ios/UnityExport)
-   （CLI: Unity.exe -batchmode -quit -projectPath <repo>
+   （CLI: Unity.exe -batchmode -quit -buildTarget iOS -projectPath <repo>
           -executeMethod IOSBuildExporter.ExportIOS   ※失敗時は終了コード1）
    → ios/UnityExport/Unity-iPhone.xcodeproj が生成される
 
