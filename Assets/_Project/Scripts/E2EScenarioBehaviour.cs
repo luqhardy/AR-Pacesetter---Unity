@@ -1491,6 +1491,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         int csvBefore = CountRunLogs();
         bool gpsHandlingBefore = gps != null && gps.AutoLostHandlingEnabled;
 
+        // ブースは実物のグラスで体験する。グラスの視点(GlassViewRig)で向き・俯角を確かめる
+        var glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        var device = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
+        if (device != null)
+            device.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+
         // ── 立ったまま: Swift と同じ入口から起動 ──
         bridge.OnSwiftCommand("{\"command\":\"StartBoothDemo\",\"mode\":\"standing\"}");
         yield return null;
@@ -1506,15 +1512,35 @@ public class E2EScenarioBehaviour : MonoBehaviour
               $"booth: on-pace beat is green ({(visuals != null ? visuals.PaceColorState : "-")})");
         Check(gps == null || !gps.AutoLostHandlingEnabled,
               "booth: GPS-loss handling is off for the whole standing demo (the avatar never fades)");
+        Check(gps == null || !gps.IsMonitoring,
+              "booth: no fake GPS fixes are sent (a synthetic 'north' fix could steer the view direction)");
+        float boothHeight = BoothDemoScript.AvatarHeightCm / 100f;
+        Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - boothHeight) < 0.08f,
+              $"booth: the avatar is {boothHeight:F2}m tall so head-to-feet fits the glasses at 3m " +
+              $"({engine.MeasuredAvatarHeightMeters:F2}m)");
+        bool glassActive = glassRig != null && glassRig.IsGlassOutputActive && glassRig.OutputCamera != null;
+        Check(glassActive, "booth: the glasses output view is active for the booth checks");
+        float pitchAt3m = glassActive ? glassRig.AppliedDownPitchDegrees : 0f;
 
-        // 立ったまま体の向きを90°変えても、アバターは正面へ回り込む(部屋に置き去りにしない)
+        // 立ったまま体の向きを90°変えても、アバターは1秒以内に正面へ回り込む(部屋に置き去りにしない)。
+        // 以前は 不感帯12°・45°/s で90°に約2.5秒かかり「すぐ反応しない」と言われた(2026-10-09 実機)
         FaceRig(Quaternion.Euler(0f, 90f, 0f) * CamForwardFlat());
-        yield return WaitScaled(3.0f);
+        yield return WaitScaled(1.0f);
         Vector3 ahead = engine.transform.position - cam.position;
         ahead.y = 0f;
         float offAxis = Vector3.Angle(ahead, CamForwardFlat());
         Check(offAxis < 15f,
-              $"booth: after the visitor turns 90°, the avatar comes back in front ({offAxis:F0}° off-centre)");
+              $"booth: within 1s of a 90° turn, the avatar is back in front ({offAxis:F0}° off-centre)");
+        if (glassActive)
+        {
+            // グラスの視点も同じ向きへ回る(以前は開始時の向きに残り、アバターだけが回り込んでいた)
+            Transform outCam = glassRig.OutputCamera.transform;
+            Vector3 outForward = outCam.forward; outForward.y = 0f;
+            Vector3 toAvatar2 = engine.transform.position - outCam.position; toAvatar2.y = 0f;
+            float glassOff = Vector3.Angle(outForward, toAvatar2);
+            Check(glassOff < 15f,
+                  $"booth: the glasses view turns with the visitor and the avatar stays centred ({glassOff:F0}° off-centre)");
+        }
 
         // Swift の実測(屋内の悪い精度)は無視される — 台本と無関係にアバターが消えないこと
         bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":3,\"distanceKm\":0.001," +
@@ -1538,6 +1564,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
               "booth: HUD pace turns red while behind");
         Check(hud == null || (hud.CurrentDistanceText != "0.00 km" && hud.CurrentDistanceText.EndsWith("km")),
               $"booth: HUD distance counts up while standing still ({(hud != null ? hud.CurrentDistanceText : "-")})");
+        if (glassActive)
+        {
+            // 9m先へ離れたら視点の俯角を浅くする(3m前提のままだと頭が視野の上へ切れる)
+            float pitchAt9m = glassRig.AppliedDownPitchDegrees;
+            Check(pitchAt9m < pitchAt3m - 5f,
+                  $"booth: the glasses view tilts up when the avatar is ~9m ahead ({pitchAt3m:F1}° → {pitchAt9m:F1}°)");
+        }
 
         // ── 追い抜き: 寄って緑→青、HUDペース緑 ──
         yield return WaitForDemoTime(demo, 33f);

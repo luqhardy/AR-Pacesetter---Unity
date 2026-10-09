@@ -42,7 +42,7 @@ and it's ~1.5 GB.
 This step runs anywhere Unity runs, **including Windows**. Only step 2 needs a Mac.
 
 ```bash
-Unity.exe -batchmode -quit -projectPath <repo> \
+Unity.exe -batchmode -quit -buildTarget iOS -projectPath <repo> \
   -executeMethod IOSBuildExporter.ExportIOS -logFile export.log
 ```
 
@@ -204,7 +204,7 @@ which makes the failure look arbitrary.
 | Symptom | Cause |
 |---|---|
 | `dyld: Library not loaded` at launch | UnityFramework not set to **Embed & Sign** |
-| Builds fine, crashes when Unity starts | `Data` folder's Target Membership isn't UnityFramework (`tools/relink-unity-export.sh`) |
+| Builds fine, crashes when Unity starts | `Data` folder's Target Membership isn't UnityFramework. The current exporter moves it automatically — re-export, or run `tools/relink-unity-export.sh` on an older export |
 | `ld: framework not found UnityFramework` | Framework never built — add a target dependency |
 | Target missing from every picker | Simulator destination selected; Unity exports device-only |
 | `Undefined symbol: __mh_execute_header` | Use `_dyld_get_image_header(0)` instead |

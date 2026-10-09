@@ -43,7 +43,7 @@ repo/
 この工程はUnityが動く環境ならどこでも実行でき、**Windowsでも可能**です。Macが要るのは手順2だけ。
 
 ```bash
-Unity.exe -batchmode -quit -projectPath <repo> \
+Unity.exe -batchmode -quit -buildTarget iOS -projectPath <repo> \
   -executeMethod IOSBuildExporter.ExportIOS -logFile export.log
 ```
 
@@ -206,7 +206,7 @@ xattr -dr com.apple.quarantine ios/UnityExport   # ダウンロード由来の�
 | 症状 | 原因 |
 |---|---|
 | 起動直後に `dyld: Library not loaded` | UnityFrameworkが **Embed & Sign** になっていない |
-| ビルドは通るが、Unityの起動時にクラッシュ | `Data` フォルダの Target Membership が UnityFramework でない(`tools/relink-unity-export.sh`) |
+| ビルドは通るが、Unityの起動時にクラッシュ | `Data` フォルダの Target Membership が UnityFramework でない。現在のエクスポータは自動で付け替える — 再エクスポートするか、古いエクスポートなら `tools/relink-unity-export.sh` |
 | `ld: framework not found UnityFramework` | UnityFrameworkが未ビルド。ターゲット依存を追加する |
 | 候補一覧にターゲットが出ない | Destinationがシミュレータ。Unityは実機専用で書き出す |
 | `Undefined symbol: __mh_execute_header` | `_dyld_get_image_header(0)` を使う |

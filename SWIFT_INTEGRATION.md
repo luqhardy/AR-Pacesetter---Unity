@@ -44,7 +44,8 @@ Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
 - **Player Settings の使用目的文が空だとエクスポートは失敗する**: `Microphone`/`Location`/`Bluetooth` を
   スクリプトが使う場合、Unity側(`ProjectSettings`)の Usage Description が空のままだと
   `BuildFailedException` になる(Swiftアプリ側の`INFOPLIST_KEY_*`とは別物で、両方必要)。設定済み
-- バッチ実行: `Unity.exe -batchmode -quit -projectPath <repo> -executeMethod IOSBuildExporter.ExportIOS`
+- バッチ実行: `Unity.exe -batchmode -quit -buildTarget iOS -projectPath <repo> -executeMethod IOSBuildExporter.ExportIOS`
+  (**`-buildTarget iOS` は必須** — iOS がアクティブでないとエクスポータが止まる。ARKitのネイティブプラグインが入らないため)
   — 失敗時は終了コード1を返す
 - **エクスポート後は `ProjectSettings/ProjectSettings.asset` の差分を必ず確認すること**:
   ビルド処理が `preloadedAssets` を空にすることがある。ここには
@@ -180,7 +181,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | `ARSessionManager` | `RequestLogFiles` | — | F-11走行ログCSVの一覧(新しい順・最大30件)を `LogFiles` イベントで返す。CSVは `persistentDataPath/RunLogs/` にあり**アプリからは他に取り出す手段が無い**ため、開発者モードの共有シートで書き出す |
 | `ARSessionManager` | `ImportVrmAvatar` / `SelectVrmAvatar` | `path` (string) | 差し替えアバター(VRM)を適用する。`path` は**サンドボックス内の絶対パス** — ドキュメントピッカーが返すURLはセキュリティスコープ付きでUnityからは読めないため、Swift側で `Documents/Avatars/` へコピーしてから渡す。結果は `VrmImportResult` で返る |
 | `ARSessionManager` | `RequestVrmAvatars` | — | 選べるアバターの一覧(同梱 + 取り込み)を `VrmAvatarList` で返す |
-| `ARSessionManager` | `StartBoothDemo` | `mode`("standing" 既定 / "walking"), `targetPaceKmH`(任意。0ならモードの既定 12 / 6 km/h) | 展示ブースの体験モード(`BoothDemoController`)。`standing` は約52秒の台本(ジャスト→遅れ→追い抜き→ゴール)を本番と同じ経路で流す。`walking` は来場者自身の移動(ARKit)で追従させ、60秒で終わる。**どちらもアバターを消さない**(GPSロスト判定OFF・来場者の正面に保つ)。実行中に送るとやり直し。**デモの走行は履歴・CSV・`SessionEnded` を残さない**(HealthKitへ保存されない)。デモ中はSwiftの `UpdateMetrics` をUnityが無視する。利用者の走行中は開始せず `BoothDemoEnded(completed:false)` を返す。詳細は [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md) |
+| `ARSessionManager` | `StartBoothDemo` | `mode`("standing" 既定 / "walking"), `targetPaceKmH`(任意。0ならモードの既定 12 / 6 km/h) | 展示ブースの体験モード(`BoothDemoController`)。`standing` は約52秒の台本(ジャスト→遅れ→追い抜き→ゴール)を本番と同じ経路で流す。`walking` は来場者自身の移動(ARKit)で追従させ、60秒で終わる。**どちらもアバターを消さない**(GPSロスト判定OFF・来場者の正面に保つ)。アバターは145cm(3.0m先でグラスに全身が収まる大きさ)。実行中に送るとやり直し。**デモの走行は履歴・CSV・`SessionEnded` を残さない**(HealthKitへ保存されない)。デモ中はSwiftの `UpdateMetrics` をUnityが無視する。利用者の走行中は開始せず `BoothDemoEnded(completed:false)` を返す。詳細は [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md) |
 | `ARSessionManager` | `StopBoothDemo` | — | 体験モードを中断する(スタッフ操作)。GPSロスト演出の途中でも、アバターは見える状態に戻る |
 | `DeviceManager` | `ConnectXREAL` | `model`(任意), `pixelWidth`(任意), `pixelHeight`(任意), `refreshHz`(任意) | ReadyチェックのARグラスをConnectedへ。併せて**グラスの画角で描く出力リグ**(`GlassViewRig`)を起動する — iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えないため。画角はグラスから取得できないので解像度・リフレッシュレートから機種を推定し、1920×1080(One/One Pro/Air2で共通)は **XREAL One** を既定とする。`model`があればそれが優先。詳細は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) |
 | `DeviceManager` | `DisconnectXREAL` | — | §8.3: スタンバイ移行でアバターを消去。**走行セッションは終了させない**ためF-11のCSVログはBG継続。再接続だけではアバターを復帰させない(安全のため`ResumeSession`が必要) |

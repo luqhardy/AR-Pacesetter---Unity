@@ -28,6 +28,13 @@ public static class BoothDemoScript
         Finished
     }
 
+    /// <summary>
+    /// 体験中のアバターの身長(cm)。XREAL One の垂直画角(約25.8°)では、3.0m先の足元が眼高1.55mから
+    /// 27°下にあり175cmでは全身が入らない。145cmなら俯角14.6°(上限15°以内)で頭から足元まで収まる。
+    /// 走行本番の身長・距離(AGENTS.md §7-1)は変えない
+    /// </summary>
+    public const float AvatarHeightCm = 145f;
+
     // ── 区間の境界(秒) ────────────────────────────────────────────────────
     public const float FallingBehindStart = 10f;
     public const float CatchingUpStart    = 22f;

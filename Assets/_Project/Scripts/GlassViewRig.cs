@@ -204,7 +204,10 @@ public sealed class GlassViewRig : MonoBehaviour
     private float ResolveHeadingYawDegrees()
     {
         Vector3 heading = Vector3.zero;
-        if (tracking != null) heading = tracking.CurrentHeading;
+        // 展示デモはアバターが来場者の正面(iPhoneの向き)を追う。グラスの視点も同じ向きにしないと、
+        // 体の向きを変えたときアバターだけが回り込んで視点は開始時の向きに残る(2026-10-09 実機)
+        if (avatarEngine != null && avatarEngine.PresentationFollowsView) heading = avatarEngine.CurrentHeading;
+        else if (tracking != null) heading = tracking.CurrentHeading;
 
         heading.y = 0f;
         if (heading.sqrMagnitude < 1e-6f && arCamera != null)
@@ -301,8 +304,10 @@ public sealed class GlassViewRig : MonoBehaviour
     // 光学的な成立可否の報告 (F-03/F-05/§7.2 への影響を実測値で出す)
     // ────────────────────────────────────────────────────────────────
 
+    // 実際に置いている距離。本番走行では目標リードと同じで、展示デモの遅れ(約9m先)・追い抜き(1.2m)
+    // のときだけ違う — 俯角を3m前提のままにすると9m先で頭が視野の上へ切れる
     private float LeadDistanceMeters()
-        => avatarEngine != null ? avatarEngine.LeadDistanceMeters : 3.0f;
+        => avatarEngine != null ? avatarEngine.DisplayedLeadDistanceMeters : 3.0f;
 
     private float AvatarHeightMeters()
     {

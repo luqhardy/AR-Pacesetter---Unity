@@ -4,6 +4,18 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-09 — 体験モード: 体の向きへの追従を速く / アバターを145cmにして全身をグラスへ
+
+実機「体を傾けてもすぐ反応しない」: 正面追従が不感帯12°・走行と同じ45°/s(90°に約2.5秒)だった → 体験モードだけ 4°・180°/s・位置平滑を速める。加えてグラスの視点(`GlassViewRig`)は走行用の追跡方位のままでアバターだけが回り込んでいた → 体験モードはアバターと同じ向き。合成GPS座標も送らない(揺れただけで追跡方位が「北」へ結び付く)。
+グラスの垂直画角(約25.8°)では3.0m先の足元が27°下で175cmは収まらない → 体験モードのアバターを145cm(`BoothDemoScript.AvatarHeightCm`)。俯角は実際に置いている距離で決める(9m先で頭が切れない)。走行本番の距離・身長は変えない(§7-1)。
+検証: tools/verify.sh 全通過(dotnet test 406/406、Swift 25(構文のみ)、E2E 273/273 — 90°向きを変えて1秒以内に正面1°以内・グラスの視点も1°以内・俯角 14.6°→5.2°(9m先)・全1024フレームで可視)
+
+### 2026-10-07 (2) — Macでのビルド修正(5c68a2b)の検証とドキュメント反映
+
+Mac側の修正: エクスポータが出力先を毎回作り直し、Unityキャッシュの Finder 衝突コピー(`… 2.cpp`)を除去 — duplicate symbol の原因。iOSがアクティブでないと停止(ARKitのネイティブプラグインが入らないため)。エクスポート後処理が `Data` を UnityFramework へ自動で付け替え(`relink-unity-export.sh` は古いエクスポート用に残す)。`DevModeView` は `HomeView` の private な `Color(hex:)` と Combine 未importでコンパイルできていなかった。
+ドキュメント: エクスポートのコマンドへ `-buildTarget iOS` を追加、BUILD_ON_BORROWED_MAC の手順3とよくある失敗(duplicate symbol)を更新。
+検証: tools/verify.sh 全通過(dotnet test 404/404、Swift 25(構文のみ)、E2E 268/268)。Windowsで `-buildTarget iOS` のエクスポートを実行し、成功・ARKitネイティブプラグイン同梱・`Data` が UnityFramework のResourcesにあり Unity-iPhone から外れていることを確認
+
 ### 2026-10-07 — 体験モードでアバターを消さない / グラスがミラーリングになる件
 
 実機: 体験モードがグラスを検出せず、グラスにはiPhone画面のミラーリング。外部ディスプレイのシーン定義を Info.plist の `UIApplicationSceneManifest` へ静的に記述し自動生成をNOに(AppDelegateの動的構成だけでは iOS 26 で作られなかった)。`ExternalDisplayManager.isMirroring` で「未接続」と区別し体験モード画面に表示。準備画面のARグラス行はタップで偽の「接続済み」になるため気づけなかった。
