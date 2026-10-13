@@ -5,15 +5,24 @@ struct DeviceConnectView: View {
     let onNext: () -> Void
     let onBack: () -> Void
 
-    @State private var arConnected = false
-    @State private var arScanning = false
-    @State private var pulse = false
+    /// 手動の「接続」を押したか。実接続の検出とは別物として扱う
+    @State private var manualConnect = false
 
     // 実グラス接続(USB-C外部ディスプレイ)を検知したら表示に反映
     @ObservedObject private var external = ExternalDisplayManager.shared
 
+    /// ARグラス行の表示。**実際の状態だけを出す**。
+    /// 以前はタップから1.5秒後に、何も挿さっていなくても「接続済み」になった。そのため
+    /// iOS がグラスへミラーリングしている(=グラス専用の画面が無い)ことに気づけなかった(2026-10-07 実機)
+    private var glassStatus: GlassRowStatus {
+        if external.isGlassesConnected { return .connected }
+        if external.isMirroring { return .mirroring }
+        if manualConnect { return .manual }
+        return .notDetected
+    }
+
     /// 走行に必要なのはARグラスだけ。Watch/AirPodsは第1期のスコープ外(基本設計書 §1.2)
-    var allConnected: Bool { arConnected }
+    var allConnected: Bool { glassStatus == .connected }
 
     var body: some View {
         ARScreen {
@@ -48,16 +57,13 @@ struct DeviceConnectView: View {
                         icon: "eyeglasses",
                         name: "ARグラス",
                         subtitle: "XREAL One",
-                        isConnected: $arConnected,
-                        isScanning: $arScanning,
+                        status: glassStatus,
                         onConnect: {
-                            arScanning = true
-                            // UnityへConnectXREAL送信(UnityのReadyチェックが更新される)
+                            // 手動の ConnectXREAL(UnityのReadyチェックとグラス用の描画を有効にする)。
+                            // グラスが検出されない・ミラーリング中の予備手段として残すが、
+                            // 実接続とは表示で区別する
+                            manualConnect = true
                             UnityBridge.shared.connect()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                arScanning = false
-                                arConnected = true
-                            }
                         }
                     )
                     // Watch / AirPods は第1期のスコープ外(基本設計書 §1.2 —
@@ -80,11 +86,9 @@ struct DeviceConnectView: View {
                 Spacer()
 
                 // Status hint
-                Text(allConnected
-                     ? "ARグラス接続済み — このまま進めます"
-                     : "ARグラスをUSB-Cで接続してください(未接続でも端末画面で走れます)")
+                Text(statusHint)
                     .font(.system(size: 13))
-                    .foregroundColor(allConnected ? .arYellow : .arGrayText)
+                    .foregroundColor(glassStatus.color)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                     .padding(.bottom, 16)
@@ -104,13 +108,51 @@ struct DeviceConnectView: View {
                 .padding(.bottom, 52)
             }
             .onAppear {
-                if external.isGlassesConnected { arConnected = true }
+                external.refreshMirroring()
             }
-            .onChange(of: external.isGlassesConnected) { _, connected in
-                // 実グラスの抜き差しを即時反映(タップ不要)
-                arScanning = false
-                arConnected = connected
+            .onChange(of: external.isGlassesConnected) { _, _ in
+                // 実グラスを挿したら手動扱いは不要。抜いたら手動扱いも解く(実態に合わせる)
+                manualConnect = false
             }
+        }
+    }
+
+    private var statusHint: String {
+        switch glassStatus {
+        case .connected:
+            return "ARグラス接続済み — このまま進めます"
+        case .mirroring:
+            return "グラスにiPhoneの画面がそのまま映っています(ミラーリング)。グラスを挿し直してください"
+        case .manual:
+            return "グラスは検出されていません。手動でグラス用の表示にしています"
+        case .notDetected:
+            return "ARグラスをUSB-Cで接続してください(未接続でも端末画面で走れます)"
+        }
+    }
+}
+
+// MARK: - ARグラス行の状態
+/// 実接続(iOS がグラス専用の画面を作った)だけを「接続済み」とする
+enum GlassRowStatus {
+    case connected    // 専用の画面にARビューを出している
+    case mirroring    // 挿さっているが iOS がミラーリングしている
+    case manual       // 検出は無いが、手動でグラス用の表示にした
+    case notDetected
+
+    var color: Color {
+        switch self {
+        case .connected: return .arYellow
+        case .mirroring, .manual: return .orange
+        case .notDetected: return .arGrayText
+        }
+    }
+
+    var label: String? {
+        switch self {
+        case .connected: return "接続済み"
+        case .mirroring: return "ミラーリング中"
+        case .manual: return "手動(未検出)"
+        case .notDetected: return nil
         }
     }
 }
@@ -120,13 +162,16 @@ struct DeviceConnectRow: View {
     let icon: String
     let name: String
     let subtitle: String
-    @Binding var isConnected: Bool
-    @Binding var isScanning: Bool
+    let status: GlassRowStatus
     let onConnect: () -> Void
+
+    private var isConnected: Bool { status == .connected }
+    /// 手動の接続を押せるのは、実接続も手動接続もしていないときだけ
+    private var canConnect: Bool { status == .notDetected || status == .mirroring }
 
     var body: some View {
         Button(action: {
-            if !isConnected && !isScanning { onConnect() }
+            if canConnect { onConnect() }
         }) {
             HStack(spacing: 16) {
                 // Icon
@@ -136,13 +181,13 @@ struct DeviceConnectRow: View {
                         .frame(width: 56, height: 56)
                         .overlay(
                             Circle().stroke(
-                                isConnected ? Color.arYellow.opacity(0.6) : Color.arBorder,
+                                status == .notDetected ? Color.arBorder : status.color.opacity(0.6),
                                 lineWidth: 1
                             )
                         )
                     Image(systemName: icon)
                         .font(.system(size: 24))
-                        .foregroundColor(isConnected ? .arYellow : .arGrayText)
+                        .foregroundColor(status == .notDetected ? .arGrayText : status.color)
                 }
 
                 // Text
@@ -151,20 +196,13 @@ struct DeviceConnectRow: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.white)
                     HStack(spacing: 5) {
-                        if isConnected {
-                            Image(systemName: "checkmark.circle.fill")
+                        if let label = status.label {
+                            Image(systemName: isConnected ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                                 .font(.system(size: 11))
-                                .foregroundColor(.arYellow)
-                            Text("接続済み")
+                                .foregroundColor(status.color)
+                            Text(label)
                                 .font(.system(size: 13))
-                                .foregroundColor(.arYellow)
-                        } else if isScanning {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                                .tint(Color.arGrayText)
-                            Text("接続中...")
-                                .font(.system(size: 13))
-                                .foregroundColor(.arGrayText)
+                                .foregroundColor(status.color)
                         } else {
                             Text(subtitle)
                                 .font(.system(size: 13))
@@ -183,16 +221,17 @@ struct DeviceConnectRow: View {
                         .frame(width: 28, height: 28)
                         .background(Color.arYellow)
                         .clipShape(Circle())
-                } else {
-                    Text(isScanning ? "..." : "接続")
+                } else if canConnect {
+                    // 手動の接続(予備手段)。実接続は挿せば自動で反映される
+                    Text("手動で接続")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(isScanning ? .arGrayText : .arYellow)
+                        .foregroundColor(.arYellow)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Color.arYellow.opacity(isScanning ? 0.05 : 0.12))
+                        .background(Color.arYellow.opacity(0.12))
                         .clipShape(Capsule())
                         .overlay(
-                            Capsule().stroke(Color.arYellow.opacity(isScanning ? 0.2 : 0.4), lineWidth: 1)
+                            Capsule().stroke(Color.arYellow.opacity(0.4), lineWidth: 1)
                         )
                 }
             }
@@ -202,12 +241,11 @@ struct DeviceConnectRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .overlay(
                 RoundedRectangle(cornerRadius: 18)
-                    .stroke(isConnected ? Color.arYellow.opacity(0.35) : Color.arBorder, lineWidth: 1)
+                    .stroke(status == .notDetected ? Color.arBorder : status.color.opacity(0.35), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
-        .animation(.easeInOut(duration: 0.2), value: isConnected)
-        .animation(.easeInOut(duration: 0.2), value: isScanning)
+        .animation(.easeInOut(duration: 0.2), value: status)
     }
 }
 

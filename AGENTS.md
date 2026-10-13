@@ -207,7 +207,7 @@ stateDiagram-v2
 - アバターの色は発光で出すので、アバターのmaterialは **Emission 対応**にする
 - アバターの透過率・発光は `AvatarMaterialSet`(モデル配下の全レンダラーの全マテリアル)で操作する。
   `renderer.material` は1枚目だけ — Y Bot は2メッシュなので半身しか変わらない
-- GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う。既定値(`true`)は仕様どおりに保つ。
+- GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う(iPhoneでは開発者モードの「屋内テスト」スイッチ)。既定値(`true`)は仕様どおりに保つ。
   屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)
 - 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する
 - IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、エディタ=カメラ差分近似)。`SetImuAcceleration` はC#専用で、Swiftからは呼べない

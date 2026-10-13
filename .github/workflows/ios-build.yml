@@ -27,6 +27,14 @@ on:
       - "ios/**"
       - "Assets/Plugins/iOS/**"
       - ".github/workflows/ios-build.yml"
+  # PRでも回す。Windowsでは Swift の構文しか検査できず、master へのpushだけだと
+  # ブランチ上のコンパイルエラーに数週間気づけなかった(2026-10 DevModeView: HomeView の
+  # private な Color(hex:) と Combine の import 漏れ。Macで初めて発覚)
+  pull_request:
+    paths:
+      - "ios/**"
+      - "Assets/Plugins/iOS/**"
+      - ".github/workflows/ios-build.yml"
 
 jobs:
   build:
