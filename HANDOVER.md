@@ -108,7 +108,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 ## 5. 未完了事項(引き継ぎ時の注意)
 
-- **展示ブースの体験モード(Kobe Calling)は実機未確認**: Unity側は履歴・CSV・`SessionEnded` を残さないことまでE2Eで検証済み。Swiftのスタッフ画面(`BoothDemoView`、ホームのメニュー → 体験モード(展示))は構文検査のみで、**Macでの初回ビルドと実機での通し確認が必要**。[Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
+- **展示ブースの体験モード(Kobe Calling)**: 2026-10-13 に実機(iPhone + XREAL One)で動作をチームが確認。本番前のリハーサル・予備手段(Windowsノート)・60分の電源/発熱は [Docs/KOBE_CALLING_CHECKLIST.md](Docs/KOBE_CALLING_CHECKLIST.md) で通す。仕組みは [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
 - **M2P(Motion-to-Photon)は未計測。CSVの `latency_m2p` 列は `-1` が入る**
 
   `LatencyBenchmarkRunner` は名前に反して M2P を測っていない。4段のうち実測はひとつも無い:

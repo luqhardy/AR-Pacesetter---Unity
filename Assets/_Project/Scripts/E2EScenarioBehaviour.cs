@@ -1872,12 +1872,20 @@ public class E2EScenarioBehaviour : MonoBehaviour
         stateController.TransitionToState(GameStateController.ARVisionState.Normal);
 
         // ② 走り続けながら 2秒ロスト → 復帰
+        // 走者は**ゲーム時間に対して等速**で動かす(1歩を50msで頭打ちにしない)。コーナー試験の
+        // 頭打ちをここで使うと、フレームが50msを超えた間だけ走者が減速する: ロスト中に108msへ
+        // 伸びると走者は3.6→1.67m/sに落ち、アバターはF-09どおりロスト前の速度で進むので数m先行し、
+        // 復帰の同期(§5)で正しく後ろへ戻る — それを「後退」と誤判定していた(2026-10-05 に1回
+        // 「1.11m後退」。エンジン側の Jitter Guard/再同期は無関係: 復帰直後の長→短フレームでも0.00m)。
+        // フレーム時間も成り行きに任せず固定する: ロスト前33ms・ロスト中108ms・復帰直後は長→短
+        PinFrameTime(0.033f);
         for (float t = 0f; t < 2.0f; t += Time.deltaTime)
         {
-            MoveRig(dir * RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f));
+            MoveRig(dir * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
         stateController.TransitionToState(GameStateController.ARVisionState.InertialMovement);
+        PinFrameTime(0.108f);
         yield return null;
         float inertialSpeed = engine.InertialVelocity.magnitude;
         Check(inertialSpeed > RunSpeedMetersPerSecond * 0.6f && inertialSpeed < RunSpeedMetersPerSecond * 1.4f,
@@ -1886,23 +1894,35 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         for (float t = 0f; t < 2.0f; t += Time.deltaTime)
         {
-            MoveRig(dir * RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f));
+            MoveRig(dir * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
 
         stateController.TransitionToState(GameStateController.ARVisionState.Normal);
         float backward = 0f;
         float last = Vector3.Dot(engine.transform.position, dir);
-        for (float t = 0f; t < 1.0f; t += Time.deltaTime)
+        int resumeFrame = 0;
+        for (float t = 0f; t < 1.0f; t += Time.deltaTime, resumeFrame++)
         {
-            MoveRig(dir * RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f));
+            PinFrameTime(resumeFrame < 2 ? 0.108f : resumeFrame == 2 ? 0.024f : 0.033f);
+            MoveRig(dir * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
             float along = Vector3.Dot(engine.transform.position, dir);
             if (along < last) backward += last - along;
             last = along;
         }
+        Time.captureDeltaTime = 0f; // 以降のステップは成り行きのフレーム時間へ戻す
         Check(backward < 0.3f,
             $"inertia: no backward snap when tracking resumes after GPS loss (moved back {backward:F2}m)");
+    }
+
+    /// <summary>
+    /// 次フレーム以降の <c>Time.deltaTime</c> を <paramref name="seconds"/> に固定する
+    /// (captureDeltaTime は timeScale 倍されるので割り戻す)。0 を直接代入すれば解除。
+    /// </summary>
+    private static void PinFrameTime(float seconds)
+    {
+        Time.captureDeltaTime = seconds / Time.timeScale;
     }
 
     /// <summary>

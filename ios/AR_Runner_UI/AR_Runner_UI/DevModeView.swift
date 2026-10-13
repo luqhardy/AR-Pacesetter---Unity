@@ -37,6 +37,7 @@ struct DevModeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     logSection
+                    indoorTestSection
                     statsSection
                 }
                 .padding(.horizontal, 20)
@@ -112,6 +113,53 @@ struct DevModeView: View {
                 }
                 .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
             }
+        }
+    }
+
+    // MARK: - 屋内テスト
+
+    /// Unity が報告している GPSロスト判定(F-09/F-10)の状態。応答が無ければ nil。
+    /// **この画面では状態を持たない** — 表示は常に Unity の実際の値(Diagnostics の
+    /// `gps.autoLostHandling`)から作る。体験モードは開始時にOFF・終了時に元へ戻すので、
+    /// 画面側で覚えた値はすぐに実態とずれる
+    private var gpsLostHandlingOn: Bool? {
+        guard let row = bridge.diagnostics.first(where: { $0.key == "gps.autoLostHandling" }) else { return nil }
+        if row.value.hasPrefix("ON") { return true }
+        if row.value.hasPrefix("OFF") { return false }
+        return nil
+    }
+
+    private var indoorTestSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("屋内テスト",
+                          subtitle: "GPSロスト判定(F-09 慣性 / F-10 フェードアウト)")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(
+                    get: { gpsLostHandlingOn ?? true },
+                    set: { on in
+                        bridge.setGpsLostHandling(enabled: on)
+                        bridge.requestDiagnostics()   // Unity の実際の値で表示を更新する
+                    }
+                )) {
+                    Text("GPSロストでアバターを消す")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .tint(accent)
+                .disabled(gpsLostHandlingOn == nil)
+
+                // 屋内では一度良い測位を掴んだ後に精度が10m超へ落ち、5秒でアバターが消える。
+                // 仕様(F-10)どおりの安全動作なので既定はON。屋内の動作確認のときだけ切る
+                Text(gpsLostHandlingOn == false
+                     ? "OFF — 屋内テスト用。トラックでは必ずONに戻すこと(GPSが切れても警告が出ない)。アプリを再起動するとONに戻ります"
+                     : "ON(仕様どおり)。屋内で走ってアバターが消えるときだけOFFにする")
+                    .font(.system(size: 12))
+                    .foregroundStyle(gpsLostHandlingOn == false ? Color.orange : secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
         }
     }
 

@@ -176,7 +176,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
 | `ARSessionManager` | `ResumeSession` | — | §8.3: グラス再接続後、**準備画面からの再スタート操作**でスタンバイ中の表示のみ復帰(新規セッションは開始せず記録は継続) |
-| `ARSessionManager` | `SetGpsLostHandling` | `enabled` (bool) | F-09/F-10の自動判定を実行時に切替。**既定はON**(基本設計書どおり)。屋内デモで「掴んだ後に消えないでほしい」場面用の明示的スイッチで、定数を書き換える運用(戻し忘れる)を無くすために用意した。なお**良好な初回測位まではロスト判定しない**のはUnity側の既定動作なので、屋内で走り出す前に消えることはこの設定に関わらず起きない |
+| `ARSessionManager` | `SetGpsLostHandling` | `enabled` (bool) | F-09/F-10の自動判定を実行時に切替。**既定はON**(基本設計書どおり)。屋内デモで「掴んだ後に消えないでほしい」場面用の明示的スイッチで、定数を書き換える運用(戻し忘れる)を無くすために用意した。iPhoneでは**開発者モードの「屋内テスト」スイッチ**から送る(表示は Unity の `Diagnostics` の `gps.autoLostHandling` から作り、画面側では状態を持たない)。なお**良好な初回測位まではロスト判定しない**のはUnity側の既定動作なので、屋内で走り出す前に消えることはこの設定に関わらず起きない |
 | `ARSessionManager` | `RequestDiagnostics` | — | 開発者モード用の状態スナップショット(M2Pの実測有無・IMU供給元・グラスの画角と光学適合・GPS判定・§10統計・FSM・fps)を `Diagnostics` イベントで返す。**未計測は -1 のまま返す** |
 | `ARSessionManager` | `RequestLogFiles` | — | F-11走行ログCSVの一覧(新しい順・最大30件)を `LogFiles` イベントで返す。CSVは `persistentDataPath/RunLogs/` にあり**アプリからは他に取り出す手段が無い**ため、開発者モードの共有シートで書き出す |
 | `ARSessionManager` | `ImportVrmAvatar` / `SelectVrmAvatar` | `path` (string) | 差し替えアバター(VRM)を適用する。`path` は**サンドボックス内の絶対パス** — ドキュメントピッカーが返すURLはセキュリティスコープ付きでUnityからは読めないため、Swift側で `Documents/Avatars/` へコピーしてから渡す。結果は `VrmImportResult` で返る |
