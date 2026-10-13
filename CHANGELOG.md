@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-13 (3) — Android ビルドが通るように: ARKit の using を iOS 限定に
+
+Android のテストAPKで `EnvironmentSceneScanner.cs` の `using UnityEngine.XR.ARKit;` が CS0234 で止まった(ARKit のアセンブリは iOS ビルドにしか無い)。ARKit を使うのは同ファイルの `#if UNITY_IOS && !UNITY_EDITOR` のブロックだけなので、using も同じ条件で囲んだ。iOS の挙動は変わらない。
+参考: テストAPKはこの修正で生成できた(arm64・ARCore必須)。ただし Unity 6000.3 の AGP 9.0 が ARCore 6.4.2 同梱の arcore_client と unityandroidpermissions の namespace 重複をエラーにするため `android.uniquePackageNames=false` が要る(テスト用スクリプト内でのみ適用・コミットしていない)。Android は第1期のスコープ外(§2)。
+検証: tools/verify.sh 全通過(dotnet test 406/406、Swift 25(構文のみ)、E2E 273/273)
+
 ### 2026-10-13 (2) — 準備画面の偽の「接続済み」を廃止 / 屋内テスト用のGPSロスト判定スイッチ / iOSビルドCIをPRでも / 体験モードのチェックリスト
 
 準備画面のARグラス行はタップから1.5秒後に実接続が無くても「接続済み」になり、ミラーリングを隠していた → 実際の状態(接続済み/ミラーリング中/手動(未検出))を出す。手動の `ConnectXREAL` は予備手段として残す。
