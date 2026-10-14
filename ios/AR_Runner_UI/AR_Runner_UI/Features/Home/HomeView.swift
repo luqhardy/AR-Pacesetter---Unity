@@ -104,8 +104,6 @@ struct HomeView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .bold))
                     Text(AppStrings.Home.lastRun)
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                 }
