@@ -83,6 +83,8 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | Readyチェック(4色インジケーター・出走ゲート) | `ReadyCheckController.cs` / `DeviceConnectView.swift` | エディタ(F1-F3) |
 | ガードレイヤー・スリープ制御 | `RunSessionController.cs` | エディタ |
 | 実測センサー(CoreLocation/HealthKit/バックグラウンド) | `LocationTracker.swift` / `HeartRateMonitor.swift` | 実機要 |
+| 日本語・英語(走者が見る画面。スタッフ画面・開発者モードは日本語のみ) | `Core/Localization/AppStrings.swift` + `Resources/Localizable.xcstrings` | CI(`LocalizationCatalogTests`)・実機の言語切替は要確認 |
+| AR設定・スマホ設定(実際に効く項目のみ: グラスの状態・アバター / 言語・位置情報) | `Features/Settings/` | 実機要 |
 
 ## 3. 検証手段(再現手順)
 

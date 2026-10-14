@@ -12,21 +12,28 @@ extension Color {
 
 // MARK: - Primary Button
 struct ARButton: View {
-    let title: String
+    let title: Text
     let icon: String?
     let style: ButtonStyle
     let action: () -> Void
 
     enum ButtonStyle { case primary, secondary, icon }
 
-    init(_ title: String, icon: String? = nil, style: ButtonStyle = .primary, action: @escaping () -> Void) {
-        self.title = title; self.icon = icon; self.style = style; self.action = action
+    /// 文言は AppStrings のキーで渡す(Localizable.xcstrings で日本語・英語に引かれる)
+    init(_ title: LocalizedStringKey, icon: String? = nil, style: ButtonStyle = .primary, action: @escaping () -> Void) {
+        self.title = Text(title); self.icon = icon; self.style = style; self.action = action
+    }
+
+    /// 翻訳しない文字列(変数の中身)をそのまま出す
+    @_disfavoredOverload
+    init<S: StringProtocol>(_ title: S, icon: String? = nil, style: ButtonStyle = .primary, action: @escaping () -> Void) {
+        self.title = Text(title); self.icon = icon; self.style = style; self.action = action
     }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Text(title)
+                title
                     .font(.system(size: 16, weight: .bold))
                 if let icon {
                     Image(systemName: icon)
@@ -65,9 +72,17 @@ struct ARScreen<Content: View>: View {
 
 // MARK: - Eyebrow Label  (e.g.  "ACTIVITY" in yellow tracking)
 struct ARLabel: View {
-    let text: String
+    private let label: Text
+
+    /// 文言は AppStrings のキーで渡す
+    init(text: LocalizedStringKey) { label = Text(text) }
+
+    /// 翻訳しない文字列をそのまま出す
+    @_disfavoredOverload
+    init<S: StringProtocol>(text: S) { label = Text(text) }
+
     var body: some View {
-        Text(text)
+        label
             .font(.system(size: 11, weight: .bold))
             .foregroundColor(.arYellow)
             .tracking(2.5)

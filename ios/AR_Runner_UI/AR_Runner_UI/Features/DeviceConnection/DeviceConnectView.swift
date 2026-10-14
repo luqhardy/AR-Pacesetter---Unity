@@ -37,11 +37,11 @@ struct DeviceConnectView: View {
 
                 // Header
                 VStack(alignment: .leading, spacing: 4) {
-                    ARLabel(text: "SETUP")
-                    Text("デバイスを接続")
+                    ARLabel(text: AppStrings.Devices.setupEyebrow)
+                    Text(AppStrings.Devices.title)
                         .font(.system(size: 30, weight: .bold))
                         .foregroundColor(.white)
-                    Text("使用するデバイスを接続してください")
+                    Text(AppStrings.Devices.subtitle)
                         .font(.system(size: 14))
                         .foregroundColor(.arGrayText)
                         .padding(.top, 2)
@@ -54,7 +54,7 @@ struct DeviceConnectView: View {
                 VStack(spacing: 12) {
                     DeviceConnectRow(
                         icon: "eyeglasses",
-                        name: "ARグラス",
+                        name: AppStrings.Devices.arGlasses,
                         subtitle: "XREAL One",
                         status: glassStatus,
                         onConnect: {
@@ -72,12 +72,12 @@ struct DeviceConnectView: View {
                     DeviceUnavailableRow(
                         icon: "applewatch",
                         name: "Apple Watch",
-                        note: "第1期のスコープ外"
+                        note: AppStrings.Devices.outOfScope
                     )
                     DeviceUnavailableRow(
                         icon: "airpodspro",
                         name: "AirPods",
-                        note: "第1期のスコープ外"
+                        note: AppStrings.Devices.outOfScope
                     )
                 }
                 .padding(.horizontal, 24)
@@ -116,16 +116,16 @@ struct DeviceConnectView: View {
         }
     }
 
-    private var statusHint: String {
+    private var statusHint: LocalizedStringKey {
         switch glassStatus {
         case .connected:
-            return "ARグラス接続済み — このまま進めます"
+            return AppStrings.Devices.hintConnected
         case .mirroring:
-            return "グラスにiPhoneの画面がそのまま映っています(ミラーリング)。グラスを挿し直してください"
+            return AppStrings.Devices.hintMirroring
         case .manual:
-            return "グラスは検出されていません。手動でグラス用の表示にしています"
+            return AppStrings.Devices.hintManual
         case .notDetected:
-            return "ARグラスをUSB-Cで接続してください(未接続でも端末画面で走れます)"
+            return AppStrings.Devices.hintNotDetected
         }
     }
 }
@@ -141,11 +141,11 @@ extension GlassRowStatus {
         }
     }
 
-    var label: String? {
+    var label: LocalizedStringKey? {
         switch self {
-        case .connected: return "接続済み"
-        case .mirroring: return "ミラーリング中"
-        case .manual: return "手動(未検出)"
+        case .connected: return AppStrings.Devices.connected
+        case .mirroring: return AppStrings.Devices.mirroring
+        case .manual: return AppStrings.Devices.manual
         case .notDetected: return nil
         }
     }
@@ -154,8 +154,8 @@ extension GlassRowStatus {
 // MARK: - Device Connect Row
 struct DeviceConnectRow: View {
     let icon: String
-    let name: String
-    let subtitle: String
+    let name: LocalizedStringKey
+    let subtitle: LocalizedStringKey
     let status: GlassRowStatus
     let onConnect: () -> Void
 
@@ -217,7 +217,7 @@ struct DeviceConnectRow: View {
                         .clipShape(Circle())
                 } else if canConnect {
                     // 手動の接続(予備手段)。実接続は挿せば自動で反映される
-                    Text("手動で接続")
+                    Text(AppStrings.Devices.connectManually)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.arYellow)
                         .padding(.horizontal, 12)
@@ -249,8 +249,8 @@ struct DeviceConnectRow: View {
 /// 偽の接続済み表示になり、ユーザーは「壊れている」と受け取る。
 struct DeviceUnavailableRow: View {
     let icon: String
-    let name: String
-    let note: String
+    let name: LocalizedStringKey
+    let note: LocalizedStringKey
 
     var body: some View {
         HStack(spacing: 16) {

@@ -12,7 +12,7 @@ struct ARBackButton: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.arYellow)
-                Text("戻る")
+                Text(AppStrings.Common.back)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
             }

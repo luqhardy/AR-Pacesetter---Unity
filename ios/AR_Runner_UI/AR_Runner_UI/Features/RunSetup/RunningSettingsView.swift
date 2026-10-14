@@ -79,11 +79,11 @@ struct RunningSettingsView: View {
 
                 // Header
                 VStack(alignment: .leading, spacing: 4) {
-                    ARLabel(text: "SETTINGS")
-                    Text("ランニング設定")
+                    ARLabel(text: AppStrings.Common.settingsEyebrow)
+                    Text(AppStrings.Settings.title)
                         .font(.system(size: 30, weight: .bold))
                         .foregroundColor(.white)
-                    Text("目標を設定してください")
+                    Text(AppStrings.Settings.subtitle)
                         .font(.system(size: 14))
                         .foregroundColor(.arGrayText)
                         .padding(.top, 2)
@@ -97,7 +97,7 @@ struct RunningSettingsView: View {
                     // Time
                     SettingCard(
                         icon: "clock",
-                        label: "時間",
+                        label: AppStrings.Settings.duration,
                         displayValue: timeDisplay,
                         inputText: $timeInput,
                         isEditing: $editingTime,
@@ -123,7 +123,7 @@ struct RunningSettingsView: View {
                     // Distance
                     SettingCard(
                         icon: "mappin.and.ellipse",
-                        label: "距離",
+                        label: AppStrings.Settings.distance,
                         displayValue: String(format: "%.2f km", distanceKm),
                         inputText: $distanceInput,
                         isEditing: $editingDistance,
@@ -149,7 +149,7 @@ struct RunningSettingsView: View {
                     // Pace
                     SettingCard(
                         icon: "speedometer",
-                        label: "ペース（速度）",
+                        label: AppStrings.Settings.pace,
                         displayValue: String(format: "%.1f km/h", paceKmh),
                         inputText: $paceInput,
                         isEditing: $editingPace,
@@ -175,13 +175,13 @@ struct RunningSettingsView: View {
                     // ドラムロール入力 (企画書§5 ハイブリッド入力: ドラムロール・±・直接入力)
                     // スワイプで直感的にペースを選ぶホイールピッカー
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("ドラムロールで選ぶ")
+                        Text(AppStrings.Settings.wheel)
                             .font(.system(size: 12))
                             .foregroundColor(.arGrayText)
                             .padding(.leading, 4)
-                        Picker("ペース", selection: paceWheelBinding) {
+                        Picker(AppStrings.Settings.wheelLabel, selection: paceWheelBinding) {
                             ForEach(paceWheelValues, id: \.self) { value in
-                                Text(String(format: "%.1f km/h（%@/km）", value, paceLabel(kmh: value)))
+                                Text(AppStrings.Formats.paceWheel(value, paceLabel(kmh: value)))
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(.white)
                                     .tag(value)
@@ -280,7 +280,7 @@ struct RunningSettingsView: View {
 // MARK: - Setting Card Component
 struct SettingCard: View {
     let icon: String
-    let label: String
+    let label: LocalizedStringKey
     let displayValue: String
     @Binding var inputText: String
     @Binding var isEditing: Bool

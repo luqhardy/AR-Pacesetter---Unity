@@ -11,16 +11,16 @@ struct LocationPermissionMessage: View {
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundColor(.arYellow)
 
-            Text("位置情報が許可されていません")
+            Text(AppStrings.Location.permissionTitle)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(.white)
 
-            Text("現在地とルートを表示するには、設定から位置情報を許可してください。")
+            Text(AppStrings.Location.permissionMessage)
                 .font(.system(size: 13))
                 .multilineTextAlignment(.center)
                 .foregroundColor(.arGrayText)
 
-            Button("設定を開く") {
+            Button(AppStrings.Common.openSettings) {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                 openURL(url)
             }

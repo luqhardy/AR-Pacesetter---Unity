@@ -39,11 +39,11 @@ struct AvatarLibraryView: View {
                 .padding(.vertical, 12)
             }
             .background(Color.black.ignoresSafeArea())
-            .navigationTitle("アバター")
+            .navigationTitle(AppStrings.Avatar.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("閉じる") { dismiss() }
+                    Button(AppStrings.Common.close) { dismiss() }
                 }
             }
         }
@@ -62,11 +62,10 @@ struct AvatarLibraryView: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("VRM形式のアバターを伴走者にできます。")
+            Text(AppStrings.Avatar.intro)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.white)
-            Text("VRChatのアバターはそのままでは読み込めません。所有しているモデルを "
-                 + "VRMで書き出してから取り込んでください。")
+            Text(AppStrings.Avatar.vrchatNote)
                 .font(.system(size: 12))
                 .foregroundStyle(secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -83,7 +82,7 @@ struct AvatarLibraryView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "square.and.arrow.down")
-                Text(".vrm を取り込む").font(.system(size: 15, weight: .semibold))
+                Text(AppStrings.Avatar.importVrm).font(.system(size: 15, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
@@ -97,19 +96,19 @@ struct AvatarLibraryView: View {
     @ViewBuilder
     private var resultCard: some View {
         if let error = importError {
-            noticeCard(title: "取り込めませんでした", body: error, tint: .red)
+            noticeCard(title: AppStrings.Avatar.importFailedTitle, body: error, tint: .red)
         } else if let r = bridge.lastVrmResult {
             if r.accepted {
-                noticeCard(title: "\(r.name) を適用しました", body: r.report, tint: accent)
+                noticeCard(title: AppStrings.Avatar.applied(r.name), body: r.report, tint: accent)
             } else {
-                noticeCard(title: "\(r.name.isEmpty ? "このモデル" : r.name) は使えません",
+                noticeCard(title: AppStrings.Avatar.unusable(r.name.isEmpty ? AppStrings.Avatar.thisModel : r.name),
                            body: r.reason.isEmpty ? r.report : r.reason + "\n" + r.report,
                            tint: .red)
             }
         }
     }
 
-    private func noticeCard(title: String, body: String, tint: Color) -> some View {
+    private func noticeCard(title: LocalizedStringKey, body: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
@@ -133,13 +132,13 @@ struct AvatarLibraryView: View {
     @ViewBuilder
     private var avatarList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("使えるアバター")
+            Text(AppStrings.Avatar.available)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(secondaryText)
                 .textCase(.uppercase)
 
             if bridge.vrmAvatars.isEmpty {
-                Text("まだありません。上のボタンから .vrm を取り込んでください。")
+                Text(AppStrings.Avatar.none)
                     .font(.system(size: 13))
                     .foregroundStyle(secondaryText)
                     .padding(14)
@@ -157,7 +156,7 @@ struct AvatarLibraryView: View {
                                     .foregroundStyle(.white)
                                 Spacer()
                                 if avatar.name == bridge.currentVrmAvatar {
-                                    Text("使用中")
+                                    Text(AppStrings.Avatar.inUse)
                                         .font(.system(size: 11, weight: .semibold))
                                         .foregroundStyle(accent)
                                 }
@@ -197,7 +196,7 @@ struct AvatarLibraryView: View {
                 // セキュリティスコープ付きで、この関数を抜けると読めなくなる
                 bridge.importVrmAvatar(path: copied.path)
             } catch {
-                importError = "ファイルを取り込めませんでした: \(error.localizedDescription)"
+                importError = AppStrings.Avatar.fileImportFailed(error.localizedDescription)
             }
         }
     }

@@ -1,19 +1,5 @@
 import SwiftUI
 
-// MARK: - Navigation State
-enum AppScreen {
-    case home
-    case onboarding
-    case disclaimer
-    case deviceConnect
-    case runningSettings
-    case mapRoute
-    case running
-    case stats
-    case history
-    case boothDemo
-}
-
 struct ContentView: View {
     /// 初回起動の判定。オンボーディングと免責は**一度通ればスキップ**し、
     /// 以降はホームからいつでも開き直せる(課題 #6)
@@ -44,12 +30,13 @@ struct ContentView: View {
 
             // 0. ホーム — 走行フローの起点。終了後も必ずここへ戻る。
             //    デザインは hsuyaminmyat625/AR_project の HomeView を採用(2026-09-11 合体)。
-            //    ハンバーガー(履歴/AR設定/使い方/安全上の注意)とスライド開始を持つ
+            //    ハンバーガー(履歴/AR設定/スマホ設定/使い方/安全上の注意)とスライド開始を持つ
             case .home:
                 HomeView(
                     onStartRun:   { screen = .deviceConnect },
                     onHistory:    { historyOrigin = .home; screen = .history },
-                    onDevices:    { screen = .deviceConnect },
+                    onARSettings: { screen = .glassSettings },
+                    onPhoneSettings: { screen = .phoneSettings },
                     onTutorial:   { isReviewing = true; screen = .onboarding },
                     onDisclaimer: { isReviewing = true; screen = .disclaimer },
                     onBoothDemo:  { screen = .boothDemo }
@@ -142,6 +129,13 @@ struct ContentView: View {
             //    走行フロー(ARSessionManager)は通らず、履歴・HealthKitにも残らない
             case .boothDemo:
                 BoothDemoView(onExit: { screen = .home })
+
+            // 9. AR設定・スマホ設定(ホームのメニューから)。hsuyaminmyat625/AR_project の画面を
+            //    実際に効く項目だけで移植 — グラスの明るさ等、iOS から変えられないものは置かない
+            case .glassSettings:
+                ARSettingsView(onBack: { screen = .home })
+            case .phoneSettings:
+                PhoneSettingsView(onBack: { screen = .home })
             }
         }
         .animation(.easeInOut(duration: 0.3), value: screen)

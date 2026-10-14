@@ -193,10 +193,10 @@ struct RunningView: View {
                             Image(systemName: "arkit")
                                 .font(.system(size: 44, weight: .light))
                                 .foregroundColor(.arYellow)
-                            Text("AR環境を準備しています")
+                            Text(AppStrings.Running.preparingTitle)
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(.white)
-                            Text("初回起動は数秒かかります")
+                            Text(AppStrings.Running.preparingNote)
                                 .font(.system(size: 13))
                                 .foregroundColor(.arGrayText)
                         }
@@ -209,20 +209,20 @@ struct RunningView: View {
                     if showsSwiftStatsHud {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 1) {
-                            ARLabel(text: RunSettings.shared.ghostDateIso != nil ? "ゴースト競走中" : "伴走中")
+                            ARLabel(text: RunSettings.shared.ghostDateIso != nil ? AppStrings.Running.ghost : AppStrings.Running.active)
                             Text(elapsedStr)
                                 .font(.system(size: 34, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 1) {
-                            ARLabel(text: "距離")
+                            ARLabel(text: AppStrings.Running.distance)
                             Text(String(format: "%.2fkm", session.currentDistance))
                                 .font(.system(size: 34, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
                             if session.isDistanceEstimated {
                                 // GPS未取得中の表示値は推定 — 実測と混同させない(H3)
-                                Text("推定")
+                                Text(AppStrings.Running.estimated)
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundColor(.arGrayText)
                             }
@@ -263,7 +263,7 @@ struct RunningView: View {
                                 Text(RunSettings.shared.paceMinPerKmString)
                                     .font(.system(size: 30, weight: .bold, design: .monospaced))
                                     .foregroundColor(.arYellow)
-                                Text("ペース /km")
+                                Text(AppStrings.Running.pace)
                                     .font(.system(size: 11))
                                     .foregroundColor(.arGrayText)
                             }
@@ -276,7 +276,7 @@ struct RunningView: View {
                                     .font(.system(size: 24, weight: .bold, design: .monospaced))
                                     .foregroundColor(bridge.avatarSyncRate < 0 ? .arGrayText
                                                      : (bridge.avatarSyncRate >= 80 ? .arYellow : .orange))
-                                Text("シンクロ率")
+                                Text(AppStrings.Running.syncRate)
                                     .font(.system(size: 11))
                                     .foregroundColor(.arGrayText)
                             }
@@ -295,7 +295,7 @@ struct RunningView: View {
                         Spacer()
 
                         VStack(spacing: 4) {
-                            Text("ARビューはグラスに出力中")
+                            Text(AppStrings.Running.onGlasses)
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(.arGrayText)
                             Text(elapsedStr)
@@ -307,7 +307,7 @@ struct RunningView: View {
                             HStack(spacing: 10) {
                                 Image(systemName: "stop.fill")
                                     .font(.system(size: 22, weight: .bold))
-                                Text("終了")
+                                Text(AppStrings.Common.end)
                                     .font(.system(size: 22, weight: .bold))
                             }
                             .foregroundColor(.white)
@@ -321,7 +321,7 @@ struct RunningView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "lock.fill")
                                     .font(.system(size: 15, weight: .bold))
-                                Text("画面をロック")
+                                Text(AppStrings.Running.lockScreen)
                                     .font(.system(size: 15, weight: .semibold))
                             }
                             .foregroundColor(.white)
@@ -370,7 +370,7 @@ struct RunningView: View {
                             .font(.system(size: 56, weight: .black))
                             .foregroundColor(.arYellow)
                             .shadow(color: Color.arYellow.opacity(0.6), radius: 24)
-                        Text("目標距離を達成しました")
+                        Text(AppStrings.Running.goalReached)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
                     }
@@ -385,7 +385,7 @@ struct RunningView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "battery.25percent")
                                 .font(.system(size: 13))
-                            Text("バッテリー低下 — HUDモードへ退避しました")
+                            Text(AppStrings.Running.lowBattery)
                                 .font(.system(size: 13, weight: .semibold))
                         }
                         .foregroundColor(.white)
@@ -404,7 +404,7 @@ struct RunningView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "location.slash.fill")
                                 .font(.system(size: 13))
-                            Text("GPS再取得中 — アバターは慣性走行中")
+                            Text(AppStrings.Running.gpsLost)
                                 .font(.system(size: 13, weight: .semibold))
                         }
                         .foregroundColor(.black)
@@ -424,7 +424,7 @@ struct RunningView: View {
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "eye.slash.fill")
                                 .font(.system(size: 13))
-                            Text("アバター非表示: \(reason)")
+                            Text(AppStrings.Running.avatarHidden(reason))
                                 .font(.system(size: 12, weight: .semibold))
                                 .multilineTextAlignment(.leading)
                         }
@@ -442,17 +442,9 @@ struct RunningView: View {
                 // 画面ロック — 最前面。走行・Unityの描画は裏で続いており、
                 // 上へスワイプすると元の走行画面へそのまま戻る
                 if isLocked {
-                    LockScreenView(
-                        onUnlock: { isLocked = false },
-                        // 停止ボタン(hsu/main 由来)。onEnd()だけを呼ぶと Unity へ EndSession が
-                        // 飛ばず記録が閉じないため、通常の終了と同じ順序を通す
-                        onEnd: {
-                            isLocked = false
-                            session.end()               // Unityへ EndSession → SessionEnded
-                            UnityLauncher.shared.pause()
-                            onEnd()
-                        }
-                    )
+                    // 終了はロックを解除してから(タスク表 S6: 誤操作でランが終わらないように)。
+                    // ロック画面にあった停止ボタン(hsu/main 由来)は 2026-10-14 に外した
+                    LockScreenView(onUnlock: { isLocked = false })
                         .transition(.opacity)
                 }
             }
@@ -505,13 +497,13 @@ struct RunningView: View {
                     onEnd()
                 }
             }
-            .alert("ランを終了しますか？", isPresented: $showEndAlert) {
-                Button("終了", role: .destructive) {
+            .alert(AppStrings.Common.endRunTitle, isPresented: $showEndAlert) {
+                Button(AppStrings.Common.end, role: .destructive) {
                     session.end()               // Unityへ EndSession → SessionEnded が返る
                     UnityLauncher.shared.pause()
                     onEnd()
                 }
-                Button("続ける", role: .cancel) {}
+                Button(AppStrings.Common.continueRun, role: .cancel) {}
             }
         }
     }

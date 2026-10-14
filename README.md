@@ -264,6 +264,7 @@ AR Pacesetter/                      ← リポジトリルート = Unityプロ�
 ├── ios/
 │   ├── ARRunner.xcworkspace        ← ★ Macで開くのはこれ（両プロジェクトを束ねる）
 │   ├── AR_Runner_UI/               ← SwiftUIアプリ（ホスト・最終ビルド対象）
+│   │   └── AR_Runner_UI/           ← App/ Core/ Features/ Resources/ AppLogic/（画面は日本語・英語）
 │   └── UnityExport/                ← Unityエクスポート産物（gitignore・生成物）
 └── SWIFT_INTEGRATION.md
 ```

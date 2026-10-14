@@ -51,11 +51,11 @@ struct MapRouteView: View {
 
                 // Header
                 VStack(alignment: .leading, spacing: 4) {
-                    ARLabel(text: "ROUTE")
-                    Text("ルートを選択")
+                    ARLabel(text: AppStrings.Route.eyebrow)
+                    Text(AppStrings.Route.title)
                         .font(.system(size: 30, weight: .bold))
                         .foregroundColor(.white)
-                    Text("現在地を確認してください")
+                    Text(AppStrings.Route.subtitle)
                         .font(.system(size: 14))
                         .foregroundColor(.arGrayText)
                         .padding(.top, 2)
@@ -99,7 +99,7 @@ struct MapRouteView: View {
                         Spacer().frame(height: 20)
 
                         // Past routes header
-                        Text("過去のルート")
+                        Text(AppStrings.Route.pastRoutes)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.arGrayText)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -112,8 +112,8 @@ struct MapRouteView: View {
                                 if pastRoutes.isEmpty {
                                     // 経路は 2026-10-13 から記録している。それより前の走行にはカードが出ない
                                     Text(bridge.history.isEmpty
-                                         ? "まだ記録がありません"
-                                         : "経路つきの記録はまだありません(次の走行から記録されます)")
+                                         ? AppStrings.Common.noRecords
+                                         : AppStrings.Route.noRoutedRecords)
                                         .font(.system(size: 13))
                                         .foregroundColor(.arGrayText)
                                         .padding(.vertical, 40)
@@ -133,7 +133,7 @@ struct MapRouteView: View {
 
                         Spacer().frame(height: 24)
 
-                        ARButton("ランニングを開始") { onNext() }
+                        ARButton(AppStrings.Route.start) { onNext() }
                             .padding(.horizontal, 24)
                             .padding(.bottom, 52)
                     }
@@ -151,7 +151,7 @@ private struct PastRouteCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(route.dateLabel)
+            Text(route.dateLabel(locale: .appLanguage))
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
@@ -164,7 +164,7 @@ private struct PastRouteCard: View {
                 .frame(height: 90)
                 .clipped()
 
-            Text(String(format: "距離%.2fkm", route.distanceKm))
+            Text(AppStrings.Formats.routeDistance(route.distanceKm))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)

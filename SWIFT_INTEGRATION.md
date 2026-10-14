@@ -238,7 +238,9 @@ Unity側の受信オブジェクト(`ARSessionManager`/`DeviceManager` GameObjec
 
 以後の UI開発はこのリポジトリの `ios/` で行い、AR-runner側には必要に応じて還元する。
 Xcode 16形式(FileSystemSynchronizedRootGroup)のため、`ios/AR_Runner_UI/AR_Runner_UI/` に
-.swiftファイルを置くだけでビルド対象になる。
+.swiftファイルを置くだけでビルド対象になる。フォルダ構成は hsuyaminmyat625/AR_project と同じ(2026-10-14〜):
+`App/`(起動・画面遷移)/ `Core/`(共通部品・Unity・グラス・位置情報・文言)/ `Features/<機能>/`(画面)/
+`Resources/`(アセット・`Localizable.xcstrings`)/ `AppLogic/`(UI に依存しない判断・`swift test` の対象)。
 
 ## ゴール判定(実装済み)
 
