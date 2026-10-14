@@ -3,29 +3,39 @@ import MapKit
 import CoreLocation
 import Combine
 
-// MARK: - Route history item (past run, used for the horizontal card row)
-
-struct PastRoute: Identifiable {
-    let id = UUID()
-    let dateText: String
-    let distanceKm: Double
-    let coordinates: [CLLocationCoordinate2D]
-}
-
 // MARK: - Map Route Screen
 
 struct MapRouteView: View {
     let onNext: () -> Void
     let onBack: () -> Void
 
-    /// Past runs to show as selectable cards below the map.
-    /// Defaults to an empty array — pass real history data in from
-    /// ContentView once it's available (e.g. from StatsHistoryView's
-    /// history source) to replace the placeholder cards.
-    var pastRoutes: [PastRoute] = []
-
+    /// 過去の走行(Unity の履歴・経路つき)。以前は誰も渡しておらず、常に「まだ記録がありません」だった
+    @ObservedObject private var bridge = UnityBridge.shared
     @StateObject private var locationManager = MapRouteLocationManager()
-    @State private var selectedRouteID: PastRoute.ID?
+    @State private var selectedRouteID: RunHistoryEntry.ID?
+
+    /// 経路のある過去の走行を、目標距離(S5で確定した値)に近い順に
+    private var pastRoutes: [RunHistoryEntry] {
+        PastRouteOrdering.candidates(from: bridge.history,
+                                     targetDistanceKm: RunSettings.shared.distanceKm)
+    }
+
+    private var selectedRoute: RunHistoryEntry? {
+        pastRoutes.first { $0.id == selectedRouteID }
+    }
+
+    /// カードを選んだら、上の地図をその経路に合わせる(現在地の追従はやめる)
+    private func select(_ route: RunHistoryEntry) {
+        selectedRouteID = route.id
+        guard let bounds = RouteBounds(route: route.route) else { return }
+        locationManager.followsUser = false
+        withAnimation(.easeInOut(duration: 0.35)) {
+            locationManager.cameraPosition = .region(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: bounds.centerLatitude, longitude: bounds.centerLongitude),
+                span: MKCoordinateSpan(latitudeDelta: bounds.latitudeSpan, longitudeDelta: bounds.longitudeSpan)
+            ))
+        }
+    }
 
     var body: some View {
         ARScreen {
@@ -59,6 +69,12 @@ struct MapRouteView: View {
                         // Large current-location map
                         Map(position: $locationManager.cameraPosition) {
                             UserAnnotation()
+                            if let route = selectedRoute {
+                                MapPolyline(coordinates: route.route.map {
+                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                                })
+                                .stroke(Color.arYellow, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                            }
                         }
                         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
                         .mapControls { }
@@ -75,7 +91,10 @@ struct MapRouteView: View {
                             }
                         }
                         .padding(.horizontal, 24)
-                        .onAppear { locationManager.start() }
+                        .onAppear {
+                            locationManager.start()
+                            bridge.requestHistory()   // Unity 起動済みなら最新へ(未起動なら端末の保存分のまま)
+                        }
 
                         Spacer().frame(height: 20)
 
@@ -91,7 +110,10 @@ struct MapRouteView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
                                 if pastRoutes.isEmpty {
-                                    Text("まだ記録がありません")
+                                    // 経路は 2026-10-13 から記録している。それより前の走行にはカードが出ない
+                                    Text(bridge.history.isEmpty
+                                         ? "まだ記録がありません"
+                                         : "経路つきの記録はまだありません(次の走行から記録されます)")
                                         .font(.system(size: 13))
                                         .foregroundColor(.arGrayText)
                                         .padding(.vertical, 40)
@@ -102,9 +124,7 @@ struct MapRouteView: View {
                                             route: route,
                                             isSelected: selectedRouteID == route.id
                                         )
-                                        .onTapGesture {
-                                            selectedRouteID = route.id
-                                        }
+                                        .onTapGesture { select(route) }
                                     }
                                 }
                             }
@@ -126,19 +146,21 @@ struct MapRouteView: View {
 // MARK: - Past route card
 
 private struct PastRouteCard: View {
-    let route: PastRoute
+    let route: RunHistoryEntry
     let isSelected: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(route.dateText)
+            Text(route.dateLabel)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(Color.arYellowDim)
 
-            RouteThumbnail(coordinates: route.coordinates)
+            RouteThumbnail(coordinates: route.route.map {
+                CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+            })
                 .frame(height: 90)
                 .clipped()
 
@@ -206,6 +228,8 @@ private struct RouteThumbnail: View {
 private final class MapRouteLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var cameraPosition: MapCameraPosition = .automatic
     @Published private(set) var authorizationStatus: CLAuthorizationStatus
+    /// 地図を現在地へ合わせ続けるか。過去ルートを選んだら止める(測位のたびに選んだ経路から戻されないように)
+    var followsUser = true
 
     private let manager = CLLocationManager()
 
@@ -241,7 +265,7 @@ private final class MapRouteLocationManager: NSObject, ObservableObject, CLLocat
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let latest = locations.last, latest.horizontalAccuracy <= 50 else { return }
+        guard followsUser, let latest = locations.last, latest.horizontalAccuracy <= 50 else { return }
         cameraPosition = .region(
             MKCoordinateRegion(
                 center: latest.coordinate,

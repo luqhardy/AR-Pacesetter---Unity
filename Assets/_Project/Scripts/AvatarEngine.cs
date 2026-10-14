@@ -858,6 +858,26 @@ public class AvatarEngine : MonoBehaviour
     /// インポート設定でモデルの素の大きさは変わるため、決め打ちだと実物と合わない。
     /// </summary>
     /// <returns>適用できたか(モデル未解決・計測失敗時は false で現状維持)</returns>
+    /// <summary>
+    /// 身長の上限(cm)。0 なら上限なし。ARグラスへ出力している間、<see cref="GlassViewRig"/> が
+    /// 「その画角で頭から足元まで収まる身長」を入れる(AGENTS.md §7-1 — 2026-10-13 チーム判断で
+    /// 3.0m前方(F-03)は保ち、大きさを譲る)。iPhone画面では上限なしで要求どおりの身長
+    /// </summary>
+    public float HeightLimitCm { get; private set; }
+
+    /// <summary>実際に適用する身長(cm)= 要求身長と上限の小さい方</summary>
+    public float EffectiveHeightCm =>
+        HeightLimitCm > 0f ? Mathf.Min(RequestedHeightCm, HeightLimitCm) : RequestedHeightCm;
+
+    /// <summary>身長の上限を設定して即座に適用し直す。0 で解除。</summary>
+    public void SetHeightLimitCm(float limitCm)
+    {
+        float next = limitCm > 0f ? limitCm : 0f;
+        if (Mathf.Approximately(next, HeightLimitCm)) return;
+        HeightLimitCm = next;
+        ReapplyHeight();
+    }
+
     public bool ApplyHeightCm(float heightCm)
     {
         if (heightCm > 0f) RequestedHeightCm = heightCm;
@@ -871,7 +891,7 @@ public class AvatarEngine : MonoBehaviour
 
         // スケール1相当の素の高さ。これを基準に必要な倍率を出す
         float unitHeight = MeasureUnitHeight(model);
-        if (!AvatarScale.TryComputeScale(unitHeight, 1f, RequestedHeightCm, out float scale))
+        if (!AvatarScale.TryComputeScale(unitHeight, 1f, EffectiveHeightCm, out float scale))
         {
             Debug.LogWarning($"[AVATAR SCALE] 素の身長を計測できず適用を見送りました " +
                              $"(unitHeight={unitHeight:F3}m)");
@@ -881,7 +901,8 @@ public class AvatarEngine : MonoBehaviour
         float before = unitHeight * model.localScale.y;
         model.localScale = Vector3.one * scale;
 
-        Debug.Log($"[AVATAR SCALE] 身長 {RequestedHeightCm:F0}cm へ調整: " +
+        Debug.Log($"[AVATAR SCALE] 身長 {EffectiveHeightCm:F0}cm へ調整" +
+                  (EffectiveHeightCm < RequestedHeightCm ? $"(要求 {RequestedHeightCm:F0}cm・グラスの画角に合わせた上限)" : "") + ": " +
                   $"変更前 {before:F2}m → scale {scale:F3} (公称 {MeasuredAvatarHeightMeters:F2}m)");
         return true;
     }

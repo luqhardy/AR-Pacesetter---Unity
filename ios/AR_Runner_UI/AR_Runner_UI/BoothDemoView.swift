@@ -24,22 +24,13 @@ struct BoothDemoView: View {
     @ObservedObject private var unity = UnityLauncher.shared
     @ObservedObject private var external = ExternalDisplayManager.shared
 
-    private enum Phase: Equatable {
-        case idle
-        case countingDown(remaining: Int)   // 開始ボタン後、iPhoneをマウントへ入れる猶予
-        case starting                       // 送信済み。グラスで 3-2-1-START 中
-        case running
-        case finished
-    }
-
-    @State private var phase: Phase = .idle
+    /// 進行の状態遷移は AppLogic/BoothDemoFlow.swift(`swift test` で検証)。
+    /// 画面は Flow が返す Effect(Unity への送信)を実行するだけ
+    @State private var flow = BoothDemoFlow()
+    private var phase: BoothDemoFlow.Phase { flow.phase }
     @State private var mode: UnityBridge.BoothDemoMode = .standing
     @AppStorage("boothDemoStartDelaySeconds") private var startDelaySeconds = 10
-    /// 猶予の終了時刻。残り秒はタイマーの発火回数ではなく時刻から出す(発火が遅れても伸びない)
-    @State private var countdownDeadline: Date?
     @State private var showExitConfirm = false
-    /// 待機画面に出す直前の結果(完走 / 中断 / 開始できなかった理由)
-    @State private var resultMessage: String?
 
     /// 猶予のカウントダウン用。経過バーは TimelineView で描き、画面全体(Unityのビューを含む)を
     /// 毎回描き直さない
@@ -102,15 +93,15 @@ struct BoothDemoView: View {
             UIApplication.shared.isIdleTimerDisabled = false
         }
         .onReceive(tick) { date in
-            advanceCountdown(now: date)
+            perform(flow.tick(now: date))
         }
         .onReceive(bridge.$boothDemoProgress) { progress in
             guard progress != nil else { return }
-            if phase == .starting || phase == .running { phase = .running }
+            flow.progressReceived()
         }
         .onReceive(bridge.$lastBoothDemoEnd) { end in
             guard let end else { return }
-            handleEnd(end)
+            flow.endReceived(.init(completed: end.completed, reason: end.reason))
         }
         .alert("体験モードを終了しますか？", isPresented: $showExitConfirm) {
             Button("終了", role: .destructive) { exit() }
@@ -179,7 +170,7 @@ struct BoothDemoView: View {
 
     private var setupPanel: some View {
         VStack(alignment: .leading, spacing: 18) {
-            if let resultMessage {
+            if let resultMessage = flow.resultMessage {
                 Text(resultMessage)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.white)
@@ -214,7 +205,7 @@ struct BoothDemoView: View {
 
             checklist
 
-            Button { beginCountdown() } label: {
+            Button { perform(flow.begin(delaySeconds: startDelaySeconds, now: Date())) } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "play.fill").font(.system(size: 18, weight: .bold))
                     Text(phase == .finished ? "次の方を開始" : "開始")
@@ -269,7 +260,7 @@ struct BoothDemoView: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
-            cancelButton(title: "取り消す") { phase = .idle }
+            cancelButton(title: "取り消す") { stop() }
         }
         .frame(maxWidth: .infinity)
     }
@@ -358,68 +349,23 @@ struct BoothDemoView: View {
 
     // MARK: - 操作
 
-    private var isActive: Bool {
-        switch phase {
-        case .countingDown, .starting, .running: return true
-        case .idle, .finished: return false
-        }
-    }
+    private var isActive: Bool { flow.isActive }
 
-    private func beginCountdown() {
-        resultMessage = nil
-        if startDelaySeconds <= 0 {
-            sendStart()
-        } else {
-            phase = .countingDown(remaining: startDelaySeconds)
-            countdownDeadline = Date().addingTimeInterval(TimeInterval(startDelaySeconds))
+    /// Flow が決めた Unity への送信を実行する
+    private func perform(_ effect: BoothDemoFlow.Effect?) {
+        switch effect {
+        case .sendStart?: bridge.startBoothDemo(mode: mode)
+        case .sendStop?:  bridge.stopBoothDemo()
+        case nil: break
         }
-    }
-
-    private func advanceCountdown(now: Date) {
-        guard case .countingDown(let shown) = phase, let deadline = countdownDeadline else { return }
-        let remaining = Int(deadline.timeIntervalSince(now).rounded(.up))
-        if remaining <= 0 {
-            countdownDeadline = nil
-            sendStart()
-        } else if remaining != shown {
-            phase = .countingDown(remaining: remaining)
-        }
-    }
-
-    private func sendStart() {
-        phase = .starting
-        bridge.startBoothDemo(mode: mode)
     }
 
     private func stop() {
-        // 猶予中はまだ Unity へ何も送っていない
-        if phase == .starting || phase == .running {
-            bridge.stopBoothDemo()
-        }
-        countdownDeadline = nil
-        phase = .idle
-        resultMessage = "中断しました。"
-    }
-
-    private func handleEnd(_ end: UnityBridge.BoothDemoEnd) {
-        // 意味があるのは「送った体験」の終了だけ。購読開始時に届く前回の値や、
-        // stop() 後の中断応答(表示済み)は無視する
-        guard phase == .starting || phase == .running else { return }
-        // 直前の体験の中断応答が、新しい開始の後に届いた。新しい体験は続いている
-        if phase == .starting && end.wasStoppedByStaff { return }
-
-        phase = .finished
-        if end.completed {
-            resultMessage = "完走しました。グラスを外して、次の方へ。"
-        } else if end.wasStoppedByStaff {
-            resultMessage = "中断しました。"
-        } else {
-            resultMessage = "開始できませんでした: \(end.reason)"
-        }
+        perform(flow.stop())
     }
 
     private func exit() {
-        if isActive { bridge.stopBoothDemo() }
+        if isActive { perform(flow.stop()) }
         UnityLauncher.shared.pause()
         onExit()
     }

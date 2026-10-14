@@ -137,7 +137,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   受け口だけは通してある(`UpdateGlassPose` → `GlassViewRig.SetExternalHeadPose`。0.25秒途切れれば§4.1の進行方向ヨーへ自動復帰)。
   **グラスの画面モードは Follow(固定) にすること** — Anchorだとグラス側X1が頭回転を打ち消すためUnity側と二重補正になる。
   根拠・数値・設計判断は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
-- **F-03の3.0mとXREAL Oneの画角が両立しない(要チーム判断)**: 眼高1.55mから身長1.75mのアバターを3.0m前方に置くと垂直31.1°を占め、Oneの垂直画角25.7°に全身が入らない(全身には3.71m必要 / One Proでも3.16m)。俯角で中心へ寄せても接地点は3.38m先からしか見えないため、§7.2のオーラ(足元から放射)は事実上見えない。現実装は「欠けを許容」。`GlassViewRig.FullBodyFitsInFov` / `NearestVisibleGroundMeters` で実測でき、E2Eでも固定済み
+- ~~**F-03の3.0mとXREAL Oneの画角が両立しない**~~ → **解決(2026-10-13 チーム判断: 3.0mは保ち大きさを譲る)**: グラス出力中は `GlassViewRig` が画角に頭から足元まで収まる身長を上限にする(XREAL One で約144cm。足元のオーラも見える)。iPhone画面では175cmのまま。E2Eで「収まる・足元が見える・切断で175cmに戻る」を固定。**実機での見え方(小さく見えすぎないか)は要確認**
 - **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
   - **未実施であることの確認方法と症状(重要)**: `ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj` に
     `UnityFramework` の文字列が1つも無い場合、リンクは未実施。このとき Swift 側は

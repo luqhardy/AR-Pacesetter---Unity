@@ -72,7 +72,8 @@ You need both: Unity's for the export to succeed, the host's for the runtime per
 
 The build process can empty **`preloadedAssets`**. If that list contains `XRGeneralSettings.asset`,
 committing it empty means the XR (ARKit) loader never initialises in a player build — a bug that only
-shows up on device. Diff it after every export and restore if needed.
+shows up on device. Since 2026-10-13 `IOSBuildExporter` restores the pre-build list automatically; if you
+export some other way, diff it and restore it yourself.
 
 ## 4. Step 2 — Wire the framework in Xcode (macOS, one-time per export)
 

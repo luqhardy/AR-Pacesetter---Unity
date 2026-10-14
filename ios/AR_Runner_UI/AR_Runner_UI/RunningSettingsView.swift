@@ -5,11 +5,26 @@ struct RunningSettingsView: View {
     // 値はこの画面のローカル状態で持ち、「次へ」で RunSettings.shared へ確定する。
     // hsu/main は RunConfiguration という別の器を導入していたが、Unityへ引き渡す
     // 共有ストアが既に RunSettings.shared にあるため、同じ3値の置き場を2つ作らない
-    @State private var timeSeconds: Int = 3600
-    @State private var distanceKm: Double = 10.0
-    @State private var paceKmh: Double = 8.0
+    @State private var timeSeconds: Int
+    @State private var distanceKm: Double
+    @State private var paceKmh: Double
     let onNext: () -> Void
     let onBack: () -> Void
+
+    /// 画面を開くたびに**前回「次へ」で確定した値**から始める(タスク表 S5)。
+    /// 以前は毎回 60分・10km・8km/h に戻っていた。「戻る」で離れた未確定の変更は捨てる
+    init(onNext: @escaping () -> Void, onBack: @escaping () -> Void) {
+        self.onNext = onNext
+        self.onBack = onBack
+        let confirmed = RunSettings.shared
+        _timeSeconds = State(initialValue: confirmed.timeSeconds)
+        _distanceKm = State(initialValue: confirmed.distanceKm)
+        _paceKmh = State(initialValue: confirmed.paceKmH)
+    }
+
+    private let timeRange = RunSettingRanges.timeSeconds
+    private let distanceRange = RunSettingRanges.distanceKm
+    private let paceRange = RunSettingRanges.paceKmH
 
     @State private var editingTime = false
     @State private var editingDistance = false
@@ -87,8 +102,10 @@ struct RunningSettingsView: View {
                         inputText: $timeInput,
                         isEditing: $editingTime,
                         isFocused: focusedField == .time,
-                        onMinus: { timeSeconds = max(60, timeSeconds - 60) },
-                        onPlus: { timeSeconds = min(86400, timeSeconds + 60) },
+                        canMinus: timeRange.canDecrement(Double(timeSeconds)),
+                        canPlus: timeRange.canIncrement(Double(timeSeconds)),
+                        onMinus: { timeSeconds = Int(timeRange.decremented(Double(timeSeconds))) },
+                        onPlus: { timeSeconds = Int(timeRange.incremented(Double(timeSeconds))) },
                         onTapValue: {
                             timeInput = timeDisplay
                             editingTime = true
@@ -111,8 +128,10 @@ struct RunningSettingsView: View {
                         inputText: $distanceInput,
                         isEditing: $editingDistance,
                         isFocused: focusedField == .distance,
-                        onMinus: { distanceKm = max(0.5, round((distanceKm - 0.5) * 100) / 100) },
-                        onPlus: { distanceKm = min(200.0, round((distanceKm + 0.5) * 100) / 100) },
+                        canMinus: distanceRange.canDecrement(distanceKm),
+                        canPlus: distanceRange.canIncrement(distanceKm),
+                        onMinus: { distanceKm = distanceRange.decremented(distanceKm) },
+                        onPlus: { distanceKm = distanceRange.incremented(distanceKm) },
                         onTapValue: {
                             distanceInput = String(format: "%.2f", distanceKm)
                             editingDistance = true
@@ -121,9 +140,7 @@ struct RunningSettingsView: View {
                             focusedField = .distance
                         },
                         onCommit: {
-                            if let v = Double(distanceInput), v > 0 {
-                                distanceKm = min(200.0, max(0.5, v))
-                            }
+                            applyDistanceInput()
                             editingDistance = false
                             focusedField = nil
                         }
@@ -137,8 +154,10 @@ struct RunningSettingsView: View {
                         inputText: $paceInput,
                         isEditing: $editingPace,
                         isFocused: focusedField == .pace,
-                        onMinus: { paceKmh = max(1.0, round((paceKmh - 0.5) * 10) / 10) },
-                        onPlus: { paceKmh = min(30.0, round((paceKmh + 0.5) * 10) / 10) },
+                        canMinus: paceRange.canDecrement(paceKmh),
+                        canPlus: paceRange.canIncrement(paceKmh),
+                        onMinus: { paceKmh = paceRange.decremented(paceKmh) },
+                        onPlus: { paceKmh = paceRange.incremented(paceKmh) },
                         onTapValue: {
                             paceInput = String(format: "%.1f", paceKmh)
                             editingPace = true
@@ -147,9 +166,7 @@ struct RunningSettingsView: View {
                             focusedField = .pace
                         },
                         onCommit: {
-                            if let v = Double(paceInput), v > 0 {
-                                paceKmh = min(30.0, max(1.0, v))
-                            }
+                            applyPaceInput()
                             editingPace = false
                             focusedField = nil
                         }
@@ -239,25 +256,24 @@ struct RunningSettingsView: View {
         focusedField = nil
     }
 
+    // 直接入力は半角・全角のどちらでも読む(NumericInput — 以前は全角の「５」が黙って捨てられていた)。
+    // 読めない入力は今の値のまま(エラー表示はタスク表 S5「不正な文字列」の行で別途)
+
     private func applyTimeInput() {
-        let parts = timeInput.split(separator: ":").map { Int($0) ?? 0 }
-        switch parts.count {
-        case 3: timeSeconds = max(60, parts[0] * 3600 + parts[1] * 60 + parts[2])
-        case 2: timeSeconds = max(60, parts[0] * 60 + parts[1])
-        case 1: timeSeconds = max(60, parts[0] * 60)
-        default: break
+        if let seconds = NumericInput.parseDuration(timeInput) {
+            timeSeconds = Int(timeRange.clamped(Double(seconds)))
         }
     }
 
     private func applyDistanceInput() {
-        if let value = Double(distanceInput), value > 0 {
-            distanceKm = min(200.0, max(0.5, value))
+        if let value = NumericInput.parseDecimal(distanceInput) {
+            distanceKm = distanceRange.clamped(value)
         }
     }
 
     private func applyPaceInput() {
-        if let value = Double(paceInput), value > 0 {
-            paceKmh = min(30.0, max(1.0, value))
+        if let value = NumericInput.parseDecimal(paceInput) {
+            paceKmh = paceRange.clamped(value)
         }
     }
 }
@@ -270,6 +286,9 @@ struct SettingCard: View {
     @Binding var inputText: String
     @Binding var isEditing: Bool
     let isFocused: Bool
+    /// 境界値に達したら押せなくする(タスク表 S5)
+    var canMinus: Bool = true
+    var canPlus: Bool = true
     let onMinus: () -> Void
     let onPlus: () -> Void
     let onTapValue: () -> Void
@@ -322,8 +341,8 @@ struct SettingCard: View {
                     }
                 }
 
-                StepButton(icon: "minus", action: onMinus)
-                StepButton(icon: "plus", action: onPlus)
+                StepButton(icon: "minus", isEnabled: canMinus, action: onMinus)
+                StepButton(icon: "plus", isEnabled: canPlus, action: onPlus)
             }
         }
         .padding(.horizontal, 16)
@@ -341,21 +360,24 @@ struct SettingCard: View {
 // MARK: - Step Button (+/-)
 struct StepButton: View {
     let icon: String
+    var isEnabled: Bool = true
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.arYellow)
+                .foregroundColor(isEnabled ? .arYellow : .arGrayText.opacity(0.5))
                 .frame(width: 48, height: 48)
                 .background(Color.arBG)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.arYellow.opacity(0.5), lineWidth: 1.5)
+                        .stroke(isEnabled ? Color.arYellow.opacity(0.5) : Color.arBorder, lineWidth: 1.5)
                 )
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .animation(.easeInOut(duration: 0.15), value: isEnabled)
     }
 }

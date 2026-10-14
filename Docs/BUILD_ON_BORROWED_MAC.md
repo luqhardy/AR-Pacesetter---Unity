@@ -37,10 +37,12 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
       **`-buildTarget iOS` は必須** — iOS がアクティブでないとエクスポータが止まる(ARKitのネイティブ
       プラグインは `UNITY_IOS` 定義で入るため、無いまま書き出すとARKitが動かない)。
       エディタのメニューから実行するときは、先に Build Profiles でアクティブなプラットフォームを iOS にする
-- [ ] エクスポート後に `git diff ProjectSettings/ProjectSettings.asset` を確認。
-      `preloadedAssets` が空になっていたら**元に戻す**(空のままだとXR(ARKit)ローダーが初期化されない)
-- [ ] **`ios/UnityExport/` をUSBメモリにコピーする(約1.5GB)**
-      このフォルダは生成物なのでgit管理外 = cloneしても付いてこない
+- [ ] (2026-10-13〜 不要)`ProjectSettings.asset` の `preloadedAssets` はエクスポータが自動で戻す
+- [ ] **エクスポートを Mac へ渡す** — どちらか:
+      - **おすすめ**: `tools/publish-unity-export.sh` で GitHub Release に公開し、Mac で
+        `gh release download unity-export-<8桁> --pattern UnityExport.tar.gz` で取得する(USB不要・CIも同じものを使う)
+      - `ios/UnityExport/` をUSBメモリにコピーする(約1.3GB)。このフォルダは生成物なので git 管理外 = clone しても付いてこない。
+        **既存の `ios/UnityExport` に上書き・マージしない**(Finder の「両方とも残す」で出来る `… 2` が duplicate symbol の原因になる)
 
 ## 2. Mac側: 準備(15分)
 
@@ -158,7 +160,7 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
             外部ディスプレイのシーンが生成されていない
       - [ ] 開発者モードで `glass.output = グラスへ出力中` /
             `glass.fillsScreen = 一致(画面を埋めている)` を確認
-      - [ ] `glass.fit` に光学適合の実測が出る(3.0m前方のアバターは全身が入らない — 既知)
+      - [ ] `glass.fit` に光学適合の実測が出る(3.0m前方のアバターが約144cmで頭から足元まで収まる)
 - [ ] CSVを開き、`imu_accel_x/y/z` が **0以外の実測値**で埋まっていることを確認
       (実機ではCoreMotionから100Hzで供給される)
 

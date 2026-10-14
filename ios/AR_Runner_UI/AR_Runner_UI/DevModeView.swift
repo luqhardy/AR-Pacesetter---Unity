@@ -37,6 +37,7 @@ struct DevModeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     logSection
+                    visibilitySection
                     indoorTestSection
                     statsSection
                 }
@@ -116,6 +117,67 @@ struct DevModeView: View {
         }
     }
 
+    // MARK: - アバター非表示の履歴
+
+    /// 走行中にアバターが消えた区間(新しい順)。走っている本人は紫のバナーを読めないので、
+    /// 走行後にここで「いつ・何秒・なぜ」を確かめる。アプリを再起動しても残る(最大100件)
+    private var visibilitySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionHeader("アバター非表示の履歴",
+                              subtitle: "消えた時刻・見えなかった秒数・理由(新しい順)")
+                Spacer()
+                if !bridge.visibilityLog.events.isEmpty {
+                    Button("消去") { bridge.clearVisibilityLog() }
+                        .font(.system(size: 13, weight: .semibold))
+                        .tint(accent)
+                }
+            }
+
+            if bridge.visibilityLog.events.isEmpty {
+                Text("まだ一度も消えていません")
+                    .font(.system(size: 13))
+                    .foregroundStyle(secondaryText)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(bridge.visibilityLog.events) { event in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 8) {
+                                Text(Self.timeFormatter.string(from: event.hiddenAt))
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(.white)
+                                Text(event.durationSeconds.map { String(format: "%.1f秒", $0) } ?? "継続中")
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundStyle(event.shownAt == nil ? Color.orange : secondaryText)
+                            }
+                            Text(event.reason)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        if event.id != bridge.visibilityLog.events.last?.id {
+                            Divider().background(Color.white.opacity(0.08)).padding(.leading, 14)
+                        }
+                    }
+                }
+                .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd HH:mm:ss"
+        return f
+    }()
+
     // MARK: - 屋内テスト
 
     /// Unity が報告している GPSロスト判定(F-09/F-10)の状態。応答が無ければ nil。
@@ -123,10 +185,8 @@ struct DevModeView: View {
     /// `gps.autoLostHandling`)から作る。体験モードは開始時にOFF・終了時に元へ戻すので、
     /// 画面側で覚えた値はすぐに実態とずれる
     private var gpsLostHandlingOn: Bool? {
-        guard let row = bridge.diagnostics.first(where: { $0.key == "gps.autoLostHandling" }) else { return nil }
-        if row.value.hasPrefix("ON") { return true }
-        if row.value.hasPrefix("OFF") { return false }
-        return nil
+        GpsLostHandlingReading.parse(
+            bridge.diagnostics.first(where: { $0.key == GpsLostHandlingReading.diagnosticsKey })?.value)
     }
 
     private var indoorTestSection: some View {

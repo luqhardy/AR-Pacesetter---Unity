@@ -34,24 +34,18 @@ struct LastRunSummary {
     )
 
     /// Unity から届いた履歴(新しい順)の先頭から作る。履歴が無ければ `.empty`。
-    /// 経路座標は現状記録していないので nil(地図には提案ループが出る)
+    /// 経路は 2026-10-13 から記録している。それより前の走行は経路なし(地図は現在地だけ)
     static func from(history: [UnityBridge.HistoryEntry]) -> LastRunSummary {
         guard let latest = history.first else { return .empty }
-
-        var pace: String? = nil
-        if latest.distanceKm > 0.01 {
-            let minPerKm = (latest.elapsedSeconds / 60.0) / latest.distanceKm
-            let minutes = Int(minPerKm)
-            let seconds = Int((minPerKm - Double(minutes)) * 60.0)
-            pace = String(format: "%d'%02d\"", minutes, seconds)
-        }
 
         return LastRunSummary(
             dateText: latest.dateLabel,
             distanceKm: latest.distanceKm,
-            paceText: pace,
+            paceText: latest.paceLabel,
             durationText: latest.timeLabel,
-            routeCoordinates: nil
+            routeCoordinates: latest.hasRoute
+                ? latest.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                : nil
         )
     }
 }
@@ -170,9 +164,11 @@ struct HomeView: View {
             onHistory()
         } label: {
             VStack(spacing: 0) {
+                // 前回の走行の経路だけを引く。経路が無ければ線は無し —
+                // 以前は現在地の周りに作った「提案ループ」を引いており、前回の記録に見えていた
                 Map(position: .constant(.automatic)) {
                     UserAnnotation()
-                    if let route = lastRun.routeCoordinates ?? locationManager.suggestedRoute {
+                    if let route = lastRun.routeCoordinates {
                         MapPolyline(coordinates: route)
                             .stroke(accent, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
                     }
@@ -359,13 +355,10 @@ private struct SlideToStartButton: View {
 
 // MARK: - Location manager for map preview + route trail
 
-/// 前回の記録の地図プレビュー用の軽量な CoreLocation ラッパー。
-/// 現在地を publish し、測位が取れたら提案ループ経路を1本作る
-/// (実走行の経路を記録するまでの間も地図に線が出るように)。
+/// 前回の記録の地図プレビュー用の軽量な CoreLocation ラッパー(現在地と許可状態)。
 /// 走行中の測位は LocationTracker が担当し、こちらはホーム表示専用
 private final class HomeLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var userCoordinate: CLLocationCoordinate2D?
-    @Published var suggestedRoute: [CLLocationCoordinate2D]?
     @Published private(set) var authorizationStatus: CLAuthorizationStatus
 
     private let manager = CLLocationManager()
@@ -404,33 +397,6 @@ private final class HomeLocationManager: NSObject, ObservableObject, CLLocationM
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let latest = locations.last, latest.horizontalAccuracy <= 50 else { return }
         userCoordinate = latest.coordinate
-        if suggestedRoute == nil {
-            suggestedRoute = Self.loopRoute(around: latest.coordinate)
-        }
-    }
-
-    /// 中心点の周りに滑らかなループ経路(約800m)を作る。「提案経路」の見た目のため
-    private static func loopRoute(around center: CLLocationCoordinate2D, radiusMeters: Double = 130) -> [CLLocationCoordinate2D] {
-        let metersPerDegreeLat = 111_320.0
-        let metersPerDegreeLon = 111_320.0 * cos(center.latitude * .pi / 180)
-
-        let pointCount = 48
-        var coordinates: [CLLocationCoordinate2D] = []
-
-        for i in 0...pointCount {
-            let theta = (Double(i) / Double(pointCount)) * 2 * .pi
-            let r = radiusMeters * (1 + 0.55 * cos(theta))
-            let dx = r * sin(theta)
-            let dy = r * (1 - cos(theta))
-
-            coordinates.append(
-                CLLocationCoordinate2D(
-                    latitude: center.latitude + dy / metersPerDegreeLat,
-                    longitude: center.longitude + dx / metersPerDegreeLon
-                )
-            )
-        }
-        return coordinates
     }
 }
 

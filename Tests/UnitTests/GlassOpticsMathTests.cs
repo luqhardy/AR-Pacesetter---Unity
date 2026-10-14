@@ -164,4 +164,74 @@ public class GlassOpticsMathTests
         Assert.Greater(GlassOpticsMath.ElevationDegrees(EyeHeight, 3.0, LeadDistance), 0.0);
         Assert.AreEqual(0.0, GlassOpticsMath.ElevationDegrees(EyeHeight, EyeHeight, LeadDistance), 1e-9);
     }
+
+    // ────────────────────────────────────────────────────────────────
+    // 全身を画角に収める身長の上限 (AGENTS.md §7-1 — 2026-10-13: 3.0mは保ち大きさを譲る)
+    // ────────────────────────────────────────────────────────────────
+    private const double MaxDownPitch = 15.0; // GlassViewRig.maxDownPitchDegrees
+
+    /// <summary>GlassViewRig と同じ俯角(中央寄せ・上限15°)で、足元から頭頂までが視野内か</summary>
+    private static bool WholeBodyVisible(double height, double distance, double vFov)
+    {
+        double pitch = HeadPoseMath.ResolveDownPitchDegrees(EyeHeight, height, distance, vFov, MaxDownPitch);
+        double feet = GlassOpticsMath.ElevationDegrees(EyeHeight, 0.0, distance);
+        double head = GlassOpticsMath.ElevationDegrees(EyeHeight, height, distance);
+        const double eps = 1e-6;
+        return feet >= -pitch - vFov / 2 - eps && head <= -pitch + vFov / 2 + eps;
+    }
+
+    [Test]
+    public void 全身の上限身長_XREAL_Oneの3m前方は約1_47m()
+    {
+        double h = GlassOpticsMath.MaxFullBodyHeightMeters(EyeHeight, LeadDistance, OneVerticalFov, MaxDownPitch);
+        Assert.AreEqual(1.468, h, 0.005);
+        Assert.IsTrue(WholeBodyVisible(h, LeadDistance, OneVerticalFov), "上限の身長は全身が見える");
+        Assert.IsFalse(WholeBodyVisible(h + 0.02, LeadDistance, OneVerticalFov), "上限を超えると頭が切れる");
+        Assert.IsFalse(WholeBodyVisible(1.75, LeadDistance, OneVerticalFov), "175cmは収まらない(この差が上限を設ける理由)");
+    }
+
+    [Test]
+    public void 全身の上限身長_余白を引いた値でも全身が見える()
+    {
+        double h = GlassOpticsMath.MaxFullBodyHeightMeters(EyeHeight, LeadDistance, OneVerticalFov, MaxDownPitch)
+                 - GlassViewRigFitMargin;
+        Assert.IsTrue(WholeBodyVisible(h, LeadDistance, OneVerticalFov));
+    }
+
+    // GlassViewRig.FitHeightMarginMeters と同じ値(GlassViewRig は MonoBehaviour なのでテストから参照しない)
+    private const double GlassViewRigFitMargin = 0.03;
+
+    [Test]
+    public void 全身の上限身長_画角の広いOne_Proは高い()
+    {
+        double pro = GlassOpticsMath.VerticalFovDegrees(OneProDiagonalFov, GlassFovAxis.Diagonal, Aspect16x9);
+        double one = GlassOpticsMath.MaxFullBodyHeightMeters(EyeHeight, LeadDistance, OneVerticalFov, MaxDownPitch);
+        double onePro = GlassOpticsMath.MaxFullBodyHeightMeters(EyeHeight, LeadDistance, pro, MaxDownPitch);
+        Assert.Greater(onePro, one);
+        Assert.IsTrue(WholeBodyVisible(onePro, LeadDistance, pro));
+    }
+
+    [Test]
+    public void 全身の上限身長_足元が俯角の上限でも入らない距離では0()
+    {
+        // 1.0m先の足元は眼高から57°下 — 俯角15°+半画角12.9°では届かない
+        Assert.AreEqual(0.0, GlassOpticsMath.MaxFullBodyHeightMeters(EyeHeight, 1.0, OneVerticalFov, MaxDownPitch));
+    }
+
+    [Test]
+    public void 全身の上限身長_遠くでは俯角0で上端まで使える()
+    {
+        // 20m先の足元は4.4°下で、俯角0でも視野内。上限は「眼高 + 距離×tan(半画角)」
+        double d = 20.0;
+        double expected = EyeHeight + d * System.Math.Tan(OneVerticalFov / 2 * System.Math.PI / 180.0);
+        Assert.AreEqual(expected, GlassOpticsMath.MaxFullBodyHeightMeters(EyeHeight, d, OneVerticalFov, MaxDownPitch), 1e-9);
+    }
+
+    [TestCase(0.0, 3.0, 25.0)]
+    [TestCase(1.55, 0.0, 25.0)]
+    [TestCase(1.55, 3.0, 0.0)]
+    public void 全身の上限身長_不正な入力は0(double eye, double distance, double vFov)
+    {
+        Assert.AreEqual(0.0, GlassOpticsMath.MaxFullBodyHeightMeters(eye, distance, vFov, MaxDownPitch));
+    }
 }

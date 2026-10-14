@@ -131,9 +131,13 @@ XREAL One の垂直画角は **25.7°** なので、**全身は入らない**。
 3. **アバターを小さくする**(等身大でなくなる)
 4. **One Pro へ機材変更**する(それでも3.2m必要)
 
-現状の実装は 1.(俯角で中心に寄せたうえで欠けを許容)。数値は接続時にログへ出て、
-`GlassViewRig.FullBodyFitsInFov` / `NearestVisibleGroundMeters` で読める。
-E2Eでも「収まらない」ことを固定して検知漏れを防いでいる。
+**決定(2026-10-13 チーム判断)は 3.(大きさを譲る)。** 3.0m前方は保ち、グラスへ出力している間だけ
+`GlassViewRig` が「その画角で頭から足元まで収まる身長」(`GlassOpticsMath.MaxFullBodyHeightMeters` − 余白3cm)を
+`AvatarEngine.SetHeightLimitCm` で上限にする。XREAL One では **約144cm**(俯角約14.7°・地面は2.96m先から見える =
+足元のオーラも視野内)、One Pro では画角が広いぶん高くなる。iPhone画面に戻ると要求どおり(175cm)。
+数値は接続時にログへ出て、`GlassViewRig.FitHeightLimitCm` / `FullBodyFitsInFov` / `NearestVisibleGroundMeters` で読める。
+E2Eで「収まる・足元が見える・切断で戻る」を固定している。
+(2026-10-13 以前の実装は 1. 欠けを許容 だった)
 
 ---
 

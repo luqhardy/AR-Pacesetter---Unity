@@ -10,9 +10,9 @@
 ## A. 実機リハーサル(iPhone + XREAL One)
 
 **準備**
-- [ ] `master` の最新を Mac で pull → Unity のアクティブなプラットフォームが **iOS** → Build → Export iOS
-- [ ] `git checkout -- ProjectSettings/ProjectSettings.asset`(エクスポートが `preloadedAssets` を空にするため)
-- [ ] Xcode: Product → Clean Build Folder → 実機へ Run(`relink-unity-export.sh` は不要)
+- [ ] `master` の最新を Mac で pull → Unity のエクスポートを用意する: Mac の Unity で Build → Export iOS
+      (アクティブなプラットフォームは **iOS**)、または公開済みのものを `gh release download unity-export-<8桁> --pattern UnityExport.tar.gz`
+- [ ] Xcode: Product → Clean Build Folder → 実機へ Run(`relink-unity-export.sh`・`ProjectSettings` の戻しは不要)
 - [ ] グラスの画面モードが **Follow(固定)**
 
 **グラスの表示**
