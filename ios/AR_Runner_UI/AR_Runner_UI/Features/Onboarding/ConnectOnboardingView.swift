@@ -114,10 +114,10 @@ struct OnboardingView: View {
     let onBack: () -> Void
     @State private var page = 0
 
-    let pages: [(eyebrow: String, title: String, body: String)] = [
-        ("WELCOME", "ランニングの\n未来へ", "ARグラスをつけて走るだけ。\nアバターがあなたのペースをリードします。"),
-        ("AVATAR", "3m先に\n相棒。", "視線移動ゼロ。数値を見なくていい。\n感覚だけで最適なペースへ。"),
-        ("SYNC", "全デバイスが\n連携する。", "Apple Watch・イヤホン・ARグラスが\n一体となってゾーンへ導きます。"),
+    let pages: [(eyebrow: LocalizedStringKey, title: LocalizedStringKey, body: LocalizedStringKey)] = [
+        (AppStrings.Onboarding.welcomeEyebrow, AppStrings.Onboarding.welcomeTitle, AppStrings.Onboarding.welcomeBody),
+        (AppStrings.Onboarding.avatarEyebrow, AppStrings.Onboarding.avatarTitle, AppStrings.Onboarding.avatarBody),
+        (AppStrings.Onboarding.syncEyebrow, AppStrings.Onboarding.syncTitle, AppStrings.Onboarding.syncBody),
     ]
 
     var body: some View {
@@ -192,7 +192,7 @@ struct OnboardingView: View {
 
                 Spacer()
 
-                ARButton(page < pages.count - 1 ? "次へ" : "はじめる", icon: "arrow.right") {
+                ARButton(page < pages.count - 1 ? AppStrings.Common.next : AppStrings.Onboarding.start, icon: "arrow.right") {
                     if page < pages.count - 1 {
                         withAnimation { page += 1 }
                     } else {

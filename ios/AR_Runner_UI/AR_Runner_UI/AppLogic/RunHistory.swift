@@ -41,16 +41,17 @@ nonisolated struct RunHistoryEntry: Codable, Equatable, Identifiable {
     /// 地図に線を引けるか(2点以上)
     var hasRoute: Bool { route.count >= 2 }
 
-    /// "6月15日" 形式の表示用日付
-    var dateLabel: String {
+    /// 表示用の日付。日本語は "6月15日"、英語は "Jun 15"。
+    /// 画面からは `Locale.appLanguage`(表示言語)を渡す — 端末の地域ではなく画面の言語に合わせる
+    func dateLabel(locale: Locale) -> String {
         let isoDay = String(dateIso.prefix(10)) // yyyy-MM-dd
         let parser = DateFormatter()
         parser.locale = Locale(identifier: "en_US_POSIX")
         parser.dateFormat = "yyyy-MM-dd"
         guard let date = parser.date(from: isoDay) else { return isoDay }
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ja_JP")
-        formatter.dateFormat = "M月d日"
+        formatter.locale = locale
+        formatter.setLocalizedDateFormatFromTemplate("MMMd")
         return formatter.string(from: date)
     }
 

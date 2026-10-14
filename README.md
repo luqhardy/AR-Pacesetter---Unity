@@ -264,6 +264,7 @@ AR Pacesetter/                      ← リポジトリルート = Unityプロ�
 ├── ios/
 │   ├── ARRunner.xcworkspace        ← ★ Macで開くのはこれ（両プロジェクトを束ねる）
 │   ├── AR_Runner_UI/               ← SwiftUIアプリ（ホスト・最終ビルド対象）
+│   │   └── AR_Runner_UI/           ← App/ Core/ Features/ Resources/ AppLogic/（画面は日本語・英語）
 │   └── UnityExport/                ← Unityエクスポート産物（gitignore・生成物）
 └── SWIFT_INTEGRATION.md
 ```
@@ -322,8 +323,8 @@ Unityをランナーへ入れずに済む。実機へ入れるには署名が必
 | Unity → Swift | `UnitySwiftBridge.mm` → NSNotification `UnityToSwiftMessage` → `UnityBridge.onUnityMessage` | `SyncRateUpdated`(1Hz) / `AvatarStateChanged`(Idle・Run・Slow・Fast・Goal・Lost) / `GPSLost`・`GPSRecovered` / `LatencyReport` / `SessionEnded`（グレード・ランク・結果）/ `HistoryData` / `VoiceAlert` / ~~`LowBattery`~~（送出元が未配線のため現在発火しない） |
 
 ブリッジ用GameObjectは起動時に自動生成されるためシーン配線は不要。
-Swift側の本番配線は [`ios/AR_Runner_UI/AR_Runner_UI/UnityBridge.swift`](ios/AR_Runner_UI/AR_Runner_UI/UnityBridge.swift)（置き換え済み）と
-[`UnityLauncher.swift`](ios/AR_Runner_UI/AR_Runner_UI/UnityLauncher.swift)（UnityFramework起動・`UnityContainerView`）。
+Swift側の本番配線は [`ios/AR_Runner_UI/AR_Runner_UI/Core/Unity/UnityBridge.swift`](ios/AR_Runner_UI/AR_Runner_UI/Core/Unity/UnityBridge.swift)（置き換え済み）と
+[`UnityLauncher.swift`](ios/AR_Runner_UI/AR_Runner_UI/Core/Unity/UnityLauncher.swift)（UnityFramework起動・`UnityContainerView`）。
 UnityFramework未リンク時は自動でシミュレーションモードにフォールバックするため、SwiftUI単体開発（シミュレータ）も従来通り可能。
 
 ### テスト手順（3段階）

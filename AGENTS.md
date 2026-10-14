@@ -190,6 +190,10 @@ stateDiagram-v2
   (テスト対象ファイルは `ARVision.UnitTests.csproj` の `<Compile Include>` に足す)。
 - Swift も同じ: UI に依存しない判断は `ios/AR_Runner_UI/AR_Runner_UI/AppLogic/`(Foundation のみ・`nonisolated`)へ書き、
   画面はそれを呼ぶだけにする。テストは `ios/AppLogicTests`(アプリ本体は同じファイルを Xcode がそのままコンパイルする)。
+  画面は `Features/<機能>/`、共通部品は `Core/`(hsuyaminmyat625/AR_project と同じ構成)。
+- **走者が見る文言は `Core/Localization/AppStrings.swift` のキーで書き、日本語・英語を `Resources/Localizable.xcstrings` に足す**。
+  カタログに無いキーは画面にそのまま出る(CI の `LocalizationCatalogTests` が対応を確かめる)。
+  体験モードのスタッフ画面・開発者モード・Unity から届く文言は日本語のみ
 
 ### コミットの規約
 - コミット前に [CHANGELOG.md](CHANGELOG.md) の先頭へ**5行以内**のエントリを足す(変更・理由・検証結果)。

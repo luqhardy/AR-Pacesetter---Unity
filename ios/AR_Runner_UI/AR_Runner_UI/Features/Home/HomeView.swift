@@ -2,7 +2,7 @@
 //  HomeView.swift
 //  AR_Runner_UI
 //
-//  ホーム画面 (S3): 「前回の記録」ヘッダー + ハンバーガーメニュー(履歴・AR設定・
+//  ホーム画面 (S3): 「前回の記録」ヘッダー + ハンバーガーメニュー(履歴・AR設定・スマホ設定・
 //  使い方・安全上の注意)、前回の走行の地図プレビュー + 統計カード(タップ → 履歴)、
 //  案内文 + スライド開始でデバイス接続(S4)へ進む。
 //
@@ -10,7 +10,8 @@
 //  黒背景・カード構成・ライムグリーン(#c7f219)のアクセント。
 //  本リポジトリへの合体で変えた点:
 //    - 「前回の記録」は Unity のセッションストアから届く実履歴(HistoryData)で埋める
-//    - メニューの「スマホ設定」(該当画面なし)を「使い方」「安全上の注意」に置き換え
+//    - メニューに「使い方」「安全上の注意」を追加。「AR設定」「スマホ設定」は 2026-10-14 に
+//      相手側の画面を実際に効く項目だけで移植(アバターの選択は AR設定 へ移した)
 //    - 走る前に一番知りたい ARグラスの接続状態を開始カードに1行だけ載せた
 //
 
@@ -39,7 +40,7 @@ struct LastRunSummary {
         guard let latest = history.first else { return .empty }
 
         return LastRunSummary(
-            dateText: latest.dateLabel,
+            dateText: latest.dateLabel(locale: .appLanguage),
             distanceKm: latest.distanceKm,
             paceText: latest.paceLabel,
             durationText: latest.timeLabel,
@@ -54,7 +55,8 @@ struct HomeView: View {
 
     let onStartRun: () -> Void
     let onHistory: () -> Void
-    let onDevices: () -> Void
+    let onARSettings: () -> Void
+    let onPhoneSettings: () -> Void
     let onTutorial: () -> Void
     let onDisclaimer: () -> Void
     /// 展示ブースの体験モード(Kobe Calling)。メニューの開発者モードの隣に置く
@@ -64,7 +66,6 @@ struct HomeView: View {
     @ObservedObject private var external = ExternalDisplayManager.shared
     @StateObject private var locationManager = HomeLocationManager()
     @State private var showDevMode = false
-    @State private var showAvatarLibrary = false
 
     private let accent = Color(hex: "#c7f219")
     private let cardColor = Color(hex: "#1C1C1E")
@@ -95,7 +96,6 @@ struct HomeView: View {
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showDevMode) { DevModeView() }
-        .sheet(isPresented: $showAvatarLibrary) { AvatarLibraryView() }
     }
 
     // MARK: - Header
@@ -104,14 +104,12 @@ struct HomeView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .bold))
-                    Text("前回の記録")
+                    Text(AppStrings.Home.lastRun)
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                 }
                 .foregroundStyle(.white)
 
-                Text("最新のランニング状況")
+                Text(AppStrings.Home.latestStatus)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(secondaryText)
                     .textCase(.uppercase)
@@ -122,29 +120,29 @@ struct HomeView: View {
             // ハンバーガーメニュー(課題 #7)
             Menu {
                 Button { onHistory() } label: {
-                    Label("履歴", systemImage: "clock.arrow.circlepath")
+                    Label(AppStrings.Home.history, systemImage: "clock.arrow.circlepath")
                 }
-                Button { onDevices() } label: {
-                    Label("AR設定", systemImage: "eyeglasses")
+                Button { onARSettings() } label: {
+                    Label(AppStrings.Home.arSettings, systemImage: "eyeglasses")
                 }
-                Button { showAvatarLibrary = true } label: {
-                    Label("アバター", systemImage: "person.crop.square")
+                Button { onPhoneSettings() } label: {
+                    Label(AppStrings.Home.phoneSettings, systemImage: "iphone")
                 }
                 Button { onTutorial() } label: {
-                    Label("使い方", systemImage: "book")
+                    Label(AppStrings.Home.tutorial, systemImage: "book")
                 }
                 Button { onDisclaimer() } label: {
-                    Label("安全上の注意", systemImage: "exclamationmark.shield")
+                    Label(AppStrings.Home.safety, systemImage: "exclamationmark.shield")
                 }
 
                 // 開発者モード: 走行ログCSVの取り出しと実機の状態確認。
                 // 第1期の成果物(CSV)はサンドボックス内にあり、これが唯一の取り出し口
                 Divider()
                 Button { onBoothDemo() } label: {
-                    Label("体験モード(展示)", systemImage: "person.wave.2")
+                    Label(AppStrings.Home.boothDemo, systemImage: "person.wave.2")
                 }
                 Button { showDevMode = true } label: {
-                    Label("開発者モード", systemImage: "wrench.and.screwdriver")
+                    Label(AppStrings.Home.devMode, systemImage: "wrench.and.screwdriver")
                 }
             } label: {
                 Image(systemName: "line.3.horizontal")
@@ -196,17 +194,17 @@ struct HomeView: View {
     private var statsRow: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
-                statBox(label: "日付", value: lastRun.dateText ?? "-")
-                statBox(label: "時間", value: lastRun.durationText ?? "-")
+                statBox(label: AppStrings.Home.date, value: lastRun.dateText ?? "-")
+                statBox(label: AppStrings.Home.time, value: lastRun.durationText ?? "-")
             }
             HStack(spacing: 10) {
                 statBox(
-                    label: "距離",
+                    label: AppStrings.Home.distance,
                     value: lastRun.distanceKm.map { String(format: "%.2f", $0) } ?? "-",
                     unit: lastRun.distanceKm != nil ? "km" : nil
                 )
                 statBox(
-                    label: "速さ",
+                    label: AppStrings.Home.speed,
                     value: lastRun.paceText ?? "-",
                     unit: lastRun.paceText != nil ? "/km" : nil
                 )
@@ -214,7 +212,7 @@ struct HomeView: View {
         }
     }
 
-    private func statBox(label: String, value: String, unit: String? = nil) -> some View {
+    private func statBox(label: LocalizedStringKey, value: String, unit: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
                 .font(.system(size: 14, weight: .medium))
@@ -244,7 +242,7 @@ struct HomeView: View {
 
     private var bottomStartCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Let's run together!")
+            Text(AppStrings.Home.runTogether)
                 .font(.system(size: 20, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
@@ -254,14 +252,14 @@ struct HomeView: View {
                 Image(systemName: "eyeglasses")
                     .font(.system(size: 13))
                 Text(external.isGlassesConnected
-                     ? "ARグラス接続済み — 映像はグラスへ出力されます"
-                     : "ARグラス未接続 — 端末画面のままでも走れます")
+                     ? AppStrings.Home.glassesConnected
+                     : AppStrings.Home.glassesNotConnected)
                     .font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(external.isGlassesConnected ? accent : secondaryText)
             .animation(.easeInOut(duration: 0.2), value: external.isGlassesConnected)
 
-            SlideToStartButton(title: "Get Started", accent: accent, onComplete: onStartRun)
+            SlideToStartButton(title: AppStrings.Home.getStarted, accent: accent, onComplete: onStartRun)
         }
         .padding(22)
         .background(cardColor)
@@ -278,7 +276,7 @@ struct HomeView: View {
 /// 「スライドで確定」式のコントロール。アクセント色のノブをトラックの右端まで
 /// ドラッグすると `onComplete` を呼ぶ。しきい値の手前で離すと元に戻る
 private struct SlideToStartButton: View {
-    let title: String
+    let title: LocalizedStringKey
     let accent: Color
     let onComplete: () -> Void
 
@@ -420,5 +418,5 @@ private extension Color {
 }
 
 #Preview {
-    HomeView(onStartRun: {}, onHistory: {}, onDevices: {}, onTutorial: {}, onDisclaimer: {})
+    HomeView(onStartRun: {}, onHistory: {}, onARSettings: {}, onPhoneSettings: {}, onTutorial: {}, onDisclaimer: {})
 }

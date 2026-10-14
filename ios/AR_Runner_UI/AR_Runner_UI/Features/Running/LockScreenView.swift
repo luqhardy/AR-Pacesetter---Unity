@@ -2,15 +2,14 @@ import SwiftUI
 
 // MARK: - AR Lock Screen
 // Pure black screen shown while running on AR glasses.
-// Swipe up to unlock and return to the running HUD.
-// A stop button lets the user end the run directly from here too.
+// Swipe up to unlock and return to the running HUD. The run keeps going either way.
+// ランの終了はロックを解除した走行画面から(タスク表 S6: 誤操作でランが終わらないように)。
+// 以前ここにあった停止ボタン(hsu/main 由来)は 2026-10-14 に外した。
 struct LockScreenView: View {
     let onUnlock: () -> Void
-    let onEnd: () -> Void
 
     @State private var dragOffset: CGFloat = 0
     @State private var unlocking = false
-    @State private var showEndAlert = false
 
     // How far the user needs to swipe up to trigger unlock
     private let unlockThreshold: CGFloat = 160
@@ -39,7 +38,7 @@ struct LockScreenView: View {
                     }
 
                     VStack(spacing: 6) {
-                        Text("AR ランニング中")
+                        Text(AppStrings.Running.lockTitle)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Color.white.opacity(0.3))
                             .tracking(1)
@@ -54,7 +53,7 @@ struct LockScreenView: View {
                                         .repeatForever(autoreverses: true),
                                     value: UUID()
                                 )
-                            Text("スワイプして解除")
+                            Text(AppStrings.Common.swipeToUnlock)
                                 .font(.system(size: 13))
                                 .foregroundColor(Color.white.opacity(0.25 + progress * 0.5))
                         }
@@ -80,24 +79,6 @@ struct LockScreenView: View {
                         .padding(.bottom, 48)
                         .transition(.opacity)
                 }
-            }
-
-            // Stop button, floating top-right
-            VStack {
-                HStack {
-                    Spacer()
-                    Button { showEndAlert = true } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 42, height: 42)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay(Circle().strokeBorder(Color.arBorder, lineWidth: 1))
-                    }
-                    .padding(.trailing, 20)
-                    .padding(.top, 60)
-                }
-                Spacer()
             }
         }
         .gesture(
@@ -129,10 +110,6 @@ struct LockScreenView: View {
                 }
         )
         .statusBarHidden(true)
-        .alert("ランを終了しますか？", isPresented: $showEndAlert) {
-            Button("終了", role: .destructive) { onEnd() }
-            Button("続ける", role: .cancel) {}
-        }
     }
 
     // 0.0 → 1.0 progress toward unlock threshold

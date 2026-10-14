@@ -61,7 +61,8 @@ final class RunHistoryTests: XCTestCase {
     func testDisplayLabels() {
         let e = RunHistoryEntry(dateIso: "2026-10-13T07:12:00", distanceKm: 2.0,
                                 elapsedSeconds: 642, averageSync: 80, grade: "B")
-        XCTAssertEqual(e.dateLabel, "10月13日")
+        XCTAssertEqual(e.dateLabel(locale: Locale(identifier: "ja")), "10月13日")
+        XCTAssertEqual(e.dateLabel(locale: Locale(identifier: "en")), "Oct 13", "英語の表示言語では英語の日付")
         XCTAssertEqual(e.timeLabel, "10:42")
         XCTAssertEqual(e.paceLabel, "5'21\"")
 

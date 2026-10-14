@@ -24,11 +24,11 @@ struct StatsView: View {
         result.map { Int($0.averageSync.rounded()) }
     }
 
-    private var rankBadgeText: String {
+    private var rankBadgeText: LocalizedStringKey {
         switch resultState {
-        case .ready:       return result.map { "GRADE \($0.grade)・\($0.rank)" } ?? ""
-        case .waiting:     return "集計中…"
-        case .unavailable: return "結果なし"
+        case .ready:       return result.map { AppStrings.Results.gradeBadge($0.grade, $0.rank) } ?? ""
+        case .waiting:     return AppStrings.Results.waiting
+        case .unavailable: return AppStrings.Results.none
         }
     }
 
@@ -79,8 +79,8 @@ struct StatsView: View {
                     VStack(spacing: 0) {
                         // Header
                         VStack(alignment: .leading, spacing: 4) {
-                            ARLabel(text: "ACTIVITY")
-                            Text("ナイスラン！")
+                            ARLabel(text: AppStrings.Results.activityEyebrow)
+                            Text(AppStrings.Results.niceRun)
                                 .font(.system(size: 30, weight: .bold))
                                 .foregroundColor(.white)
                         }
@@ -109,7 +109,7 @@ struct StatsView: View {
                                     .rotationEffect(.degrees(-90))
 
                                 VStack(spacing: 3) {
-                                    Text("シンクロ率")
+                                    Text(AppStrings.Results.syncRate)
                                         .font(.system(size: 11))
                                         .foregroundColor(.arGrayText)
                                     Text(syncPercent.map { "\($0)%" } ?? "-")
@@ -137,7 +137,7 @@ struct StatsView: View {
                         .padding(.horizontal, 24)
 
                         if resultState == .unavailable {
-                            Text("走行結果を受け取れませんでした。この走行は履歴に残っていない可能性があります")
+                            Text(AppStrings.Results.unavailable)
                                 .font(.system(size: 13))
                                 .foregroundColor(.arGrayText)
                                 .multilineTextAlignment(.center)
@@ -153,10 +153,10 @@ struct StatsView: View {
                                     .font(.system(size: 15))
                                     .foregroundColor(.orange)
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text("記録の保存に失敗しました")
+                                    Text(AppStrings.Results.saveFailedTitle)
                                         .font(.system(size: 14, weight: .semibold))
                                         .foregroundColor(.white)
-                                    Text("端末の空き容量を確認してください。次にランニングを始めるときに、履歴への復元を試みます")
+                                    Text(AppStrings.Results.saveFailedBody)
                                         .font(.system(size: 12))
                                         .foregroundColor(.arGrayText)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -179,12 +179,12 @@ struct StatsView: View {
                         // Stats grid
                         Grid(horizontalSpacing: 10, verticalSpacing: 10) {
                             GridRow {
-                                StatMiniCard(title: "距離", value: distanceStr, unit: unit("km", for: distanceStr))
-                                StatMiniCard(title: "タイム", value: timeStr, unit: "")
+                                StatMiniCard(title: AppStrings.Results.distance, value: distanceStr, unit: unit("km", for: distanceStr))
+                                StatMiniCard(title: AppStrings.Results.duration, value: timeStr, unit: "")
                             }
                             GridRow {
-                                StatMiniCard(title: "平均ペース", value: paceStr, unit: unit("/km", for: paceStr))
-                                StatMiniCard(title: "消費カロリー", value: kcalStr, unit: unit("kcal", for: kcalStr))
+                                StatMiniCard(title: AppStrings.Results.averagePace, value: paceStr, unit: unit("/km", for: paceStr))
+                                StatMiniCard(title: AppStrings.Results.calories, value: kcalStr, unit: unit("kcal", for: kcalStr))
                             }
                         }
                         .padding(.horizontal, 24)
@@ -193,8 +193,8 @@ struct StatsView: View {
 
                         // Buttons
                         VStack(spacing: 10) {
-                            ARButton("履歴を見る", icon: "clock.arrow.circlepath") { onHistory() }
-                            ARButton("終了", style: .secondary) { onFinish() }
+                            ARButton(AppStrings.Results.viewHistory, icon: "clock.arrow.circlepath") { onHistory() }
+                            ARButton(AppStrings.Common.finish, style: .secondary) { onFinish() }
                         }
                         .padding(.horizontal, 24)
                         .padding(.bottom, 52)
@@ -239,8 +239,8 @@ struct HistoryView: View {
 
                 // Header
                 VStack(alignment: .leading, spacing: 4) {
-                    ARLabel(text: "HISTORY")
-                    Text("ランニング履歴")
+                    ARLabel(text: AppStrings.History.eyebrow)
+                    Text(AppStrings.History.title)
                         .font(.system(size: 30, weight: .bold))
                         .foregroundColor(.white)
                 }
@@ -256,7 +256,7 @@ struct HistoryView: View {
                             // 各記録に「この記録と競走」(ゴースト)ボタン付き
                             ForEach(bridge.history) { entry in
                                 historyRow(
-                                    date: entry.dateLabel,
+                                    date: entry.dateLabel(locale: .appLanguage),
                                     dist: String(format: "%.1fkm", entry.distanceKm),
                                     time: entry.timeLabel,
                                     sync: "\(Int(entry.averageSync.rounded()))%",
@@ -284,12 +284,12 @@ struct HistoryView: View {
             Image(systemName: "figure.run")
                 .font(.system(size: 28))
                 .foregroundColor(.arGrayText)
-            Text(bridge.historyLoaded ? "まだ記録がありません" : "記録をまだ読み込んでいません")
+            Text(bridge.historyLoaded ? AppStrings.Common.noRecords : AppStrings.History.notLoadedTitle)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.white)
             Text(bridge.historyLoaded
-                 ? "走り終えると、ここに記録が残ります"
-                 : "ランニングを一度始めると、これまでの記録が表示されます")
+                 ? AppStrings.History.emptyBody
+                 : AppStrings.History.notLoadedBody)
                 .font(.system(size: 13))
                 .foregroundColor(.arGrayText)
                 .multilineTextAlignment(.center)
@@ -337,7 +337,7 @@ struct HistoryView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "figure.run.circle")
                             .font(.system(size: 13))
-                        Text("この記録と競走（ゴースト）")
+                        Text(AppStrings.History.ghostRace)
                             .font(.system(size: 13, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
@@ -358,7 +358,7 @@ struct HistoryView: View {
 
 // MARK: - Stat Mini Card
 struct StatMiniCard: View {
-    let title: String
+    let title: LocalizedStringKey
     let value: String
     let unit: String
 
