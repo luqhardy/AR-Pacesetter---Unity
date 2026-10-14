@@ -11,7 +11,7 @@
 
 **準備**
 - [ ] `master` の最新を Mac で pull → Unity のエクスポートを用意する: Mac の Unity で Build → Export iOS
-      (アクティブなプラットフォームは **iOS**)、または公開済みのものを `gh release download unity-export-<8桁> --pattern UnityExport.tar.gz`
+      (アクティブなプラットフォームは **iOS**)、または公開済みのものを `tools/fetch-unity-export.sh` で取得
 - [ ] Xcode: Product → Clean Build Folder → 実機へ Run(`relink-unity-export.sh`・`ProjectSettings` の戻しは不要)
 - [ ] グラスの画面モードが **Follow(固定)**
 

@@ -298,7 +298,8 @@ SwiftUI画面込みの完成アプリは、常に **AR_Runner_UIスキームか�
   `INFOPLIST_KEY_*` とは**別物**で、両方必要）
 - ビルド処理が `ProjectSettings.asset` の `preloadedAssets` を空にすることがある(`XRGeneralSettings.asset` が
   消えるとXR(ARKit)ローダーが初期化されなくなる)。`IOSBuildExporter` がビルド前の値へ自動で戻す
-- エクスポート → 梱包 → GitHub Release 公開は `tools/publish-unity-export.sh` の1コマンド
+- エクスポート → 梱包 → GitHub Release 公開は `tools/publish-unity-export.sh` の1コマンド。
+  Mac で取得して `ios/UnityExport` へ入れるのは `tools/fetch-unity-export.sh`
 
 **②はMacの所有が必須ではない**: リポジトリが公開のためGitHub ActionsのmacOSランナーが無料で使える。
 Windowsで①を実行 → 生成物をCIへ渡し、macOSランナーは `xcodebuild` のみ実行する構成にすると、

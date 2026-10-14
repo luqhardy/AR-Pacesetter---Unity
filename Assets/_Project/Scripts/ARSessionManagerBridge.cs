@@ -389,7 +389,8 @@ public class ARSessionManagerBridge : MonoBehaviour
             return;
         }
 
-        SwiftMessageSender.SendSessionResult(record);
+        SwiftMessageSender.SendSessionResult(record,
+            saved: sessionController != null && sessionController.LastSaveSucceeded);
         _sessionResultSent = record != null;
         if (_sessionResultSent) SessionResultSendCount++;
         Debug.Log("[SWIFT BRIDGE] EndSession — result sent to Swift.");

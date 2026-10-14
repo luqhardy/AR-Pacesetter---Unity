@@ -40,7 +40,7 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 - [ ] (2026-10-13〜 不要)`ProjectSettings.asset` の `preloadedAssets` はエクスポータが自動で戻す
 - [ ] **エクスポートを Mac へ渡す** — どちらか:
       - **おすすめ**: `tools/publish-unity-export.sh` で GitHub Release に公開し、Mac で
-        `gh release download unity-export-<8桁> --pattern UnityExport.tar.gz` で取得する(USB不要・CIも同じものを使う)
+        `tools/fetch-unity-export.sh` を実行する(USB不要・CIも同じものを使う。展開と実行権限の修復まで自動)
       - `ios/UnityExport/` をUSBメモリにコピーする(約1.3GB)。このフォルダは生成物なので git 管理外 = clone しても付いてこない。
         **既存の `ios/UnityExport` に上書き・マージしない**(Finder の「両方とも残す」で出来る `… 2` が duplicate symbol の原因になる)
 

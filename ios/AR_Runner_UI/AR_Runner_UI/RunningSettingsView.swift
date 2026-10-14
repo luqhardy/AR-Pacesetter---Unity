@@ -11,7 +11,7 @@ struct RunningSettingsView: View {
     let onNext: () -> Void
     let onBack: () -> Void
 
-    /// 画面を開くたびに**前回「次へ」で確定した値**から始める(タスク表 S5)。
+    /// 画面を開くたびに**前回「次へ」で確定した値**から始める(タスク表 S5。アプリを閉じても残る)。
     /// 以前は毎回 60分・10km・8km/h に戻っていた。「戻る」で離れた未確定の変更は捨てる
     init(onNext: @escaping () -> Void, onBack: @escaping () -> Void) {
         self.onNext = onNext
@@ -205,11 +205,10 @@ struct RunningSettingsView: View {
                     // 打ち込んだ数値が捨てられていた(hsu/main 由来の修正)
                     finishEditing()
 
-                    // 確定後の値を共有ストアへ反映（RunningViewがUnityへ引き渡す）。
+                    // 確定後の値を共有ストアへ反映（RunningViewがUnityへ引き渡す・端末にも保存）。
                     // 順序が逆だと確定前の古い値がUnityへ流れる
-                    RunSettings.shared.paceKmH = paceKmh
-                    RunSettings.shared.distanceKm = distanceKm
-                    RunSettings.shared.timeSeconds = timeSeconds
+                    RunSettings.shared.confirm(paceKmH: paceKmh, distanceKm: distanceKm,
+                                               timeSeconds: timeSeconds)
                     onNext()
                 } label: {
                     ZStack {

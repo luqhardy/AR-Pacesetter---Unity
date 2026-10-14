@@ -92,6 +92,8 @@ final class UnityBridge: NSObject, ObservableObject {
         let distanceKm: Double
         let elapsedSeconds: Double
         let calories: Double     // Unity側でオンボーディング体重から算出
+        /// 履歴への保存に成功したか。false なら結果画面で知らせる(容量不足等。次の走行の開始時に Unity が復元を試みる)
+        let saved: Bool
     }
 
     struct VrmAvatar: Identifiable {
@@ -471,7 +473,9 @@ final class UnityBridge: NSObject, ObservableObject {
                     averageSync: dict["averageSync"] as? Double ?? 0,
                     distanceKm: dict["distanceKm"] as? Double ?? 0,
                     elapsedSeconds: dict["elapsedSeconds"] as? Double ?? 0,
-                    calories: dict["calories"] as? Double ?? 0
+                    calories: dict["calories"] as? Double ?? 0,
+                    // 2026-10-14 より前の Unity エクスポートは送らない — 誤って失敗と出さない
+                    saved: dict["saved"] as? Bool ?? true
                 )
                 self.lastResult = result
 

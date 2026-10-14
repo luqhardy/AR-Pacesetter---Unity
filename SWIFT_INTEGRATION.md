@@ -52,7 +52,8 @@ Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
   **空のままコミットするとプレイヤービルドで XR(ARKit)ローダーが初期化されなくなる**。以前はエクスポートのたびに
   `git checkout -- ProjectSettings/ProjectSettings.asset` が要ったが、`IOSBuildExporter` がビルド前の値へ戻して保存する
 - **エクスポート → 梱包 → GitHub Release 公開を1コマンドで**: `tools/publish-unity-export.sh`
-  (タグ `unity-export-<HEADの8桁>`。iOS ビルド CI が既定で使い、Mac は `gh release download` で取得できる。
+  (タグ `unity-export-<HEADの8桁>`。iOS ビルド CI が既定で使い、Mac は `tools/fetch-unity-export.sh` で取得できる —
+  今のチェックアウトに含まれる最新のエクスポートを選び、展開・実行権限の修復までする。
   `--dry-run` で公開せず梱包まで)
 - エクスポート対象シーンは `EditorBuildSettings` の有効シーン。空の場合は
   `Assets/Scenes/SampleScene.unity` にフォールバックする([IOSBuildExporter.cs](Assets/Editor/IOSBuildExporter.cs))
@@ -208,7 +209,7 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 | `Diagnostics` | `rows`: `{key, value}` の配列(表示順を保つ) | 開発者モードの要求時のみ |
 | `LogFiles` | `directory`, `files`: `{name, path, bytes, modifiedIso}` の配列 | 開発者モードの要求時のみ |
 | `LatencyReport` | `ms` (double), `maxMs`・`overBudgetRatio`・`sampleCount`(実測サンプルがある時のみ) | 走行中 1Hz。**F-11のCSV `latency_m2p` と同じ `SensorTimingBridge` の実測値**(ARKitフレームのセンサー時刻と `CADisplayLink.targetTimestamp` の差)。`ms = -1` は未計測で、合成値は一切入らない。`maxMs`/`overBudgetRatio` は1Hzの瞬時値では拾えない超過を捉えるための区間統計 |
-| `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答(目標距離の自動終了を含む)。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
+| `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories`, `saved` | EndSession応答(目標距離の自動終了を含む)。`saved=false` は履歴への保存に失敗(容量不足等)— 結果画面が知らせる。省略時(古いエクスポート)は true 扱い。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
 | `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`, `route`}] | RequestHistory応答。`route` は走った経路 `[[緯度,経度],...]`(古い順・約10m間隔に間引き・最大240点、2026-10-13 より前の記録は空)。Swift は最後に受け取った履歴を端末(Caches)にも保存し、Unity 起動前のホーム・履歴画面で使う |
 | `BoothDemoProgress` | `mode`, `beat`(OnPace/FallingBehind/CatchingUp/Overtaking/Settling/FinalStretch。歩行は Walking), `elapsedSeconds`, `totalSeconds` | 体験モードの区間が変わるたび(スタッフ画面の進行表示用) |
 | `BoothDemoEnded` | `mode`, `completed`(最後まで進んだか), `reason`(中断・開始失敗の理由) | 体験モードの終了時。**`SessionEnded` の代わりに送る** — Swiftはこれを受けてもHealthKitへ保存しない。受け側はスタッフ画面 `BoothDemoView` |

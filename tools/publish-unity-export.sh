@@ -2,7 +2,7 @@
 # Unity の iOS エクスポートを作り、GitHub Release として公開する(Windows Git Bash / macOS 共通)。
 # 公開したエクスポートは iOS ビルド CI(ios-build.yml)が既定で使い、Mac は USB 無しで取得できる:
 #
-#   gh release download unity-export-<sha8> --pattern UnityExport.tar.gz ...
+#   tools/fetch-unity-export.sh
 #
 #   tools/publish-unity-export.sh             エクスポート → 梱包 → 公開
 #   tools/publish-unity-export.sh --dry-run   エクスポート → 梱包まで(公開しない)
@@ -98,14 +98,13 @@ NOTES="$(mktemp)"
   echo "エクスポート条件: Unity $UNITY_VERSION・\`-buildTarget iOS\`(\`IOSBuildExporter.ExportIOS\`)。"
   echo "\`Data\` フォルダはエクスポート後処理が UnityFramework へ付け替え済み — 展開後の Xcode 側の手作業は不要。"
   echo
-  echo "Mac での使い方(リポジトリのフォルダで):"
+  echo "Mac での使い方(リポジトリのフォルダで。展開と実行権限の修復まで行う):"
   echo
-  echo "    rm -rf ios/UnityExport"
-  echo "    gh release download $TAG --repo $REPO --pattern UnityExport.tar.gz --output /tmp/UnityExport.tar.gz"
-  echo "    tar xzf /tmp/UnityExport.tar.gz -C ios/"
-  echo "    chmod +x ios/UnityExport/usymtool ios/UnityExport/usymtoolarm64 ios/UnityExport/*.sh"
+  echo "    git pull && tools/fetch-unity-export.sh"
   echo
-  echo "Windows で固めた場合、展開後の実行権限の修復(最後の行)は必須(CI は自動で行う)。"
+  echo "手で入れる場合は、既存の ios/UnityExport を消してから展開し、"
+  echo "\`chmod +x ios/UnityExport/usymtool ios/UnityExport/usymtoolarm64 ios/UnityExport/*.sh\` を実行する"
+  echo "(Windows で固めたアーカイブは実行権限が落ちている)。"
 } > "$NOTES"
 cat "$NOTES"
 
