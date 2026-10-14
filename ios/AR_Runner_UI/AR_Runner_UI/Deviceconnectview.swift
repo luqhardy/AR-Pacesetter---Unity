@@ -15,10 +15,9 @@ struct DeviceConnectView: View {
     /// 以前はタップから1.5秒後に、何も挿さっていなくても「接続済み」になった。そのため
     /// iOS がグラスへミラーリングしている(=グラス専用の画面が無い)ことに気づけなかった(2026-10-07 実機)
     private var glassStatus: GlassRowStatus {
-        if external.isGlassesConnected { return .connected }
-        if external.isMirroring { return .mirroring }
-        if manualConnect { return .manual }
-        return .notDetected
+        .resolve(glassesConnected: external.isGlassesConnected,
+                 mirroring: external.isMirroring,
+                 manualConnect: manualConnect)
     }
 
     /// 走行に必要なのはARグラスだけ。Watch/AirPodsは第1期のスコープ外(基本設計書 §1.2)
@@ -131,14 +130,9 @@ struct DeviceConnectView: View {
     }
 }
 
-// MARK: - ARグラス行の状態
-/// 実接続(iOS がグラス専用の画面を作った)だけを「接続済み」とする
-enum GlassRowStatus {
-    case connected    // 専用の画面にARビューを出している
-    case mirroring    // 挿さっているが iOS がミラーリングしている
-    case manual       // 検出は無いが、手動でグラス用の表示にした
-    case notDetected
-
+// MARK: - ARグラス行の見た目
+// 状態の判定は AppLogic/GlassConnectionStatus.swift(テスト対象)
+extension GlassRowStatus {
     var color: Color {
         switch self {
         case .connected: return .arYellow
@@ -167,7 +161,7 @@ struct DeviceConnectRow: View {
 
     private var isConnected: Bool { status == .connected }
     /// 手動の接続を押せるのは、実接続も手動接続もしていないときだけ
-    private var canConnect: Bool { status == .notDetected || status == .mirroring }
+    private var canConnect: Bool { status.canConnectManually }
 
     var body: some View {
         Button(action: {

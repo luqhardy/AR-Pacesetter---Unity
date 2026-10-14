@@ -48,6 +48,15 @@ else
   echo "parsed $n files (syntax only — type checking needs Xcode)"
 fi
 
+# iOS アプリの純ロジック(ios/AppLogic)のテスト。リンクに macOS のツールチェーンが要るので Mac でだけ走らせる
+# (Windows の Swift は Visual Studio の C ランタイムが無いとリンクできない)。CI は swift-logic-tests.yml
+if [ "$(uname -s)" = "Darwin" ] && command -v swift >/dev/null 2>&1; then
+  step "3b/4 Swift logic tests (swift test --package-path ios)"
+  swift test --package-path "$ROOT/ios" || fail "swift logic tests"
+else
+  echo "Swift logic tests — skipped on this OS (run on macOS / CI: .github/workflows/swift-logic-tests.yml)"
+fi
+
 if [ "$RUN_E2E" = 1 ]; then
   step "4/4 E2E (Unity batchmode — takes a few minutes)"
   [ -x "$UNITY" ] || [ -f "$UNITY" ] || fail "Unity $UNITY_VERSION not found at $UNITY (set UNITY_PATH=...)"

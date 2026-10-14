@@ -29,6 +29,10 @@ final class UnityBridge: NSObject, ObservableObject {
     /// アバターが見えていない理由(Unity AvatarVisibilityDiagnostics)。見えていれば nil。
     /// 実機で「消えた」を「どの経路で消えたか」に変えるための診断表示
     @Published var avatarHiddenReason: String? = nil
+    /// アバターが見えなかった区間の履歴(新しい順)。走行中は本人がバナーを読めないので、
+    /// 走行後に開発者モードで「いつ・何秒・なぜ」を確かめる。アプリを再起動しても残す
+    @Published private(set) var visibilityLog = AvatarVisibilityLog()
+    private static let visibilityLogKey = "avatarVisibilityLog"
     @Published var motionToPhotonMs: Double = 0  // latency monitor (-1 = 未計測)
     /// 区間のM2P最大値(ms)。1Hzの瞬時値では拾えない超過を捉えるため Unity から併せて届く
     @Published var motionToPhotonMaxMs: Double = -1
@@ -206,6 +210,11 @@ final class UnityBridge: NSObject, ObservableObject {
     // MARK: Init
     private override init() {
         super.init()
+
+        if let data = UserDefaults.standard.data(forKey: Self.visibilityLogKey),
+           let saved = try? JSONDecoder().decode(AvatarVisibilityLog.self, from: data) {
+            visibilityLog = saved
+        }
 
         // Unity → Swift: UnitySwiftBridge.mm からの通知を購読
         NotificationCenter.default.addObserver(
@@ -418,7 +427,11 @@ final class UnityBridge: NSObject, ObservableObject {
             case "AvatarVisibility":
                 // Unityが判定した「アバターが見えない経路」。見えていれば nil
                 let visible = dict["visible"] as? Bool ?? true
-                self.avatarHiddenReason = visible ? nil : (dict["reason"] as? String ?? "不明")
+                let reason = dict["reason"] as? String ?? "不明"
+                self.avatarHiddenReason = visible ? nil : reason
+                if self.visibilityLog.record(visible: visible, reason: reason, at: Date()) {
+                    self.saveVisibilityLog()
+                }
             case "LatencyReport":
                 // ms が -1 なら未計測。maxMs 等は実測サンプルがある時だけ載る(省略時は据え置き)
                 self.motionToPhotonMs = dict["ms"] as? Double ?? 0
@@ -514,6 +527,18 @@ final class UnityBridge: NSObject, ObservableObject {
             default:
                 break
             }
+        }
+    }
+
+    /// 開発者モードの「履歴を消去」
+    func clearVisibilityLog() {
+        visibilityLog.clear()
+        saveVisibilityLog()
+    }
+
+    private func saveVisibilityLog() {
+        if let data = try? JSONEncoder().encode(visibilityLog) {
+            UserDefaults.standard.set(data, forKey: Self.visibilityLogKey)
         }
     }
 

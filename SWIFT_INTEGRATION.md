@@ -47,10 +47,13 @@ Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
 - バッチ実行: `Unity.exe -batchmode -quit -buildTarget iOS -projectPath <repo> -executeMethod IOSBuildExporter.ExportIOS`
   (**`-buildTarget iOS` は必須** — iOS がアクティブでないとエクスポータが止まる。ARKitのネイティブプラグインが入らないため)
   — 失敗時は終了コード1を返す
-- **エクスポート後は `ProjectSettings/ProjectSettings.asset` の差分を必ず確認すること**:
-  ビルド処理が `preloadedAssets` を空にすることがある。ここには
-  `Assets/XR/XRGeneralSettings.asset` が含まれており、**空のままコミットするとプレイヤービルドで
-  XR(ARKit)ローダーが初期化されなくなる**。空になっていたら復元してからコミットする
+- **`preloadedAssets` はエクスポータが自動で戻す**(2026-10-13〜): ビルド処理が `ProjectSettings.asset` の
+  `preloadedAssets` を空にすることがあり、ここには `Assets/XR/XRGeneralSettings.asset` が含まれる —
+  **空のままコミットするとプレイヤービルドで XR(ARKit)ローダーが初期化されなくなる**。以前はエクスポートのたびに
+  `git checkout -- ProjectSettings/ProjectSettings.asset` が要ったが、`IOSBuildExporter` がビルド前の値へ戻して保存する
+- **エクスポート → 梱包 → GitHub Release 公開を1コマンドで**: `tools/publish-unity-export.sh`
+  (タグ `unity-export-<HEADの8桁>`。iOS ビルド CI が既定で使い、Mac は `gh release download` で取得できる。
+  `--dry-run` で公開せず梱包まで)
 - エクスポート対象シーンは `EditorBuildSettings` の有効シーン。空の場合は
   `Assets/Scenes/SampleScene.unity` にフォールバックする([IOSBuildExporter.cs](Assets/Editor/IOSBuildExporter.cs))
 
@@ -282,7 +285,7 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 - 初回のみ UnityFramework の Embed & Sign と Data フォルダの Target Membership 変更が手動(上記②)
 - `ConnectXREAL` はXREAL SDKの初期化ではない(**iOS版SDKは存在しない**)。Readyチェックの更新と、表示メトリクスに基づく出力リグ(画角・視点・HUDセーフエリア)の起動を行う。DeviceConnectViewのARグラス行タップでも送信される
 - **グラス固有のhead-pose/IMUはiOSからは取得できない**(原理的制約。根拠は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) §2-1)。空間トラッキングはiPhoneのARKitが担い、グラスへ出す向きは §4.1 の移動平均済み進行方向(ヨーのみ)から作る。グラス側は**画面モードを Follow(固定)**にしておくこと — Anchorだと二重補正になる
-- **F-03の3.0mとXREAL Oneの画角は両立しない**: 身長1.75mのアバターは3.0m前方で垂直31.1°を占め、Oneの垂直画角25.7°に全身が入らない(全身には3.7m必要)。足元のオーラ(§7.2)・接地の見えにも影響するためチーム判断が要る
+- **グラス出力中のアバターは約144cm**(XREAL One): 3.0m前方(F-03)のまま全身を画角に収めるため、Unity が身長に上限をかける(AGENTS.md §7-1 — 2026-10-13 チーム判断)。Swift が送る `avatarHeightCm`(175)は iPhone 画面で使われる
 - バックグラウンド中はUnity(AR描画)は停止する — 計測のみ継続し、復帰時にHUD/アバターが追いつく
 
 ## 走行画面の配線(実装済み)

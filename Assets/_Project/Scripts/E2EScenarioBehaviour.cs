@@ -635,11 +635,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 Check(glassRig.AppliedDownPitchDegrees > 1f && glassRig.AppliedDownPitchDegrees <= 15f,
                     $"glass: camera pitches down to fit the avatar into the narrow FoV ({glassRig.AppliedDownPitchDegrees:F1}°)");
 
-                // 第1期の要判断事項を数値で固定する(基本設計書 F-03 の 3.0m と光学系の衝突)
-                Check(!glassRig.FullBodyFitsInFov,
-                    "glass: a 1.75m avatar at 3.0m does NOT fit in the XREAL One FoV (design decision pending)");
-                Check(glassRig.NearestVisibleGroundMeters > 3.0f,
-                    $"glass: the avatar's ground contact at 3.0m is outside the FoV " +
+                // §7-1(2026-10-13 チーム判断): 3.0m前方(F-03)は保ち、グラスの画角に全身が収まる身長へ縮める。
+                // 以前は「175cmは収まらない・足元は視野外」をここで固定していた
+                float glassHeight = engine.MeasuredAvatarHeightMeters;
+                Check(glassRig.FitHeightLimitCm > 100f && glassRig.FitHeightLimitCm < 175f,
+                    $"glass: a height limit that fits the XREAL One FoV at 3.0m is set ({glassRig.FitHeightLimitCm:F0}cm)");
+                Check(Mathf.Abs(glassHeight - glassRig.FitHeightLimitCm / 100f) < 0.03f,
+                    $"glass: the avatar is scaled to that limit while on the glasses ({glassHeight:F2}m)");
+                Check(glassRig.FullBodyFitsInFov,
+                    "glass: head to feet of the avatar at 3.0m now fits in the XREAL One FoV");
+                Check(glassRig.NearestVisibleGroundMeters <= 3.0f,
+                    $"glass: the avatar's feet (and the aura at its feet) are inside the FoV " +
                     $"(ground visible from {glassRig.NearestVisibleGroundMeters:F2}m)");
 
                 if (hud != null)
@@ -669,6 +675,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 if (hud != null)
                     Check(Mathf.Abs(hud.EdgeInsetFraction - 1f) < 0.001f,
                         "glass: HUD returns to the full phone screen on disconnect");
+                // iPhone画面は画角が広いので、要求どおりの身長(175cm)へ戻る
+                Check(engine.HeightLimitCm == 0f
+                      && Mathf.Abs(engine.MeasuredAvatarHeightMeters - engine.RequestedHeightCm / 100f) < 0.05f,
+                    $"glass: the avatar returns to its requested height on the phone " +
+                    $"({engine.MeasuredAvatarHeightMeters:F2}m / requested {engine.RequestedHeightCm:F0}cm)");
             }
 
             // 切断はスタンバイへ遷移させるため、後続シナリオのために通常へ戻す

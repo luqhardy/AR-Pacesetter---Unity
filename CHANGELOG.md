@@ -4,6 +4,26 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-13 (7) — 実地テストの記録先 / TestFlight 配布の計画
+
+`Docs/field-tests/`(README・TEMPLATE)を用意 — T1〜T9 はまだ一度も記録が無かった。1セッション1フォルダに CSV・解析結果・記入済みテンプレートを置く。テンプレートにグラスでの見え方とアバター非表示の履歴を追加。`Docs/TESTFLIGHT.md`: 借りた Mac 無しで実機配布するための計画(有料アカウント・Bundle ID・API キーはチーム判断のため未導入)。
+検証: ドキュメントのみ
+
+### 2026-10-13 (6) — Unity エクスポートの自動化 / E2E を PR で / Android ビルドの常設化
+
+`IOSBuildExporter` がビルドで空になった `preloadedAssets` を自分で戻す(手作業の `git checkout -- ProjectSettings` が不要に)。`tools/publish-unity-export.sh` がエクスポート→梱包→Release 公開を1コマンドで(CI・Mac が同じものを使う)。`relink-unity-export.sh` に実行権限。`e2e.yml` を PR でも実行(`UNITY_LICENSE` 未設定の間は失敗でなくスキップ)。`AndroidBuildExporter`(AGP 9 の namespace 回避込み)と `Docs/ANDROID_BUILD.md`、Android のパッケージ名を `com.arvision.pacesetter` に。
+検証: Windows でエクスポートし `ProjectSettings.asset` が無変更(preloadedAssets 0→3件へ自動復元)を確認。Android は `AndroidBuildExporter.BuildTestApk` でビルド成功(約6分・AGP回避フラグ適用)を確認
+
+### 2026-10-13 (5) — アバター非表示の履歴 / iOS の純ロジックを切り出して `swift test`
+
+走行中に消えた理由(紫のバナー)を本人は読めない → 開発者モードに「アバター非表示の履歴」(時刻・秒数・理由・再起動後も保持)。体験モードの進行・ARグラスの状態・屋内テストの読み取りを `ios/.../AppLogic`(Foundation のみ)へ切り出し、`ios/AppLogicTests` で検証(前回の終了の再送・中断直後の開始の競合・猶予中の不要な Stop 等)。`swift-logic-tests.yml`(macOS)と verify.sh(macOS のみ)で実行。
+検証: Swift 32ファイル構文OK。Windows の Swift はリンク・型検査に Visual Studio が要るため、テストの実行は CI で確認する
+
+### 2026-10-13 (4) — グラス出力中はアバターを全身が収まる身長へ(§7-1 決定)
+
+チーム判断: 3.0m前方(F-03)は保ち大きさを譲る。グラス接続時に `GlassViewRig` が `GlassOpticsMath.MaxFullBodyHeightMeters`(−余白3cm)を `AvatarEngine.SetHeightLimitCm` で上限にする — XREAL One で約144cm・地面は2.96m先から見え足元のオーラも視野内。iPhone 画面では175cm のまま。E2E の「175cmは収まらない」を「収まる・足元が見える・切断で戻る」へ置き換え。
+検証: tools/verify.sh 全通過(dotnet test 414/414、Swift 32(構文のみ)、E2E 276/276)
+
 ### 2026-10-13 (3) — Android ビルドが通るように: ARKit の using を iOS 限定に
 
 Android のテストAPKで `EnvironmentSceneScanner.cs` の `using UnityEngine.XR.ARKit;` が CS0234 で止まった(ARKit のアセンブリは iOS ビルドにしか無い)。ARKit を使うのは同ファイルの `#if UNITY_IOS && !UNITY_EDITOR` のブロックだけなので、using も同じ条件で囲んだ。iOS の挙動は変わらない。
