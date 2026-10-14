@@ -909,6 +909,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
             string historyJson = SwiftMessageSender.BuildHistoryJson(new List<RunSessionRecord> { null, record });
             Check(historyJson.StartsWith("{\"event\":\"HistoryData\",\"sessions\":[{") && historyJson.Contains("\"route\":[[34.69"),
                 "history: HistoryData carries the route to Swift (and skips null records without a stray comma)");
+
+            // 保存できたかを結果に載せる(失敗すると Swift の結果画面が「保存に失敗しました」を出す)
+            Check(session.LastSaveSucceeded, "record: the run was saved to the history store");
+            Check(SwiftMessageSender.BuildSessionResultJson(record, session.LastSaveSucceeded).Contains("\"saved\":true"),
+                "result: SessionEnded tells Swift the run was saved");
+            Check(SwiftMessageSender.BuildSessionResultJson(record, false).EndsWith(",\"saved\":false}"),
+                "result: a failed save reaches Swift as saved:false");
         }
 
         // ── Step 3: ゴースト再走(保存した記録と競走) ──────────────────────

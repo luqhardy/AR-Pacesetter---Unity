@@ -102,6 +102,13 @@ public class RunSessionController : MonoBehaviour
     public bool IsFinished => _finished;
 
     /// <summary>
+    /// 直近の走行記録を履歴(1走行1JSON)へ保存できたか。失敗(容量不足等)は false —
+    /// 記録は中断スナップショットに残り、次に Unity が起動したとき(次の走行の開始時)に履歴へ復元を試みる。
+    /// Swift の結果画面が「保存に失敗しました」を出すために SessionEnded に載せる
+    /// </summary>
+    public bool LastSaveSucceeded { get; private set; }
+
+    /// <summary>
     /// 展示デモ(BoothDemoController)の走行は履歴・中断スナップショットへ保存しない。
     /// 来場者ごとの体験で利用者本人の走行履歴やゴーストの候補が埋まらないように。
     /// ブリッジが StartSession のたびに設定し、<see cref="ResetForNewSession"/> で false に戻る
@@ -291,12 +298,14 @@ public class RunSessionController : MonoBehaviour
 
         RunSessionRecord record = BuildSessionRecord();
         _lastRecord = record;
+        LastSaveSucceeded = false;
         if (SuppressPersistence)
         {
             Debug.Log($"[SESSION] Demo run finished — not saved to history (rank {record.rankLabel}).");
             return;
         }
         string savedPath = SessionDataStore.SaveSession(record);
+        LastSaveSucceeded = savedPath != null;
 
         // 通常終了したので、背面移行のたびに書いていた中断スナップショットは不要。
         // ただし保存に失敗したときは残す — 次回起動時に履歴へ復元される

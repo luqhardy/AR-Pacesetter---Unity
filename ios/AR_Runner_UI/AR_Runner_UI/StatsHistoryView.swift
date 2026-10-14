@@ -145,6 +145,35 @@ struct StatsView: View {
                                 .padding(.top, 12)
                         }
 
+                        // 結果は届いたが履歴への保存に失敗した(タスク表 S7「保存に失敗しました」)。
+                        // Unity は記録を中断スナップショットに残し、次に Unity が起動したとき(次の走行の開始時)に履歴へ復元を試みる
+                        if result?.saved == false {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 15))
+                                    .foregroundColor(.orange)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("記録の保存に失敗しました")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.white)
+                                    Text("端末の空き容量を確認してください。次にランニングを始めるときに、履歴への復元を試みます")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.arGrayText)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(14)
+                            .background(Color.orange.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.orange.opacity(0.45), lineWidth: 1)
+                            )
+                            .padding(.horizontal, 24)
+                            .padding(.top, 12)
+                        }
+
                         Spacer().frame(height: 12)
 
                         // Stats grid

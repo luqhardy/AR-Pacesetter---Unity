@@ -179,15 +179,22 @@ public static class SwiftMessageSender
         return sb.ToString();
     }
 
-    /// <summary>走行終了時の結果サマリー(Swift側は将来 "SessionEnded" ケースを追加して受信)。</summary>
-    public static void SendSessionResult(RunSessionRecord record)
+    /// <summary>
+    /// 走行終了時の結果サマリー(Swift の結果画面・HealthKit 保存)。
+    /// saved=false は履歴への保存に失敗した(容量不足等)— Swift は結果画面で知らせる
+    /// </summary>
+    public static void SendSessionResult(RunSessionRecord record, bool saved)
     {
         if (record == null) return;
-        string json = string.Format(CultureInfo.InvariantCulture,
-            "{{\"event\":\"SessionEnded\",\"grade\":\"{0}\",\"rank\":\"{1}\"," +
-            "\"averageSync\":{2:F1},\"distanceKm\":{3:F3},\"elapsedSeconds\":{4:F0},\"calories\":{5:F0}}}",
-            record.grade, record.rankLabel, record.averageSyncRate,
-            record.distanceMeters / 1000f, record.elapsedSeconds, record.calories);
-        SendRaw(json);
+        SendRaw(BuildSessionResultJson(record, saved));
     }
+
+    public static string BuildSessionResultJson(RunSessionRecord record, bool saved)
+        => string.Format(CultureInfo.InvariantCulture,
+            "{{\"event\":\"SessionEnded\",\"grade\":\"{0}\",\"rank\":\"{1}\"," +
+            "\"averageSync\":{2:F1},\"distanceKm\":{3:F3},\"elapsedSeconds\":{4:F0},\"calories\":{5:F0}," +
+            "\"saved\":{6}}}",
+            Escape(record.grade), Escape(record.rankLabel), record.averageSyncRate,
+            record.distanceMeters / 1000f, record.elapsedSeconds, record.calories,
+            saved ? "true" : "false");
 }
