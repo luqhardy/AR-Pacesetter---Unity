@@ -209,7 +209,7 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 | `LogFiles` | `directory`, `files`: `{name, path, bytes, modifiedIso}` の配列 | 開発者モードの要求時のみ |
 | `LatencyReport` | `ms` (double), `maxMs`・`overBudgetRatio`・`sampleCount`(実測サンプルがある時のみ) | 走行中 1Hz。**F-11のCSV `latency_m2p` と同じ `SensorTimingBridge` の実測値**(ARKitフレームのセンサー時刻と `CADisplayLink.targetTimestamp` の差)。`ms = -1` は未計測で、合成値は一切入らない。`maxMs`/`overBudgetRatio` は1Hzの瞬時値では拾えない超過を捉えるための区間統計 |
 | `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答(目標距離の自動終了を含む)。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
-| `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
+| `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`, `route`}] | RequestHistory応答。`route` は走った経路 `[[緯度,経度],...]`(古い順・約10m間隔に間引き・最大240点、2026-10-13 より前の記録は空)。Swift は最後に受け取った履歴を端末(Caches)にも保存し、Unity 起動前のホーム・履歴画面で使う |
 | `BoothDemoProgress` | `mode`, `beat`(OnPace/FallingBehind/CatchingUp/Overtaking/Settling/FinalStretch。歩行は Walking), `elapsedSeconds`, `totalSeconds` | 体験モードの区間が変わるたび(スタッフ画面の進行表示用) |
 | `BoothDemoEnded` | `mode`, `completed`(最後まで進んだか), `reason`(中断・開始失敗の理由) | 体験モードの終了時。**`SessionEnded` の代わりに送る** — Swiftはこれを受けてもHealthKitへ保存しない。受け側はスタッフ画面 `BoothDemoView` |
 | `LowBattery` | — | **現在発火しない** — 唯一の送出元 `SafetyAndSystemController` が実行時に生成されないため(HANDOVER.md §5)。Swift側の購読は将来の有効化に備えて残置。※HUDのバッテリー黄色点滅(`PeripheralHUDManager`)は別実装で正常動作 |

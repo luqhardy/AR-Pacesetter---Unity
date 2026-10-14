@@ -40,8 +40,13 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var motionToPhotonOverBudgetRatio: Double = -1
     /// これまでに実測できたM2Pサンプル数
     @Published var motionToPhotonSampleCount: Int = 0
-    @Published var lastResult: SessionResult?    // EndSession後にUnityから届く
-    @Published var history: [HistoryEntry] = []  // RequestHistory応答(新しい順)
+    /// EndSession後にUnityから届く。走行開始で nil に戻す(前回の結果を今回のものとして出さない)
+    @Published var lastResult: SessionResult?
+    /// RequestHistory応答(新しい順)。最後に受け取ったものは端末にも保存し、
+    /// Unity が起動する前(アプリ起動直後のホーム・履歴画面)でも出せるようにする
+    @Published private(set) var history: [HistoryEntry] = []
+    /// 履歴を一度でも受け取ったか(保存分を含む)。false の間の空は「記録が無い」ではなく「まだ読めていない」
+    @Published private(set) var historyLoaded = false
     @Published var lowBatteryMode = false        // Unity側が低バッテリー退避したら true
 
     // MARK: 開発者モード (Unityからのスナップショット)
@@ -168,31 +173,8 @@ final class UnityBridge: NSObject, ObservableObject {
         }
     }
 
-    struct HistoryEntry: Identifiable {
-        let id = UUID()
-        let dateIso: String      // ISO8601 (Unity側 DateTime "o" 形式)
-        let distanceKm: Double
-        let elapsedSeconds: Double
-        let averageSync: Double  // %
-        let grade: String
-
-        /// "6月15日" 形式の表示用日付
-        var dateLabel: String {
-            let isoDay = String(dateIso.prefix(10)) // yyyy-MM-dd
-            let parser = DateFormatter()
-            parser.dateFormat = "yyyy-MM-dd"
-            guard let date = parser.date(from: isoDay) else { return isoDay }
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "ja_JP")
-            formatter.dateFormat = "M月d日"
-            return formatter.string(from: date)
-        }
-
-        var timeLabel: String {
-            let total = Int(elapsedSeconds)
-            return String(format: "%02d:%02d", total / 60, total % 60)
-        }
-    }
+    /// 走行履歴の1件(経路つき)。読み取りと表示用の値は AppLogic/RunHistory.swift(テスト対象)
+    typealias HistoryEntry = RunHistoryEntry
 
     // MARK: Unity起動前のコマンド
     /// Unityの受信ブリッジ("ARSessionManager" / "DeviceManager")が揃ったか。
@@ -216,6 +198,13 @@ final class UnityBridge: NSObject, ObservableObject {
             visibilityLog = saved
         }
 
+        if let url = Self.historyCacheURL,
+           let data = try? Data(contentsOf: url),
+           let cached = try? JSONDecoder().decode(RunHistoryCache.self, from: data) {
+            history = cached.entries
+            historyLoaded = true
+        }
+
         // Unity → Swift: UnitySwiftBridge.mm からの通知を購読
         NotificationCenter.default.addObserver(
             forName: Notification.Name("UnityToSwiftMessage"),
@@ -237,6 +226,9 @@ final class UnityBridge: NSObject, ObservableObject {
     ///   画面に適した意匠)。グラス出力中はUnityのF-07 HUDが担当する。
     func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
                       hideUnityHud: Bool = false) {
+        // 前回の走行の結果を消す。残すと、今回の SessionEnded が届かなかったときに
+        // 結果画面が前回の数字を今回のものとして出す
+        lastResult = nil
         var payload: [String: Any] = [
             "command": "StartSession",
             "targetPaceKmH": targetPaceKmH,
@@ -514,15 +506,9 @@ final class UnityBridge: NSObject, ObservableObject {
                 )
             case "HistoryData":
                 if let sessions = dict["sessions"] as? [[String: Any]] {
-                    self.history = sessions.map { s in
-                        HistoryEntry(
-                            dateIso: s["dateIso"] as? String ?? "",
-                            distanceKm: s["distanceKm"] as? Double ?? 0,
-                            elapsedSeconds: s["elapsedSeconds"] as? Double ?? 0,
-                            averageSync: s["averageSync"] as? Double ?? 0,
-                            grade: s["grade"] as? String ?? "-"
-                        )
-                    }
+                    self.history = RunHistoryEntry.parse(sessions: sessions)
+                    self.historyLoaded = true
+                    self.saveHistoryCache()
                 }
             default:
                 break
@@ -540,6 +526,20 @@ final class UnityBridge: NSObject, ObservableObject {
         if let data = try? JSONEncoder().encode(visibilityLog) {
             UserDefaults.standard.set(data, forKey: Self.visibilityLogKey)
         }
+    }
+
+    /// 履歴の保存先。経路つきで最大20件(約100KB)あるので UserDefaults ではなくファイルに置く。
+    /// 正本は Unity のセッション保存なので、OS に消されても次の受信で戻る(Caches で十分)
+    private static var historyCacheURL: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("RunHistory.json")
+    }
+
+    private func saveHistoryCache() {
+        guard let url = Self.historyCacheURL,
+              let data = try? JSONEncoder().encode(RunHistoryCache(entries: history, receivedAt: Date()))
+        else { return }
+        try? data.write(to: url, options: .atomic)
     }
 
     // MARK: Private
@@ -568,12 +568,15 @@ final class UnityBridge: NSObject, ObservableObject {
     /// - 測位・頭部姿勢の連続ストリーム(UpdateMetrics / UpdateGlassPose)は溜めない。
     ///   古い測位をまとめて流すと、Unity側はそれを「今届いた新鮮な測位」として扱ってしまう
     /// - グラスの接続/切断は状態なので最新の1件だけ残す
+    /// - 履歴の要求も1件で足りる(ホーム・ルート選択・履歴画面が開くたびに要求し、応答は経路つきで約100KB)
     private func enqueueUntilReady(object: String, method: String, command: String, json: String) {
         switch command {
         case "UpdateMetrics", "UpdateGlassPose":
             return
         case "ConnectXREAL", "DisconnectXREAL":
             pendingCommands.removeAll { $0.command == "ConnectXREAL" || $0.command == "DisconnectXREAL" }
+        case "RequestHistory":
+            pendingCommands.removeAll { $0.command == "RequestHistory" }
         default:
             break
         }
@@ -635,7 +638,9 @@ final class UnityBridge: NSObject, ObservableObject {
             case "ConnectXREAL":
                 self.gpsStatus = .searching
             case "RequestHistory":
-                // シミュレータ用のダミー履歴(実機ではUnityのJSON DBから届く)
+                // シミュレータ用のダミー履歴(実機ではUnityのJSON DBから届く)。
+                // 端末への保存はしない — 実データと混ざらないように
+                self.historyLoaded = true
                 self.history = [
                     HistoryEntry(dateIso: "2026-07-08T07:12:00", distanceKm: 5.0,
                                  elapsedSeconds: 1610, averageSync: 91.2, grade: "S"),

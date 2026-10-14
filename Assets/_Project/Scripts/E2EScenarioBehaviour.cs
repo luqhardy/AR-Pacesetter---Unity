@@ -898,6 +898,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(record.distanceMeters >= 55f, $"record: distance ~goal ({record.distanceMeters:F1}m)");
             Check(!string.IsNullOrEmpty(record.grade), "record: grade assigned");
             Check(record.paceTimeline.Count >= 2, $"record: paceTimeline sampled ({record.paceTimeline.Count})");
+
+            // 走った経路(ホームの地図・ルート選択の過去ルートカード)。ノイズ下の直進(Step 1c)で
+            // 送った GPS fix から作られる。カウントダウン中の静止テストの fix は経路に入らない
+            Check(record.route.Count >= 2, $"record: route recorded from the run's GPS fixes ({record.route.Count} points)");
+            bool routeNearRun = record.route.Count > 0;
+            foreach (RoutePoint p in record.route)
+                routeNearRun &= System.Math.Abs(p.lat - NoiseBaseLat) < 0.001 && System.Math.Abs(p.lon - NoiseBaseLon) < 0.001;
+            Check(routeNearRun, "record: route points are where the run happened (no 0,0 or stray fixes)");
+            string historyJson = SwiftMessageSender.BuildHistoryJson(new List<RunSessionRecord> { null, record });
+            Check(historyJson.StartsWith("{\"event\":\"HistoryData\",\"sessions\":[{") && historyJson.Contains("\"route\":[[34.69"),
+                "history: HistoryData carries the route to Swift (and skips null records without a stray comma)");
         }
 
         // ── Step 3: ゴースト再走(保存した記録と競走) ──────────────────────

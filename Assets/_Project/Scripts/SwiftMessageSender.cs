@@ -143,22 +143,40 @@ public static class SwiftMessageSender
 
     /// <summary>走行履歴一覧 (Swift側 "HistoryData" ケース、HistoryViewが表示)。</summary>
     public static void SendHistory(System.Collections.Generic.List<RunSessionRecord> records)
+        => SendRaw(BuildHistoryJson(records));
+
+    /// <summary>
+    /// HistoryData の本文。`route` は [[緯度,経度],...](古い順・間引き済み)で、経路の無い旧記録は空配列。
+    /// 緯度経度は小数6桁(約0.1m)— 地図の線には十分で、20件分でも約100KBに収まる
+    /// </summary>
+    public static string BuildHistoryJson(System.Collections.Generic.List<RunSessionRecord> records)
     {
         var sb = new System.Text.StringBuilder();
         sb.Append("{\"event\":\"HistoryData\",\"sessions\":[");
-        for (int i = 0; i < records.Count; i++)
+        bool first = true;
+        foreach (RunSessionRecord r in records)
         {
-            RunSessionRecord r = records[i];
             if (r == null) continue;
-            if (i > 0) sb.Append(',');
+            if (!first) sb.Append(',');
+            first = false;
             sb.AppendFormat(CultureInfo.InvariantCulture,
                 "{{\"dateIso\":\"{0}\",\"distanceKm\":{1:F3},\"elapsedSeconds\":{2:F0}," +
-                "\"averageSync\":{3:F1},\"grade\":\"{4}\"}}",
-                r.dateIso, r.distanceMeters / 1000f, r.elapsedSeconds,
-                r.averageSyncRate, r.grade);
+                "\"averageSync\":{3:F1},\"grade\":\"{4}\",\"route\":[",
+                Escape(r.dateIso), r.distanceMeters / 1000f, r.elapsedSeconds,
+                r.averageSyncRate, Escape(r.grade));
+            if (r.route != null)
+            {
+                for (int p = 0; p < r.route.Count; p++)
+                {
+                    if (p > 0) sb.Append(',');
+                    sb.AppendFormat(CultureInfo.InvariantCulture, "[{0:F6},{1:F6}]",
+                        r.route[p].lat, r.route[p].lon);
+                }
+            }
+            sb.Append("]}");
         }
         sb.Append("]}");
-        SendRaw(sb.ToString());
+        return sb.ToString();
     }
 
     /// <summary>走行終了時の結果サマリー(Swift側は将来 "SessionEnded" ケースを追加して受信)。</summary>
