@@ -80,7 +80,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 |---|---|---|
 | オンボーディング(身長/体重/性別) | Unity: `UserProfile.cs` / Swift: 各View | エディタ・シミュレータ |
 | ハイブリッド入力(±ボタン/直接入力) | `RunningSettingsView.swift` ほか | シミュレータ |
-| Readyチェック(4色インジケーター・出走ゲート) | `ReadyCheckController.cs` / `Deviceconnectview.swift` | エディタ(F1-F3) |
+| Readyチェック(4色インジケーター・出走ゲート) | `ReadyCheckController.cs` / `DeviceConnectView.swift` | エディタ(F1-F3) |
 | ガードレイヤー・スリープ制御 | `RunSessionController.cs` | エディタ |
 | 実測センサー(CoreLocation/HealthKit/バックグラウンド) | `LocationTracker.swift` / `HeartRateMonitor.swift` | 実機要 |
 

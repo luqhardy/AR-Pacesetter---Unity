@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-14 (2) — フォルダ構成を hsuyaminmyat625/AR_project に合わせる(ファイルの移動のみ)
+
+iOS の Swift ファイル25本とアセットを相手側の `App/` `Core/` `Features/` `Resources/` へ移動(中身は無変更・`AppLogic/` は据え置き)。Xcode は同期フォルダなのでプロジェクトファイルの変更は不要。相手側がこのリポジトリで作業するときに同じ構成になるように — 3回目の合体 (3) の前段。ドキュメントのファイルへのリンクを新しい場所へ。
+検証: dotnet test 421/421、Swift 40ファイル構文OK。Unity 側(Assets・ProjectSettings・Packages)は無変更のため E2E は master と同じ 282/282
+
 ### 2026-10-14 (1) — Mac のエクスポート取得を1コマンドに / ランニング設定を再起動後も保持 / 保存失敗を結果画面で知らせる
 
 `tools/fetch-unity-export.sh`: 今のチェックアウトに含まれる最新の `unity-export-*` を選び、既存フォルダを消してから展開・実行権限を修復(CI と同じ手順)。Unity 側がエクスポート後に変わっていれば警告、`ios/` の Finder 重複コピーも警告 — 手作業の4手順で起きていた duplicate symbol・PhaseScriptExecution failed の対策。S5 の確定値を端末に保存(`RunTargetSettings`・範囲外/NaN は補正)。Unity が `SessionEnded` に `saved` を載せ、履歴への保存に失敗したら結果画面に警告(タスク表 S7)。
