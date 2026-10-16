@@ -195,7 +195,9 @@ stateDiagram-v2
   カタログに無いキーは画面にそのまま出る(CI の `LocalizationCatalogTests` が対応を確かめる)。
   体験モードのスタッフ画面・開発者モード・Unity から届く文言は日本語のみ。
   表示言語はスマホ設定で選ぶ(`AppLanguage`・**既定は日本語** — iPhone が英語でも日本語)。文言を String で作るときは
-  `AppStrings.resolve` を使う(`String(localized:)` は iPhone の言語で引くため、選んだ言語にならない)
+  `AppStrings.resolve` を使う(`String(localized:)` は iPhone の言語で引くため、選んだ言語にならない)。
+  許可ダイアログの文言(`INFOPLIST_KEY_*UsageDescription`)の英語は `Resources/InfoPlist.xcstrings` — 日本語を変えたらカタログも揃える
+  (CI の `InfoPlistCatalogTests`)。許可ダイアログは iPhone の言語で出る
 
 ### コミットの規約
 - コミット前に [CHANGELOG.md](CHANGELOG.md) の先頭へ**5行以内**のエントリを足す(変更・理由・検証結果)。
