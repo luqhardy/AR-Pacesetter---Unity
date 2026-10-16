@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-16 (3) — 実機の初回確認に PR #5〜#9 の項目を追加 / 許可ダイアログの英語
+
+2026-10-13〜16 の変更(経路・電池の書き出し・位置情報の案内・ロック画面・英語・言語設定 など)はどれも実機で一度も見ていない。PR ごとに散っていた確認項目を FIELD_TEST_PLAN §0-A の 5〜12 と記入欄にまとめ、次の Mac・iPhone の回で通せるようにした。許可ダイアログ(位置情報・カメラ等7件)は iOS が iPhone の言語で出すが日本語しか無かった → `Resources/InfoPlist.xcstrings` に英語を追加し、日本語がビルド設定と揃っているかを `InfoPlistCatalogTests` で検査。
+検証: dotnet test 421/421、Swift 56ファイル構文OK。Unity 側は無変更のため E2E は master と同じ 282/282。許可文言7件の日本語がビルド設定と一致することを Python で確認 — InfoPlistCatalogTests は CI(macOS)で実行
+
 ### 2026-10-16 (2) — アプリ内の言語設定(既定は日本語)
 
 相手側の 466dd48「force app language to Japanese」は全画面を常に日本語にし、10/14 に入れた英語を誰も使えなくしていた(英語の iPhone で英語が出たため、と推測)。目的(英語の iPhone でも日本語で出す)は採り、スマホ設定に**日本語 / English / 端末に合わせる**を置いた(`AppLanguage`・既定は日本語・選ぶとその場で全画面が切り替わる)。相手側の `String(localized:locale:)` は数値の書式にしか効かず英語の iPhone では英語のままだったため、String の文言は `AppStrings.resolve`(`LocalizedStringResource` に言語を渡す)で引く。日付も選んだ言語。相手側のコミットは履歴のみ取り込み。
