@@ -1236,8 +1236,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
             // F-10: ロスト中はHUD下部に赤字の減速警告が出ること。
             // 実機で「アバターが理由も分からず消える」状態だったのを塞ぐ回帰テスト
             if (hud != null)
+            {
                 Check(hud.IsSafetyWarningVisible,
                     "hud: safety warning shown while GPS is lost (F-10)");
+                // 「出ている」だけでは足りない: 以前は ARテンプレートの別キャンバスに載り、同梱フォントに
+                // 日本語が無いため1文字も描かれていなかった(2026-10-16 HUD のプレビュー書き出しで発覚)
+                Check(hud.SafetyWarningOnHudCanvas,
+                    "hud: safety warning sits on the HUD canvas (not the AR template's UI canvas)");
+                int drawn = hud.SafetyWarningDrawnCharacterCount;
+                Check(drawn >= 10,
+                    $"hud: safety warning actually draws its text — the font has the glyphs ({drawn} characters drawn)");
+            }
 
             stateController.TransitionToState(GameStateController.ARVisionState.Reaccumulation);
             // 注意: Reaccumulation遷移は精度を99にリセットする(要再確認ゲート)ため、
