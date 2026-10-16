@@ -5,7 +5,7 @@ import UIKit
 // MARK: - スマホ設定
 // hsuyaminmyat625/AR_project のスマホ設定画面(2026-10-06)を移植。**実際に効く項目だけ**を置く:
 //   - 言語(2026-10-14 の英語対応 — 切り替えは iOS の設定アプリのアプリ別の「言語」)
-//   - 位置情報の許可(今の状態と設定アプリへの導線)
+//   - 位置情報の許可(今の状態と設定アプリへの導線。iPhone 全体の位置情報サービスがオフならそれを出す)
 // 相手側にあった「通知」(アプリは通知を送らない)・「バックグラウンド位置情報」(OS の許可で決まる)・
 // 「距離の単位」(km 以外の表示経路が無い)は、押しても何も変わらないので置かない。
 struct PhoneSettingsView: View {
@@ -14,6 +14,8 @@ struct PhoneSettingsView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @State private var locationStatus = CLLocationManager().authorizationStatus
+    /// iPhone 全体の位置情報サービス(オフならアプリの許可に関係なく測位できない)
+    @State private var servicesEnabled = true
 
     /// 今の表示言語の名前(その言語で: 日本語 / English)
     private var languageName: String {
@@ -23,6 +25,7 @@ struct PhoneSettingsView: View {
     }
 
     private var locationStatusText: LocalizedStringKey {
+        guard servicesEnabled else { return AppStrings.PhoneSettings.locationServicesOff }
         switch locationStatus {
         case .authorizedAlways: return AppStrings.PhoneSettings.locationAlways
         case .authorizedWhenInUse: return AppStrings.PhoneSettings.locationWhenInUse
@@ -34,7 +37,7 @@ struct PhoneSettingsView: View {
     }
 
     private var locationAllowed: Bool {
-        locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse
+        servicesEnabled && (locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse)
     }
 
     var body: some View {
@@ -77,9 +80,12 @@ struct PhoneSettingsView: View {
                 }
             }
         }
+        .task { servicesEnabled = await LocationServices.isEnabled() }
         .onChange(of: scenePhase) { _, phase in
             // 設定アプリから戻ってきたら、変えた許可を反映する
-            if phase == .active { locationStatus = CLLocationManager().authorizationStatus }
+            guard phase == .active else { return }
+            locationStatus = CLLocationManager().authorizationStatus
+            Task { servicesEnabled = await LocationServices.isEnabled() }
         }
     }
 

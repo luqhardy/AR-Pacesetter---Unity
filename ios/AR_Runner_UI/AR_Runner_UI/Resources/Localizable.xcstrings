@@ -1344,6 +1344,74 @@
         }
       }
     },
+    "location.restricted.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parental controls or a management profile prevent location access on this iPhone. Measuring runs needs location."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ペアレンタルコントロールや管理プロファイルにより、このiPhoneでは位置情報を許可できません。走行の計測には位置情報が必要です。"
+          }
+        }
+      }
+    },
+    "location.restricted.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location is restricted on this iPhone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置情報は制限されているため利用できません"
+          }
+        }
+      }
+    },
+    "location.servicesOff.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on Settings → Privacy & Security → Location Services."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 → プライバシーとセキュリティ → 位置情報サービス をオンにしてください。"
+          }
+        }
+      }
+    },
+    "location.servicesOff.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location Services is off"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置情報サービスがオフです"
+          }
+        }
+      }
+    },
     "onboarding.page.avatar.body" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1629,6 +1697,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "制限されているため利用できません"
+          }
+        }
+      }
+    },
+    "phoneSettings.location.servicesOff" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location Services is off (whole iPhone)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置情報サービスがオフ(iPhone全体)"
           }
         }
       }

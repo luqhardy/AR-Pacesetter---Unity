@@ -182,7 +182,7 @@ stateDiagram-v2
 | 2 | ユニットテスト | `dotnet test Tests/UnitTests` | Unity非依存・数秒。PRでもCIが自動実行する |
 | 3 | Swift構文 | `swiftc -parse <file>` | 構文のみ。型検査はMacのXcodeでのみ可能 |
 | 3b | Swiftロジックテスト | `swift test --package-path ios` | **macOSでのみ**(WindowsのSwiftはリンクに Visual Studio が要る)。CI は `swift-logic-tests.yml` |
-| 4 | E2E回帰 | Unity を `-batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` | 2〜10分。**Unityエディタでプロジェクトを開いていると即失敗する**。失敗時は `e2e.log` の `[E2E] FAIL` 行を読む |
+| 4 | E2E回帰 | Unity を `-batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` | 2〜10分。**Unityエディタでプロジェクトを開いていると失敗する**(verify.sh は最初に検知して止まる)。失敗時は `e2e.log` の `[E2E] FAIL` 行を読む |
 
 - Unityやswiftcが既定の場所に無い場合は `UNITY_PATH=...` / `SWIFTC=...` を付けて `tools/verify.sh` を実行する。
 - E2Eのシナリオ追加は `Assets/_Project/Scripts/E2EScenarioBehaviour.cs`。アニメーションする値は1フレームで測らない(歩幅の位相で合否が変わる)。

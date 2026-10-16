@@ -5,7 +5,7 @@
 #   tools/verify.sh --fast     E2E を省く(数十秒。E2Eは2〜10分かかる)
 #
 # 全ステップ成功で終了コード0。どこかで失敗したらそこで止まり、非0で終わる。
-# E2E はUnityでプロジェクトを開いていると即失敗するので、先にエディタを閉じること。
+# E2E はUnityでプロジェクトを開いていると失敗するので、先にエディタを閉じること(開いていれば最初に止まる)。
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,6 +27,12 @@ esac
 
 step() { printf '\n== %s ==\n' "$1"; }
 fail() { printf '\nFAILED: %s\n' "$1"; exit 1; }
+
+# E2E まで数分かけてから分かりにくく失敗するのを避け、最初に止める
+. "$ROOT/tools/lib/unity-editor-lock.sh"
+if [ "$RUN_E2E" = 1 ] && unity_project_open "$ROOT"; then
+  fail "Unity エディタでこのプロジェクトが開いています — エディタを閉じてから実行してください(E2E を省くなら --fast)"
+fi
 
 step "1/4 C# compile (tools/compile-check)"
 dotnet build "$ROOT/tools/compile-check" -nologo -v:q || fail "C# compile"

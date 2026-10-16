@@ -50,6 +50,10 @@ enum AppStrings {
     enum Location {
         static let permissionTitle: LocalizedStringKey = "location.permission.title"
         static let permissionMessage: LocalizedStringKey = "location.permission.message"
+        static let restrictedTitle: LocalizedStringKey = "location.restricted.title"
+        static let restrictedMessage: LocalizedStringKey = "location.restricted.message"
+        static let servicesOffTitle: LocalizedStringKey = "location.servicesOff.title"
+        static let servicesOffMessage: LocalizedStringKey = "location.servicesOff.message"
     }
 
     /// オンボーディング(S1)
@@ -209,6 +213,7 @@ enum AppStrings {
         static let locationNotDetermined: LocalizedStringKey = "phoneSettings.location.notDetermined"
         static let locationDenied: LocalizedStringKey = "phoneSettings.location.denied"
         static let locationRestricted: LocalizedStringKey = "phoneSettings.location.restricted"
+        static let locationServicesOff: LocalizedStringKey = "phoneSettings.location.servicesOff"
     }
 
     /// 数値の書式。値(Localizable.xcstrings)が書式指定子を持つ

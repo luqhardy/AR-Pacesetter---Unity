@@ -78,8 +78,8 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 lastRunCard
-                if locationManager.isPermissionDenied {
-                    LocationPermissionMessage()
+                if let problem = locationManager.locationProblem {
+                    LocationPermissionMessage(problem: problem)
                         .frame(maxWidth: .infinity)
                 }
                 bottomStartCard
@@ -368,12 +368,21 @@ private final class HomeLocationManager: NSObject, ObservableObject, CLLocationM
         manager.desiredAccuracy = kCLLocationAccuracyBest
     }
 
-    var isPermissionDenied: Bool {
-        authorizationStatus == .denied || authorizationStatus == .restricted
+    /// iPhone 全体の位置情報サービス(裏で調べる — LocationServices)
+    @Published private(set) var servicesEnabled = true
+
+    /// 位置情報が使えない理由(拒否・制限・サービスオフ)。問題が無ければ nil
+    var locationProblem: LocationProblem? {
+        .resolve(servicesEnabled: servicesEnabled, authorization: LocationAuthorization(authorizationStatus))
+    }
+
+    private func refreshServicesEnabled() {
+        Task { servicesEnabled = await LocationServices.isEnabled() }
     }
 
     func start() {
         authorizationStatus = manager.authorizationStatus
+        refreshServicesEnabled()
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
@@ -385,7 +394,9 @@ private final class HomeLocationManager: NSObject, ObservableObject, CLLocationM
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        // 位置情報サービスのオン・オフを切り替えたときもここに来る
         authorizationStatus = manager.authorizationStatus
+        refreshServicesEnabled()
         if manager.authorizationStatus == .authorizedWhenInUse
             || manager.authorizationStatus == .authorizedAlways {
             manager.startUpdatingLocation()

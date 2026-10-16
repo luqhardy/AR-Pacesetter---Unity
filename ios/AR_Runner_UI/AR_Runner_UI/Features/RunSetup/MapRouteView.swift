@@ -86,8 +86,8 @@ struct MapRouteView: View {
                                 .stroke(Color.arBorder, lineWidth: 1)
                         )
                         .overlay {
-                            if locationManager.isPermissionDenied {
-                                LocationPermissionMessage()
+                            if let problem = locationManager.locationProblem {
+                                LocationPermissionMessage(problem: problem)
                             }
                         }
                         .padding(.horizontal, 24)
@@ -240,12 +240,21 @@ private final class MapRouteLocationManager: NSObject, ObservableObject, CLLocat
         manager.desiredAccuracy = kCLLocationAccuracyBest
     }
 
-    var isPermissionDenied: Bool {
-        authorizationStatus == .denied || authorizationStatus == .restricted
+    /// iPhone 全体の位置情報サービス(裏で調べる — LocationServices)
+    @Published private(set) var servicesEnabled = true
+
+    /// 位置情報が使えない理由(拒否・制限・サービスオフ)。問題が無ければ nil
+    var locationProblem: LocationProblem? {
+        .resolve(servicesEnabled: servicesEnabled, authorization: LocationAuthorization(authorizationStatus))
+    }
+
+    private func refreshServicesEnabled() {
+        Task { servicesEnabled = await LocationServices.isEnabled() }
     }
 
     func start() {
         authorizationStatus = manager.authorizationStatus
+        refreshServicesEnabled()
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
@@ -257,7 +266,9 @@ private final class MapRouteLocationManager: NSObject, ObservableObject, CLLocat
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        // 位置情報サービスのオン・オフを切り替えたときもここに来る
         authorizationStatus = manager.authorizationStatus
+        refreshServicesEnabled()
         if manager.authorizationStatus == .authorizedWhenInUse
             || manager.authorizationStatus == .authorizedAlways {
             manager.startUpdatingLocation()
