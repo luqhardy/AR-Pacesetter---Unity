@@ -1599,19 +1599,36 @@
         }
       }
     },
+    "phoneSettings.language.system" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow iPhone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端末に合わせる"
+          }
+        }
+      }
+    },
     "phoneSettings.languageNote" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You can change the language in the iPhone Settings app"
+            "value" : "Japanese by default. \"Follow iPhone\" uses the iPhone setting for this app. The booth staff screen and developer mode are Japanese only"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "言語はiPhoneの設定アプリで変更できます"
+            "value" : "既定は日本語です。「端末に合わせる」は iPhone の設定(このアプリの言語)に従います。体験モードのスタッフ画面・開発者モードは日本語のみです"
           }
         }
       }

@@ -20,6 +20,7 @@ final class LocalizationCatalogTests: XCTestCase {
             #"LocalizedStringKey = "([^"]+)""#,
             #"-> LocalizedStringKey \{ "([^"]+)" \}"#,
             #"String\(localized: "([^"]+)"\)"#,
+            #"resolve\("([^"]+)"\)"#,       // String が要る文言(選んだ表示言語で引く)
         ]
         var keys = Set<String>()
         for pattern in patterns {

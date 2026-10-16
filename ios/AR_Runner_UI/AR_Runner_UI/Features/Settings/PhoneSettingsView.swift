@@ -4,7 +4,7 @@ import UIKit
 
 // MARK: - スマホ設定
 // hsuyaminmyat625/AR_project のスマホ設定画面(2026-10-06)を移植。**実際に効く項目だけ**を置く:
-//   - 言語(2026-10-14 の英語対応 — 切り替えは iOS の設定アプリのアプリ別の「言語」)
+//   - 言語(日本語 / English / 端末に合わせる。既定は日本語 — AppLanguage。選ぶとその場で全画面が切り替わる)
 //   - 位置情報の許可(今の状態と設定アプリへの導線。iPhone 全体の位置情報サービスがオフならそれを出す)
 // 相手側にあった「通知」(アプリは通知を送らない)・「バックグラウンド位置情報」(OS の許可で決まる)・
 // 「距離の単位」(km 以外の表示経路が無い)は、押しても何も変わらないので置かない。
@@ -16,13 +16,8 @@ struct PhoneSettingsView: View {
     @State private var locationStatus = CLLocationManager().authorizationStatus
     /// iPhone 全体の位置情報サービス(オフならアプリの許可に関係なく測位できない)
     @State private var servicesEnabled = true
-
-    /// 今の表示言語の名前(その言語で: 日本語 / English)
-    private var languageName: String {
-        let locale = Locale.appLanguage
-        let code = locale.language.languageCode?.identifier ?? "ja"
-        return locale.localizedString(forLanguageCode: code) ?? code
-    }
+    /// 表示言語(App のルートと同じ保存値。変えるとルートが描き直されて全画面が切り替わる)
+    @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.defaultValue.rawValue
 
     private var locationStatusText: LocalizedStringKey {
         guard servicesEnabled else { return AppStrings.PhoneSettings.locationServicesOff }
@@ -56,13 +51,18 @@ struct PhoneSettingsView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 12) {
                         SettingsSectionCard(icon: "globe", title: AppStrings.PhoneSettings.language) {
-                            Text(languageName)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.white)
+                            // 言語名はその言語のまま書く(英語の画面でも「日本語」と読めるように)
+                            Picker(AppStrings.PhoneSettings.language, selection: $appLanguage) {
+                                Text(verbatim: "日本語").tag(AppLanguage.japanese.rawValue)
+                                Text(verbatim: "English").tag(AppLanguage.english.rawValue)
+                                Text(AppStrings.PhoneSettings.languageSystem).tag(AppLanguage.system.rawValue)
+                            }
+                            .pickerStyle(.segmented)
+                            .colorScheme(.dark)
                             Text(AppStrings.PhoneSettings.languageNote)
                                 .font(.system(size: 12))
                                 .foregroundColor(.arGrayText)
-                            SettingsActionButton(title: AppStrings.Common.changeInSettings, action: openAppSettings)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
 
                         SettingsSectionCard(icon: "location.fill", title: AppStrings.PhoneSettings.location) {

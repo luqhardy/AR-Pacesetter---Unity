@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-16 (2) — アプリ内の言語設定(既定は日本語)
+
+相手側の 466dd48「force app language to Japanese」は全画面を常に日本語にし、10/14 に入れた英語を誰も使えなくしていた(英語の iPhone で英語が出たため、と推測)。目的(英語の iPhone でも日本語で出す)は採り、スマホ設定に**日本語 / English / 端末に合わせる**を置いた(`AppLanguage`・既定は日本語・選ぶとその場で全画面が切り替わる)。相手側の `String(localized:locale:)` は数値の書式にしか効かず英語の iPhone では英語のままだったため、String の文言は `AppStrings.resolve`(`LocalizedStringResource` に言語を渡す)で引く。日付も選んだ言語。相手側のコミットは履歴のみ取り込み。
+検証: tools/verify.sh 全通過(dotnet test 421/421、Swift 55ファイル構文OK、E2E 282/282)。キーとカタログの対応は Python で同じ検査をして 154キー OK。追加の Swift テスト6件は CI(macOS)で実行。言語がその場で切り替わるかは実機で要確認
+
 ### 2026-10-16 (1) — 実地テストの書き出し(電池・発熱つき)/ 位置情報の案内を3種類に / verify.sh がエディタを検知 / 使われていない画面の削除
 
 開発者モードに「レポートをコピー」: 端末・グラス・M2P・アバター非表示の履歴・Unity の状態に、走行の開始・終了の電池と最大の発熱(新規 `PowerMonitor`)を加えて TEMPLATE.md に貼れる Markdown にする — §10「連続稼働60分・電池30%以上」を T10 として記録(60分未満は同じ減り方での見込み)。位置情報の案内を拒否・制限(設定を開くを出さない)・位置情報サービスのオフで分けた(タスク表)。`verify.sh` と `publish-unity-export.sh` は Unity エディタが開いていれば最初に止まる(`tools/lib/unity-editor-lock.sh`)。使われていない4画面(ConnectView・CourseSetupView・TabBarView・StatBadge)を削除。PR テンプレート(AGENTS.md の約束)を追加。
