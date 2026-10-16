@@ -193,7 +193,9 @@ stateDiagram-v2
   画面は `Features/<機能>/`、共通部品は `Core/`(hsuyaminmyat625/AR_project と同じ構成)。
 - **走者が見る文言は `Core/Localization/AppStrings.swift` のキーで書き、日本語・英語を `Resources/Localizable.xcstrings` に足す**。
   カタログに無いキーは画面にそのまま出る(CI の `LocalizationCatalogTests` が対応を確かめる)。
-  体験モードのスタッフ画面・開発者モード・Unity から届く文言は日本語のみ
+  体験モードのスタッフ画面・開発者モード・Unity から届く文言は日本語のみ。
+  表示言語はスマホ設定で選ぶ(`AppLanguage`・**既定は日本語** — iPhone が英語でも日本語)。文言を String で作るときは
+  `AppStrings.resolve` を使う(`String(localized:)` は iPhone の言語で引くため、選んだ言語にならない)
 
 ### コミットの規約
 - コミット前に [CHANGELOG.md](CHANGELOG.md) の先頭へ**5行以内**のエントリを足す(変更・理由・検証結果)。

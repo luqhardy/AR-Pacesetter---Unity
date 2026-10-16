@@ -8,7 +8,16 @@ import SwiftUI
 ///
 /// 日本語のままの画面: 体験モードのスタッフ画面(BoothDemoView)・開発者モード(DevModeView)。
 /// Unity から届く文言(アバター非表示の理由・VRM の判定結果)とグラスの HUD も日本語のまま。
+///
+/// 表示言語はスマホ設定で選ぶ(AppLanguage・既定は日本語)。画面の `Text` 等は App のルートの `\.locale` に従う。
+/// **文字列を String で作るときは `AppStrings.resolve` を使う** — `String(localized:)` は iPhone の言語で引くため、
+/// 選んだ言語にならない(`locale:` 引数は数値の書式にしか効かない)。
 enum AppStrings {
+    /// 選んだ表示言語で文言を引く(String が要るところ用)
+    static func resolve(_ key: String.LocalizationValue, locale: Locale = .appLanguage) -> String {
+        String(localized: LocalizedStringResource(key, locale: locale))
+    }
+
     /// 複数の画面で使う
     enum Common {
         static let back: LocalizedStringKey = "common.back"
@@ -184,9 +193,9 @@ enum AppStrings {
         static let available: LocalizedStringKey = "avatar.available"
         static let none: LocalizedStringKey = "avatar.none"
         static let inUse: LocalizedStringKey = "avatar.inUse"
-        static var thisModel: String { String(localized: "avatar.thisModel") }
-        static var defaultModel: String { String(localized: "avatar.default") }
-        static func fileImportFailed(_ detail: String) -> String { String(localized: "avatar.fileImportFailed \(detail)") }
+        static var thisModel: String { resolve("avatar.thisModel") }
+        static var defaultModel: String { resolve("avatar.default") }
+        static func fileImportFailed(_ detail: String) -> String { resolve("avatar.fileImportFailed \(detail)") }
     }
 
     /// AR設定(S9-3)
@@ -206,6 +215,7 @@ enum AppStrings {
         static let subtitle: LocalizedStringKey = "phoneSettings.subtitle"
         static let language: LocalizedStringKey = "phoneSettings.language"
         static let languageNote: LocalizedStringKey = "phoneSettings.languageNote"
+        static let languageSystem: LocalizedStringKey = "phoneSettings.language.system"
         static let location: LocalizedStringKey = "phoneSettings.location"
         static let locationNote: LocalizedStringKey = "phoneSettings.locationNote"
         static let locationAlways: LocalizedStringKey = "phoneSettings.location.always"
@@ -219,17 +229,19 @@ enum AppStrings {
     /// 数値の書式。値(Localizable.xcstrings)が書式指定子を持つ
     enum Formats {
         static func routeDistance(_ km: Double) -> String {
-            String.localizedStringWithFormat(String(localized: "format.route.distance"), km)
+            String(format: resolve("format.route.distance"), locale: .appLanguage, km)
         }
         static func paceWheel(_ kmh: Double, _ perKm: String) -> String {
-            String.localizedStringWithFormat(String(localized: "format.settings.paceWheel"), kmh, perKm)
+            String(format: resolve("format.settings.paceWheel"), locale: .appLanguage, kmh, perKm)
         }
     }
 }
 
 extension Locale {
-    /// 画面の表示言語(iPhone の設定アプリの「言語」に従う)。日付の書式をこれに合わせる
+    /// 画面の表示言語(スマホ設定で選んだもの・既定は日本語 — AppLanguage)。
+    /// App のルートの `\.locale` と、AppStrings.resolve・日付の書式がこれに従う
     static var appLanguage: Locale {
-        Locale(identifier: Bundle.main.preferredLocalizations.first ?? "ja")
+        let choice = AppLanguage.stored(UserDefaults.standard.string(forKey: AppLanguage.storageKey))
+        return Locale(identifier: choice.localizationIdentifier(systemLocalization: Bundle.main.preferredLocalizations.first))
     }
 }
