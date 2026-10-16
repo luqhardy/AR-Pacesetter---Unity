@@ -15,9 +15,10 @@ Docs/field-tests/
 
 1. 走る前に [FIELD_TEST_PLAN.md §0 / §0-A](../FIELD_TEST_PLAN.md) を済ませる
 2. 走行後、iPhone の **ホーム → メニュー → 開発者モード**
+   - **実地テストの書き出し → レポートをコピー** → RESULTS.md の「開発者モードからの書き出し」に貼る
+     (端末・グラスの状態・M2P・アバター非表示の履歴・`m2p.lastMs` / `csv.imuSource` / `glass.fit` を含む状態が入る。
+     スクリーンショットからの転記は不要)
    - **走行ログ CSV** → 各ファイルをタップ → 共有(AirDrop / ファイル)で取り出す
-   - **アバター非表示の履歴** → 消えた時刻・秒数・理由をスクリーンショット(RESULTS.md に転記)
-   - **状態**(`m2p.lastMs` / `csv.imuSource` / `glass.fit`)をスクリーンショット
 3. CSV をこのフォルダへ置き、解析する:
 
    ```bash

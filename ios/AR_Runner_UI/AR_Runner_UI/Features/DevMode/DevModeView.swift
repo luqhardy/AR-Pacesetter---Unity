@@ -9,10 +9,11 @@ import Combine
 // 存在すら見えていなかった。取り出すには Mac の Xcode でコンテナを
 // ダウンロードするしかなく、トラックで走った直後に確認する手段が無かった。
 //
-// この画面で解決するのは2つ:
+// この画面で解決するのは3つ:
 //   1. 走行ログCSVの一覧と共有(AirDrop / ファイル / メール など何でも)
 //   2. 「今この端末で何が効いているか」の可視化 — M2Pが実測なのか、IMUの供給元、
 //      グラスの画角、GPS判定の状態。実機でしか判らないことを1画面に集める
+//   3. 実地テストの記録 — 1〜2 と端末情報を Docs/field-tests/TEMPLATE.md に貼れる形で書き出す
 //
 // 値はすべて Unity のスナップショット(DevDiagnostics)をそのまま出す。
 // **ここで数字を作らない** — 未計測は -1 のまま見せる。
@@ -20,10 +21,12 @@ import Combine
 struct DevModeView: View {
 
     @ObservedObject private var bridge = UnityBridge.shared
+    @ObservedObject private var external = ExternalDisplayManager.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var shareItem: ShareItem?
     @State private var autoRefresh = true
+    @State private var reportCopied = false
 
     private let accent = Color(red: 199.0 / 255.0, green: 242.0 / 255.0, blue: 25.0 / 255.0)
     private let cardColor = Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 30.0 / 255.0)
@@ -36,6 +39,7 @@ struct DevModeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    reportSection
                     logSection
                     visibilitySection
                     indoorTestSection
@@ -60,13 +64,89 @@ struct DevModeView: View {
         .onAppear { refresh() }
         .onReceive(tick) { _ in if autoRefresh { bridge.requestDiagnostics() } }
         .sheet(item: $shareItem) { item in
-            ActivityView(items: [item.url])
+            ActivityView(items: item.items)
         }
     }
 
     private func refresh() {
         bridge.requestDiagnostics()
         bridge.requestLogFiles()
+    }
+
+    // MARK: - 実地テストの書き出し
+
+    /// T1〜T9 の記録用。端末・グラス・M2P・電池と発熱(§10)・アバター非表示の履歴・Unity の状態を Markdown にする
+    /// (Docs/field-tests/TEMPLATE.md の「開発者モードからの書き出し」に貼る)。CSV は下の一覧から別に共有する
+    private var reportSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("実地テストの書き出し",
+                          subtitle: "端末・M2P・電池と発熱・非表示の履歴・状態を TEMPLATE.md に貼れる形で")
+            HStack(spacing: 10) {
+                Button {
+                    UIPasteboard.general.string = makeReport()
+                    reportCopied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { reportCopied = false }
+                } label: {
+                    Label(reportCopied ? "コピーしました" : "レポートをコピー",
+                          systemImage: reportCopied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(accent, in: RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(.black)
+                }
+                Button { shareItem = ShareItem(items: [makeReport()]) } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 48)
+                        .padding(.vertical, 11)
+                        .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+    }
+
+    private func makeReport() -> String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return FieldTestReport(
+            generatedAt: Date(),
+            device: .init(model: Self.deviceModel,
+                          systemVersion: UIDevice.current.systemVersion,
+                          appVersion: "\(version) (\(build))"),
+            glassesStatus: glassesStatusText,
+            latency: .init(lastMs: bridge.motionToPhotonMs,
+                           maxMs: bridge.motionToPhotonMaxMs,
+                           overBudgetRatio: bridge.motionToPhotonOverBudgetRatio,
+                           sampleCount: bridge.motionToPhotonSampleCount),
+            visibilityEvents: bridge.visibilityLog.events,
+            diagnostics: bridge.diagnostics.map { (key: $0.key, value: $0.value) },
+            power: PowerMonitor.shared.lastRun,
+            currentPower: PowerMonitor.shared.sample()
+        ).markdown()
+    }
+
+    /// 準備画面と同じ判定(開発者モードは日本語のみなので文言はここで持つ)
+    private var glassesStatusText: String {
+        switch GlassRowStatus.resolve(glassesConnected: external.isGlassesConnected,
+                                      mirroring: external.isMirroring,
+                                      manualConnect: false) {
+        case .connected: return "接続済み"
+        case .mirroring: return "ミラーリング中(グラス専用の画面が無い)"
+        case .manual: return "手動"
+        case .notDetected: return "未接続"
+        }
+    }
+
+    /// 機種の識別子(例 "iPhone16,2")。UIDevice.model は "iPhone" しか返さない
+    private static var deviceModel: String {
+        var info = utsname()
+        uname(&info)
+        return withUnsafeBytes(of: &info.machine) { raw in
+            String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+        }
     }
 
     // MARK: - 走行ログCSV
@@ -88,7 +168,7 @@ struct DevModeView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(bridge.logFiles) { file in
-                        Button { shareItem = ShareItem(url: file.url) } label: {
+                        Button { shareItem = ShareItem(items: [file.url]) } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "doc.text")
                                     .foregroundStyle(accent)
@@ -280,7 +360,8 @@ struct DevModeView: View {
 
 private struct ShareItem: Identifiable {
     let id = UUID()
-    let url: URL
+    /// ファイルURL(CSV)または文字列(レポート)
+    let items: [Any]
 }
 
 /// UIActivityViewController の薄いラッパー。ファイルURLをそのまま渡せば

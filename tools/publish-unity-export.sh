@@ -44,6 +44,10 @@ clean_tree() {
 cd "$ROOT"
 
 step "前提の確認"
+. "$ROOT/tools/lib/unity-editor-lock.sh"
+if [ "$SKIP_EXPORT" = 0 ] && unity_project_open "$ROOT"; then
+  fail "Unity エディタでこのプロジェクトが開いています — エディタを閉じてから実行してください"
+fi
 clean_tree || { git status --short; fail "作業ツリーに未コミットの変更があります(エクスポートとコミットを一致させるため)"; }
 SHA="$(git rev-parse HEAD)"
 SHA8="$(git rev-parse --short=8 HEAD)"

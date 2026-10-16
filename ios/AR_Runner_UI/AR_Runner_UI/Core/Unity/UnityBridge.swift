@@ -704,6 +704,8 @@ final class ARSessionManager: ObservableObject {
         // 実測センサー起動: CoreLocation(距離/速度) + HealthKit(心拍・Watch経由)
         LocationTracker.shared.start()
         HeartRateMonitor.shared.start()
+        // §10(連続稼働60分・電池30%以上)の確認用に、開始時の電池・発熱を残す
+        PowerMonitor.shared.runStarted()
 
         bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm,
                             ghostDateIso: ghostDateIso, hideUnityHud: hideUnityHud)
@@ -797,5 +799,6 @@ final class ARSessionManager: ObservableObject {
         LocationTracker.shared.onNewFix = nil
         LocationTracker.shared.stop()
         HeartRateMonitor.shared.stop()
+        PowerMonitor.shared.runEnded()
     }
 }
