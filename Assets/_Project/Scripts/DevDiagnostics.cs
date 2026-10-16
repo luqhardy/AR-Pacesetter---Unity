@@ -118,6 +118,8 @@ public static class DevDiagnostics
         if (visibility != null)
             Add(rows, "avatar.visibility", visibility.IsVisible ? "表示中" : visibility.CurrentReason);
 
+        // F-10 の警告(日本語)を描くフォント。iPhone ではヒラギノになるはず。無いと警告は英語で出る
+        Add(rows, "hud.jaFont", PeripheralHudSkin.JapaneseFontName ?? "なし(F-10 の警告は英語)");
         Add(rows, "render.screenPx", $"{Screen.width}x{Screen.height}");
         Add(rows, "render.targetFps", Application.targetFrameRate.ToString(CultureInfo.InvariantCulture));
         Add(rows, "render.currentFps", Num(Time.smoothDeltaTime > 0.0001f ? 1f / Time.smoothDeltaTime : -1f));

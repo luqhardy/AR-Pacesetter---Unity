@@ -79,5 +79,28 @@ public static class PaceHudDisplay
              + "\"/km";
     }
 
+    /// <summary>ペースゲージ(グラスの HUD 右上)の振れ幅: 目標との差がこの秒/km で端まで振れる。</summary>
+    public const float GaugeRangeSecondsPerKm = 30f;
+
+    /// <summary>
+    /// ペースゲージの針の位置(-1〜+1)。0 = 目標どおり、+ = 目標より速い(右)、- = 遅い(左)。
+    /// 目標との差(秒/km)を <see cref="GaugeRangeSecondsPerKm"/> で割って端で止める。
+    /// ペースが分からないときは NaN(針を隠す)。
+    /// </summary>
+    public static float GaugePosition(float currentPaceMinutesPerKm, float targetPaceMinutesPerKm,
+                                      float rangeSecondsPerKm = GaugeRangeSecondsPerKm)
+    {
+        if (!IsUsable(currentPaceMinutesPerKm) || currentPaceMinutesPerKm <= 0f
+            || currentPaceMinutesPerKm >= UndisplayablePaceMinutesPerKm)
+            return float.NaN;
+        if (!IsUsable(targetPaceMinutesPerKm) || targetPaceMinutesPerKm <= 0f || rangeSecondsPerKm <= 0f)
+            return float.NaN;
+
+        // ペースは小さいほど速い: 目標 − 現在 が正なら速い
+        float fasterBySeconds = (targetPaceMinutesPerKm - currentPaceMinutesPerKm) * 60f;
+        float p = fasterBySeconds / rangeSecondsPerKm;
+        return p < -1f ? -1f : p > 1f ? 1f : p;
+    }
+
     private static bool IsUsable(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
 }

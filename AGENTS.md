@@ -21,7 +21,8 @@ Unityプロジェクト(本リポジトリのルート)+ SwiftUIホスト(`ios/`
 - アバター位置・接地・カルマンフィルタ・同期率に触れる → §4
 - GPSロスト/FSM(`GameStateController` / `GpsSignalMonitor`)に触れる → §5
 - Swift⇄Unity のメッセージを追加・変更する → [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md)
-- グラス表示・画角・頭部姿勢 → [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
+- グラス表示・画角・頭部姿勢・HUDの見た目 → [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
+  (HUD は加算表示なので黒は透ける。見た目を変えたら `HudPreviewRunner` で画像に書き出して確かめる — §3-4)
 - 屋外路面の分類(ARCore) → [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
 - 差し替えアバター(VRM) → [Docs/VRM_AVATARS.md](Docs/VRM_AVATARS.md)
 - 実地テストの計画・実機での初回確認 → [Docs/FIELD_TEST_PLAN.md](Docs/FIELD_TEST_PLAN.md)(実機で一度も見ていない項目は §0-A)。
