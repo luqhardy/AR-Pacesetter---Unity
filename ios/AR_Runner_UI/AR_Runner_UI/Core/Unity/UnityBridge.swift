@@ -419,7 +419,9 @@ final class UnityBridge: NSObject, ObservableObject {
             case "TargetSpeedUpdated":
                 if let kmh = dict["value"] as? Double, kmh.isFinite, (1.0...30.0).contains(kmh) {
                     self.confirmedTargetSpeedKmH = kmh
-                    RunSettings.shared.paceKmH = kmh
+                    RunSettings.shared.confirm(paceKmH: kmh,
+                                               distanceKm: RunSettings.shared.distanceKm,
+                                               timeSeconds: RunSettings.shared.timeSeconds)
                 }
             case "SyncRateUpdated":
                 self.avatarSyncRate = dict["value"] as? Int ?? 0
