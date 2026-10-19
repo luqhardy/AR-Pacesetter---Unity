@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine   // Timer.publish().autoconnect() (Xcode 26 は SwiftUI 経由の暗黙再エクスポートをしない)
 
 // MARK: - Device Connect Screen (All devices on one screen)
 struct DeviceConnectView: View {

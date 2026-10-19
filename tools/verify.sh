@@ -56,6 +56,14 @@ else
   echo "parsed $n files (syntax only — type checking needs Xcode)"
 fi
 
+# Combine の import 漏れ(Xcode 26 は SwiftUI 経由で Combine を再エクスポートしない)。構文検査では見えず、
+# Mac の CI(iOS build)で初めて落ちる — 2026-10-19 に Timer.publish().autoconnect() で3コミット続けて落とした
+missing=$(grep -rlE '\.autoconnect\(\)|@Published|: *ObservableObject|, *ObservableObject|AnyCancellable|\.sink *\{|(Passthrough|CurrentValue)Subject' \
+            --include='*.swift' "$ROOT/ios/AR_Runner_UI" | while IFS= read -r f; do
+            grep -qE '^import Combine' "$f" || echo "$f"; done)
+[ -z "$missing" ] || fail "Combine を使うのに 'import Combine' が無い: $missing"
+echo "Combine imports OK"
+
 # iOS アプリの純ロジック(ios/AppLogic)のテスト。リンクに macOS のツールチェーンが要るので Mac でだけ走らせる
 # (Windows の Swift は Visual Studio の C ランタイムが無いとリンクできない)。CI は swift-logic-tests.yml
 if [ "$(uname -s)" = "Darwin" ] && command -v swift >/dev/null 2>&1; then

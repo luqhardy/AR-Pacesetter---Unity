@@ -181,7 +181,7 @@ stateDiagram-v2
 |---|---|---|---|
 | 1 | C#コンパイル | `dotnet build tools/compile-check`(+ `-p:CompileCheckEditor=true`) | Unityを開かずに `Assets/_Project/Scripts` を検証。2回目は `UNITY_EDITOR` を定義して `#if UNITY_EDITOR` の中(E2E シナリオ等)も通す。要: Unity 6000.3.17f1 と一度生成済みの `Library/` |
 | 2 | ユニットテスト | `dotnet test Tests/UnitTests` | Unity非依存・数秒。PRでもCIが自動実行する |
-| 3 | Swift構文 | `swiftc -parse <file>` | 構文のみ。型検査はMacのXcodeでのみ可能 |
+| 3 | Swift構文 | `swiftc -parse <file>` | 構文のみ。型検査はMacのXcodeでのみ可能。併せて `import Combine` の漏れを grep で検査(Xcode 26 は SwiftUI 経由で Combine を見せない — `@Published`・`ObservableObject`・`Timer.publish().autoconnect()` 等を使うファイルは自分で import する) |
 | 3b | Swiftロジックテスト | `swift test --package-path ios` | **macOSでのみ**(WindowsのSwiftはリンクに Visual Studio が要る)。CI は `swift-logic-tests.yml` |
 | 4 | E2E回帰 | Unity を `-batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` | 2〜10分。**Unityエディタでプロジェクトを開いていると失敗する**(verify.sh は最初に検知して止まる)。失敗時は `e2e.log` の `[E2E] FAIL` 行を読む |
 
