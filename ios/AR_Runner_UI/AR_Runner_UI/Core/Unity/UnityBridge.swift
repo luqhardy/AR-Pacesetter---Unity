@@ -66,6 +66,13 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var currentVrmAvatar: String = ""
     /// 直近の取り込み/選択の結果。UIはこれを見て成否と理由を出す
     @Published var lastVrmResult: VrmImportResult?
+    /// アバターの選択をグラス(Unity)へ反映できたか(タスク表 S9 異常系「送信失敗時のトーストと再送信」)
+    @Published private(set) var avatarDelivery: SettingDeliveryState = .idle
+    /// 反映を待っている選択(再送信で同じものを送る)
+    private var pendingAvatarPath: String?
+    /// 応答を待つ間だけ Unity を動かしているか(応答・時間切れで止め直す)
+    private var resumedForAvatarDelivery = false
+    private var avatarDeliveryTimeout: DispatchWorkItem?
 
     // MARK: 展示ブースの体験モード (Kobe Calling)
     /// 体験モードの進行(Unity BoothDemoController の BoothDemoProgress)
@@ -386,8 +393,49 @@ final class UnityBridge: NSObject, ObservableObject {
 
     /// 一覧から既存のアバターを選び直す。
     func selectVrmAvatar(path: String) {
+        pendingAvatarPath = path
+        deliverPendingAvatar()
+    }
+
+    /// 「再送信」: 反映できなかった選択をもう一度送る
+    func retryAvatarSelection() {
+        deliverPendingAvatar()
+    }
+
+    /// 選択を送り、応答(VrmImportResult)を待つ。走行の後で止めてある Unity は応答までの間だけ動かす。
+    /// 一度も起動していなければ送れないので溜め(`.queued`)、次に走り始めたときに反映する
+    private func deliverPendingAvatar() {
+        guard let path = pendingAvatarPath else { return }
+        let launched = UnityLauncher.shared.hasLaunchedOnce
+        if !resumedForAvatarDelivery,
+           SettingDeliveryState.needsTemporaryResume(unityLaunched: launched, unityReady: isUnityReady,
+                                                     sessionActive: ARSessionManager.shared.isSessionActive) {
+            UnityLauncher.shared.resume()
+            resumedForAvatarDelivery = true
+        }
+        avatarDelivery = SettingDeliveryState.onSend(unityLaunched: launched, unityReady: isUnityReady)
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
                     payload: ["command": "SelectVrmAvatar", "path": path])
+
+        avatarDeliveryTimeout?.cancel()
+        guard avatarDelivery == .sending else { return }
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.avatarDelivery == .sending else { return }
+            self.avatarDelivery = .failed
+            self.endAvatarDelivery()
+        }
+        avatarDeliveryTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + SettingDeliveryState.responseTimeoutSeconds, execute: timeout)
+    }
+
+    /// 応答が来た・諦めた。応答のために動かした Unity は止め直す(走行が始まっていたら止めない)
+    private func endAvatarDelivery() {
+        avatarDeliveryTimeout?.cancel()
+        avatarDeliveryTimeout = nil
+        if resumedForAvatarDelivery {
+            resumedForAvatarDelivery = false
+            if !ARSessionManager.shared.isSessionActive { UnityLauncher.shared.pause() }
+        }
     }
 
     /// 選べるアバターの一覧を要求する(VrmAvatarList イベントで返る)。
@@ -468,6 +516,12 @@ final class UnityBridge: NSObject, ObservableObject {
                               path: $0["path"] as? String ?? "")
                 }
             case "VrmImportResult":
+                // 選択が届いた(成否は下の結果で出す)。取り込みの応答でも同じ — 待っていた選択は済んだ扱い
+                if self.avatarDelivery != .idle {
+                    self.avatarDelivery = .idle
+                    self.pendingAvatarPath = nil
+                    self.endAvatarDelivery()
+                }
                 let accepted = dict["accepted"] as? Bool ?? false
                 self.lastVrmResult = VrmImportResult(
                     accepted: accepted,

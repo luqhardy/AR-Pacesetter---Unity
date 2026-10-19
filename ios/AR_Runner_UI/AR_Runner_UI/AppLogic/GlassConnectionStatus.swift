@@ -31,6 +31,9 @@ nonisolated enum GlassRowStatus: Equatable {
 nonisolated enum GlassConnectionProblem: Equatable {
     /// 挿さっていない
     case notDetected
+    /// 挿した直後で、iOS がグラス用の画面を作るのを待っている(この間はミラーリングに見える)。
+    /// エラーではない — 待っても変わらなければ `.incomplete` になる(タスク表 S4「ARタイムアウト」)
+    case connecting
     /// 挿さっているが、iOS がアプリ専用の画面を作らずミラーリングしている(不完全な接続)
     case incomplete
     /// この画面でつながった直後に切れた
@@ -38,8 +41,17 @@ nonisolated enum GlassConnectionProblem: Equatable {
     /// 走行中に切れて準備画面へ戻ってきた(§8.3。記録は続いている)
     case lostDuringRun
 
-    /// 実接続・手動の接続なら問題なし。それ以外は、走行中に切れた > この画面で切れた > ミラーリング > 未検出 の順に出す
-    static func resolve(status: GlassRowStatus, droppedHere: Bool, returnedFromRun: Bool) -> GlassConnectionProblem? {
+    /// 挿してから iOS がグラス用の画面を作るまで待つ秒数。これを過ぎてもミラーリングなら不完全な接続とする
+    static let connectTimeoutSeconds: TimeInterval = 10
+
+    /// 実接続・手動の接続なら問題なし。挿した直後のミラーリングは待つ(`connecting`)。
+    /// それ以外は、走行中に切れた > この画面で切れた > ミラーリング > 未検出 の順に出す
+    /// - Parameter mirroringSeconds: ミラーリングが続いている秒数。分からなければ nil(待たずにエラーにする)
+    static func resolve(status: GlassRowStatus, droppedHere: Bool, returnedFromRun: Bool,
+                        mirroringSeconds: TimeInterval? = nil) -> GlassConnectionProblem? {
+        if status == .mirroring, let seconds = mirroringSeconds, seconds >= 0, seconds < connectTimeoutSeconds {
+            return .connecting
+        }
         switch status {
         case .connected, .manual:
             return nil

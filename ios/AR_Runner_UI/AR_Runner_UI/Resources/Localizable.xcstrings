@@ -171,6 +171,74 @@
         }
       }
     },
+    "avatar.delivery.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't apply the setting to the AR glasses"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ARグラスへの設定反映に失敗しました"
+          }
+        }
+      }
+    },
+    "avatar.delivery.queued" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will be applied to the AR glasses when you start your next run"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次に走り始めたときにARグラスへ反映します"
+          }
+        }
+      }
+    },
+    "avatar.delivery.resend" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再送信"
+          }
+        }
+      }
+    },
+    "avatar.delivery.sending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applying to the AR glasses…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ARグラスへ反映しています…"
+          }
+        }
+      }
+    },
     "avatar.fileImportFailed %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -562,19 +630,36 @@
         }
       }
     },
+    "devices.airpods.noHeadMotion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your earphones are connected, but no head direction is coming in. This needs AirPods Pro, AirPods (3rd generation or later) or AirPods Max. You can run without them"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "イヤホンはつながっていますが、頭の向きが届きません。AirPods Pro・AirPods(第3世代以降)・AirPods Max が必要です。なくても走れます"
+          }
+        }
+      }
+    },
     "devices.airpods.notFound" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not found. Check that Bluetooth is on, Airplane Mode is off, and you're wearing AirPods (Pro, 3rd gen or later, or Max). You can run without them"
+            "value" : "AirPods aren't connected. Check that Bluetooth is on, Airplane Mode is off, and you're wearing them. You can run without them"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "見つかりません。Bluetoothがオン・機内モードがオフで、AirPods(Pro・第3世代以降・Max)を耳に着けているか確認してください。なくても走れます"
+            "value" : "AirPodsがつながっていません。Bluetoothがオン・機内モードがオフか、AirPodsを耳に着けているか確認してください。なくても走れます"
           }
         }
       }
@@ -694,6 +779,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "接続済み"
+          }
+        }
+      }
+    },
+    "devices.connecting.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setting up the running view on the glasses. If nothing changes within 10 seconds, plug the cable in again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グラスに走行用の画面を出しています。10秒たっても変わらなければ、ケーブルを挿し直してください"
+          }
+        }
+      }
+    },
+    "devices.connecting.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting to the AR glasses…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ARグラスに接続しています…"
           }
         }
       }

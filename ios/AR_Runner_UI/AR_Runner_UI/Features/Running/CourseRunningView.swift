@@ -51,7 +51,7 @@ struct RunningView: View {
     private var isControlSurface: Bool { external.isGlassesConnected && hasUnityView }
 
     /// AirPods の頭の向きを使っていたのに届かなくなった(外した・接続が切れた)。走行は続ける
-    private var headTrackingLost: Bool { headTracker.isRequested && headTracker.status == .notFound }
+    private var headTrackingLost: Bool { headTracker.isRequested && headTracker.status.isLost }
 
     /// 計測は止めずに知らせる警告(電池・AirPods)。ロック画面にも同じものを出す
     private var runWarning: LocalizedStringKey? {

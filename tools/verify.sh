@@ -36,6 +36,8 @@ fi
 
 step "1/4 C# compile (tools/compile-check)"
 dotnet build "$ROOT/tools/compile-check" -nologo -v:q || fail "C# compile"
+# #if UNITY_EDITOR の中(E2E シナリオ等)は上では読まれない。エディタの定義でもう一度通す
+dotnet build "$ROOT/tools/compile-check" -nologo -v:q -p:CompileCheckEditor=true || fail "C# compile (UNITY_EDITOR)"
 
 step "2/4 Unit tests (Tests/UnitTests)"
 dotnet test "$ROOT/Tests/UnitTests" -nologo -v:q || fail "unit tests"

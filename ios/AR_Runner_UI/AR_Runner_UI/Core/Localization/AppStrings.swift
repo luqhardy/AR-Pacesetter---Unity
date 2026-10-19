@@ -124,11 +124,14 @@ enum AppStrings {
         static let errorLostDuringRunTitle: LocalizedStringKey = "devices.error.lostDuringRun.title"
         static let errorLostDuringRunBody: LocalizedStringKey = "devices.error.lostDuringRun.body"
         static let devBypass: LocalizedStringKey = "devices.devBypass"
+        static let connectingTitle: LocalizedStringKey = "devices.connecting.title"
+        static let connectingBody: LocalizedStringKey = "devices.connecting.body"
         // AirPods(頭の向き・任意)
         static let airpodsSubtitle: LocalizedStringKey = "devices.airpods.subtitle"
         static let airpodsSearching: LocalizedStringKey = "devices.airpods.searching"
         static let airpodsActive: LocalizedStringKey = "devices.airpods.active"
         static let airpodsNotFound: LocalizedStringKey = "devices.airpods.notFound"
+        static let airpodsNoHeadMotion: LocalizedStringKey = "devices.airpods.noHeadMotion"
         static let airpodsUnsupported: LocalizedStringKey = "devices.airpods.unsupported"
         static let airpodsDenied: LocalizedStringKey = "devices.airpods.denied"
     }
@@ -241,6 +244,11 @@ enum AppStrings {
         static let available: LocalizedStringKey = "avatar.available"
         static let none: LocalizedStringKey = "avatar.none"
         static let inUse: LocalizedStringKey = "avatar.inUse"
+        // グラスへの反映(タスク表 S9 異常系)
+        static let sending: LocalizedStringKey = "avatar.delivery.sending"
+        static let queuedTitle: LocalizedStringKey = "avatar.delivery.queued"
+        static let deliveryFailed: LocalizedStringKey = "avatar.delivery.failed"
+        static let resend: LocalizedStringKey = "avatar.delivery.resend"
         static var thisModel: String { resolve("avatar.thisModel") }
         static var defaultModel: String { resolve("avatar.default") }
         static func fileImportFailed(_ detail: String) -> String { resolve("avatar.fileImportFailed \(detail)") }

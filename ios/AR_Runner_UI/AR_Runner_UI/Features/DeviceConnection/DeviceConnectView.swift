@@ -12,6 +12,9 @@ struct DeviceConnectView: View {
     @State private var manualConnect = false
     /// この画面でつながった後に切れたか(つながった直後の切断。タスク表 S4 AR異常系)
     @State private var droppedHere = false
+    /// 「接続中」の待ち時間を数えるための時計(1秒ごと)
+    @State private var now = Date()
+    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     // 実グラス接続(USB-C外部ディスプレイ)を検知したら表示に反映
     @ObservedObject private var external = ExternalDisplayManager.shared
@@ -36,7 +39,8 @@ struct DeviceConnectView: View {
 
     /// ARグラスで起きている問題(エラー表示)。問題が無ければ nil
     private var glassProblem: GlassConnectionProblem? {
-        .resolve(status: glassStatus, droppedHere: droppedHere, returnedFromRun: returnedFromRun)
+        .resolve(status: glassStatus, droppedHere: droppedHere, returnedFromRun: returnedFromRun,
+                 mirroringSeconds: external.mirroringSince.map { now.timeIntervalSince($0) })
     }
 
     /// 「次へ」を押せるか。ARグラスは必須(タスク表 S4)— 未接続・ミラーリング中は進めない
@@ -112,7 +116,7 @@ struct DeviceConnectView: View {
                 if let problem = glassProblem {
                     GlassProblemCard(
                         problem: problem,
-                        canReconnect: problem != .notDetected,
+                        canReconnect: problem != .notDetected && problem != .connecting,
                         onReconnect: reconnectGlasses
                     )
                     .padding(.horizontal, 24)
@@ -158,6 +162,7 @@ struct DeviceConnectView: View {
                 // つながった直後に切れた(電池切れ・ケーブルの接触)。つながり直せば消える
                 droppedHere = wasConnected && !isConnected
             }
+            .onReceive(tick) { now = $0 }
             .onChange(of: scenePhase) { _, phase in
                 // 電話・他アプリから戻ったら、その間に変わった接続状態を取り直す(タスク表 S4)
                 guard phase == .active else { return }
@@ -363,6 +368,7 @@ private struct GlassProblemCard: View {
 
     private var title: LocalizedStringKey {
         switch problem {
+        case .connecting: return AppStrings.Devices.connectingTitle
         case .notDetected: return AppStrings.Devices.errorNotDetectedTitle
         case .incomplete: return AppStrings.Devices.errorIncompleteTitle
         case .droppedAfterConnect: return AppStrings.Devices.errorDroppedTitle
@@ -372,6 +378,7 @@ private struct GlassProblemCard: View {
 
     private var message: LocalizedStringKey {
         switch problem {
+        case .connecting: return AppStrings.Devices.connectingBody
         case .notDetected: return AppStrings.Devices.errorNotDetectedBody
         case .incomplete: return AppStrings.Devices.errorIncompleteBody
         case .droppedAfterConnect: return AppStrings.Devices.errorDroppedBody
@@ -379,11 +386,18 @@ private struct GlassProblemCard: View {
         }
     }
 
+    /// 接続中は待っているだけなのでエラーの色にしない
+    private var tint: Color { problem == .connecting ? .arGrayText : .orange }
+
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 15))
-                .foregroundColor(.orange)
+            if problem == .connecting {
+                ProgressView().tint(.white)
+            } else {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 15))
+                    .foregroundColor(.orange)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
@@ -399,11 +413,11 @@ private struct GlassProblemCard: View {
             Spacer(minLength: 0)
         }
         .padding(14)
-        .background(Color.orange.opacity(0.12))
+        .background(tint.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.orange.opacity(0.45), lineWidth: 1)
+                .stroke(tint.opacity(0.45), lineWidth: 1)
         )
     }
 }
@@ -422,7 +436,7 @@ private struct HeadTrackingRow: View {
         switch status {
         case .active: return .arYellow
         case .searching: return .white
-        case .notFound, .unsupported, .denied: return .orange
+        case .notFound, .noHeadMotion, .unsupported, .denied: return .orange
         case .off: return .arGrayText
         }
     }
@@ -433,6 +447,7 @@ private struct HeadTrackingRow: View {
         case .searching: return AppStrings.Devices.airpodsSearching
         case .active: return AppStrings.Devices.airpodsActive
         case .notFound: return AppStrings.Devices.airpodsNotFound
+        case .noHeadMotion: return AppStrings.Devices.airpodsNoHeadMotion
         case .unsupported: return AppStrings.Devices.airpodsUnsupported
         case .denied: return AppStrings.Devices.airpodsDenied
         }
@@ -475,7 +490,7 @@ private struct HeadTrackingRow: View {
                     .frame(width: 28, height: 28)
                     .background(Color.arYellow)
                     .clipShape(Circle())
-            case .notFound:
+            case .notFound, .noHeadMotion:
                 pill(AppStrings.Devices.reconnect, action: onRetry)
             case .denied:
                 pill(AppStrings.Common.openSettings, action: onOpenSettings)

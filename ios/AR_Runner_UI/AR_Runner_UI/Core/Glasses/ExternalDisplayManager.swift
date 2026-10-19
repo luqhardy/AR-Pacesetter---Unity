@@ -28,7 +28,13 @@ final class ExternalDisplayManager: ObservableObject {
     ///
     /// このときグラスには iPhone の画面(カメラ映像・ボタン)がそのまま映り、`isGlassesConnected`
     /// は false のまま — 「グラス未接続」と区別がつかないと原因に辿り着けない(2026-10-07 実機で発生)。
-    @Published private(set) var isMirroring = false
+    @Published private(set) var isMirroring = false {
+        didSet { if isMirroring != oldValue { mirroringSince = isMirroring ? Date() : nil } }
+    }
+
+    /// ミラーリングになった時刻。挿した直後は iOS がグラス用の画面を作るまで少しかかり、その間もミラーリングに見える —
+    /// 準備画面はこの時刻からの経過で「接続中」と「不完全な接続」を分ける(GlassConnectionProblem)
+    @Published private(set) var mirroringSince: Date?
 
     fileprivate var externalWindow: UIWindow?
     /// 移設前(iPhone)の描画スケール。切断時に戻すために保持する

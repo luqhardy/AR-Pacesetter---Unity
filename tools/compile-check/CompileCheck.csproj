@@ -2,6 +2,7 @@
   <!--
     Unityを開かずにゲームプレイC#(Assets/_Project/Scripts)をコンパイル検証する。
     実行: dotnet build tools/compile-check   (Windows / macOS 共通)
+          dotnet build tools/compile-check -p:CompileCheckEditor=true   (#if UNITY_EDITOR の中も含める — 下を参照)
 
     前提: Unity 6000.3.17f1 がUnity Hubの既定の場所に入っていること、
     かつプロジェクトを一度Unityで開いて Library/ScriptAssemblies が生成済みであること。
@@ -25,6 +26,19 @@
     <UnityManagedDir Condition="'$(UnityManagedDir)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">C:\Program Files\Unity\Hub\Editor\$(UnityVersion)\Editor\Data\Managed\UnityEngine</UnityManagedDir>
     <UnityManagedDir Condition="'$(UnityManagedDir)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">/Applications/Unity/Hub/Editor/$(UnityVersion)/Unity.app/Contents/Managed/UnityEngine</UnityManagedDir>
     <UnityManagedDir Condition="'$(UnityManagedDir)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">$(HOME)/Unity/Hub/Editor/$(UnityVersion)/Editor/Data/Managed/UnityEngine</UnityManagedDir>
+  </PropertyGroup>
+
+  <!--
+    エディタ用のコンパイル: dotnet build tools/compile-check -p:CompileCheckEditor=true
+    #if UNITY_EDITOR の中(E2EScenarioBehaviour.cs は丸ごと・ほか7ファイルの一部)は、UNITY_EDITOR が無いと
+    中身を読まずに飛ばすため、通常の検証では一度もコンパイルされない(2026-10-19 に E2E の構文エラーを素通しした)。
+    エディタの API(UnityEditor.*Module)は上の UnityEngine フォルダに入っているので、定義を足すだけで通る。
+    出力先を分け、通常版と交互に実行しても毎回作り直しにならないようにする。
+  -->
+  <PropertyGroup Condition="'$(CompileCheckEditor)' == 'true'">
+    <DefineConstants>$(DefineConstants);UNITY_EDITOR</DefineConstants>
+    <IntermediateOutputPath>obj\editor\</IntermediateOutputPath>
+    <OutputPath>bin\editor\</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>

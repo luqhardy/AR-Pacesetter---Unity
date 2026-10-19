@@ -59,4 +59,27 @@ final class GlassConnectionStatusTests: XCTestCase {
         // 走行中に切れて戻ってきたことを最優先で伝える(記録は続いている)
         XCTAssertEqual(GlassConnectionProblem.resolve(status: .mirroring, droppedHere: true, returnedFromRun: true), .lostDuringRun)
     }
+    func testFreshMirroringIsConnectingNotAnError() {
+        // 挿した直後は iOS がグラス用の画面を作るまでミラーリングに見える(タスク表 S4「ARタイムアウト」)
+        XCTAssertEqual(GlassConnectionProblem.resolve(status: .mirroring, droppedHere: false, returnedFromRun: false,
+                                                      mirroringSeconds: 2), .connecting)
+        // 走行中に切れて挿し直したときも、まずは待つ
+        XCTAssertEqual(GlassConnectionProblem.resolve(status: .mirroring, droppedHere: false, returnedFromRun: true,
+                                                      mirroringSeconds: 0), .connecting)
+    }
+
+    func testMirroringThatLastsIsAnIncompleteConnection() {
+        XCTAssertEqual(GlassConnectionProblem.resolve(status: .mirroring, droppedHere: false, returnedFromRun: false,
+                                                      mirroringSeconds: GlassConnectionProblem.connectTimeoutSeconds),
+                       .incomplete)
+        XCTAssertEqual(GlassConnectionProblem.resolve(status: .mirroring, droppedHere: false, returnedFromRun: false,
+                                                      mirroringSeconds: nil), .incomplete, "経過が分からなければ待たない")
+    }
+
+    func testOnlyMirroringWaits() {
+        XCTAssertEqual(GlassConnectionProblem.resolve(status: .notDetected, droppedHere: false, returnedFromRun: false,
+                                                      mirroringSeconds: 1), .notDetected)
+        XCTAssertNil(GlassConnectionProblem.resolve(status: .connected, droppedHere: false, returnedFromRun: false,
+                                                    mirroringSeconds: 1))
+    }
 }

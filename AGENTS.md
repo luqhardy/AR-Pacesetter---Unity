@@ -179,7 +179,7 @@ stateDiagram-v2
 
 | # | ステップ | 個別コマンド | 備考 |
 |---|---|---|---|
-| 1 | C#コンパイル | `dotnet build tools/compile-check` | Unityを開かずに `Assets/_Project/Scripts` を検証。要: Unity 6000.3.17f1 と一度生成済みの `Library/` |
+| 1 | C#コンパイル | `dotnet build tools/compile-check`(+ `-p:CompileCheckEditor=true`) | Unityを開かずに `Assets/_Project/Scripts` を検証。2回目は `UNITY_EDITOR` を定義して `#if UNITY_EDITOR` の中(E2E シナリオ等)も通す。要: Unity 6000.3.17f1 と一度生成済みの `Library/` |
 | 2 | ユニットテスト | `dotnet test Tests/UnitTests` | Unity非依存・数秒。PRでもCIが自動実行する |
 | 3 | Swift構文 | `swiftc -parse <file>` | 構文のみ。型検査はMacのXcodeでのみ可能 |
 | 3b | Swiftロジックテスト | `swift test --package-path ios` | **macOSでのみ**(WindowsのSwiftはリンクに Visual Studio が要る)。CI は `swift-logic-tests.yml` |

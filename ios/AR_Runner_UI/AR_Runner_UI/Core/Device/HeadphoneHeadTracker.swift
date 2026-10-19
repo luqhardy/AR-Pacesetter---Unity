@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import CoreMotion
+import AVFoundation
 
 /// AirPods(Pro・第3世代以降・Max)の頭の向きを Unity へ送る
 /// (タスク表 ARグラス「首を振り向けた時に想定する場所を走る」— 仕組みは AppLogic/HeadTracking.swift)。
@@ -92,7 +93,15 @@ final class HeadphoneHeadTracker: NSObject, ObservableObject, CMHeadphoneMotionM
                           supported: manager.isDeviceMotionAvailable,
                           authorized: isAuthorized,
                           lastSampleAge: lastSampleAt.map { now.timeIntervalSince($0) },
-                          secondsSinceRequest: requestedAt.map { now.timeIntervalSince($0) } ?? 0)
+                          secondsSinceRequest: requestedAt.map { now.timeIntervalSince($0) } ?? 0,
+                          bluetoothAudioConnected: Self.isBluetoothAudioConnected)
+    }
+
+    /// 今の音の出力先に Bluetooth のイヤホンがあるか。Bluetooth の許可は要らない(出力先を読むだけ)。
+    /// AirPods は耳から外すと出力先から外れるので、「着けていない」もここで分かる
+    private static var isBluetoothAudioConnected: Bool {
+        let bluetooth: Set<AVAudioSession.Port> = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
+        return AVAudioSession.sharedInstance().currentRoute.outputs.contains { bluetooth.contains($0.portType) }
     }
 
     // MARK: CMHeadphoneMotionManagerDelegate

@@ -33,7 +33,36 @@ final class HeadTrackingTests: XCTestCase {
                                                   secondsSinceRequest: 30), .notFound)
     }
 
+    func testConnectedEarphonesWithoutHeadMotionAreToldApart() {
+        // タスク表 S4「Bluetooth が OFF」「機内モード」: 出力先に Bluetooth のイヤホンが無い = つながっていない
+        XCTAssertEqual(HeadTrackingStatus.resolve(requested: true, supported: true, authorized: true,
+                                                  lastSampleAge: nil,
+                                                  secondsSinceRequest: HeadTrackingStatus.searchTimeoutSeconds,
+                                                  bluetoothAudioConnected: false), .notFound)
+        // イヤホンはつながっているのに頭の向きが来ない = 対応していない機種
+        XCTAssertEqual(HeadTrackingStatus.resolve(requested: true, supported: true, authorized: true,
+                                                  lastSampleAge: nil,
+                                                  secondsSinceRequest: HeadTrackingStatus.searchTimeoutSeconds,
+                                                  bluetoothAudioConnected: true), .noHeadMotion)
+        // 待っている間はどちらでもない
+        XCTAssertEqual(HeadTrackingStatus.resolve(requested: true, supported: true, authorized: true,
+                                                  lastSampleAge: nil, secondsSinceRequest: 1,
+                                                  bluetoothAudioConnected: true), .searching)
+    }
+
+    func testHeadMotionThatStopsEarlyIsLostNotSearching() {
+        // 届いていたのに途切れた(押してから8秒以内でも)— 探し直しではなく途切れた扱い
+        XCTAssertEqual(HeadTrackingStatus.resolve(requested: true, supported: true, authorized: true,
+                                                  lastSampleAge: HeadTrackingStatus.staleSeconds + 0.5,
+                                                  secondsSinceRequest: 4, bluetoothAudioConnected: false), .notFound)
+        XCTAssertTrue(HeadTrackingStatus.notFound.isLost)
+        XCTAssertTrue(HeadTrackingStatus.noHeadMotion.isLost)
+        XCTAssertFalse(HeadTrackingStatus.searching.isLost)
+        XCTAssertFalse(HeadTrackingStatus.denied.isLost)
+    }
+
     func testFailuresAreErrorsButNotBlocking() {
+        XCTAssertTrue(HeadTrackingStatus.noHeadMotion.isError)
         XCTAssertTrue(HeadTrackingStatus.notFound.isError)
         XCTAssertTrue(HeadTrackingStatus.denied.isError)
         XCTAssertFalse(HeadTrackingStatus.active.isError)

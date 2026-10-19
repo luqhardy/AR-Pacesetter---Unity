@@ -20,8 +20,11 @@ nonisolated enum HeadTrackingStatus: Equatable {
     case searching
     /// 頭の向きが届いている
     case active
-    /// 待っても届かない(AirPods がつながっていない・耳に着けていない・Bluetooth がオフ・機内モード)
+    /// 待っても届かず、Bluetooth のイヤホンも音の出力先に無い
+    /// (AirPods がつながっていない・耳に着けていない・Bluetooth がオフ・機内モード)
     case notFound
+    /// Bluetooth のイヤホンはつながっているのに頭の向きが届かない(頭の向きに対応していない機種)
+    case noHeadMotion
     /// この iPhone が頭の向きの取得に対応していない
     case unsupported
     /// モーションの許可が無い(設定アプリで許可する)
@@ -33,17 +36,25 @@ nonisolated enum HeadTrackingStatus: Equatable {
     /// 頭の向きが途切れたとみなす秒数(AirPods を外した・接続が切れた)
     static let staleSeconds: TimeInterval = 2
 
+    /// - Parameter bluetoothAudioConnected: 音の出力先に Bluetooth のイヤホンがあるか(分からなければ nil)。
+    ///   Bluetooth の許可を求めずに「つながっていない」と「つながっているが頭の向きが来ない」を分けるために使う
+    ///   (タスク表 S4「Bluetooth が OFF」「機内モード」 — Bluetooth の状態そのものは許可ダイアログ無しには読めない)
     static func resolve(requested: Bool, supported: Bool, authorized: Bool,
-                        lastSampleAge: TimeInterval?, secondsSinceRequest: TimeInterval) -> HeadTrackingStatus {
+                        lastSampleAge: TimeInterval?, secondsSinceRequest: TimeInterval,
+                        bluetoothAudioConnected: Bool? = nil) -> HeadTrackingStatus {
         guard requested else { return .off }
         guard supported else { return .unsupported }
         guard authorized else { return .denied }
         if let age = lastSampleAge, age <= staleSeconds { return .active }
-        return secondsSinceRequest < searchTimeoutSeconds ? .searching : .notFound
+        if secondsSinceRequest < searchTimeoutSeconds && lastSampleAge == nil { return .searching }
+        return bluetoothAudioConnected == true ? .noHeadMotion : .notFound
     }
 
     /// 任意の機器なので、失敗しても先へ進める(タスク表 S4「Apple Watch・AirPods の失敗はエラー表示はするが進める」)
-    var isError: Bool { self == .notFound || self == .unsupported || self == .denied }
+    var isError: Bool { self == .notFound || self == .noHeadMotion || self == .unsupported || self == .denied }
+
+    /// 使っていたのに頭の向きが届かなくなった(走行中の警告に使う)
+    var isLost: Bool { self == .notFound || self == .noHeadMotion }
 }
 
 /// CoreMotion の姿勢から Unity へ送る頭のヨーを作る
