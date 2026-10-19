@@ -107,6 +107,10 @@ public class E2EScenarioBehaviour : MonoBehaviour
         }
 
         _cameraMover = cam.transform.root != null ? cam.transform.root : cam.transform;
+        Check(engine.UsesTargetSpeedMotion, "pacing: real runs default to target-speed movement");
+        // Existing scenarios below explicitly exercise the retained follow policy.
+        engine.SetPacingMotion(AvatarEngine.PacingMotion.FollowUser);
+
 
         // エディタのリグはカメラが走行方向(+Z)と無関係な向きで保存されている。
         // 実機ではARKitがカメラ姿勢を与え、走者は走る方向を向くので、E2Eでも
@@ -1460,7 +1464,74 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // ── Step 7: 展示ブースの体験モード (Kobe Calling) ─────────────────────
         yield return StartCoroutine(RunBoothDemoTest(bridge, engine, stateController, hud));
 
+        yield return StartCoroutine(RunTargetSpeedTest(bridge, engine));
         Finish();
+    }
+
+    private IEnumerator RunTargetSpeedTest(ARSessionManagerBridge bridge, AvatarEngine engine)
+    {
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        ResetGpsMonitor();
+        FaceRig(Vector3.forward);
+        engine.SetPacingMotion(AvatarEngine.PacingMotion.TargetSpeed);
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":12,\"distanceKm\":5}");
+        for (float t = 0; t < 8f && !engine.IsRunMotionActive; t += Time.deltaTime)
+            yield return null;
+        Check(engine.IsRunMotionActive, "pacing: countdown activates target-speed run");
+        Vector3 start = engine.transform.position;
+        float duration = 0f;
+        for (; duration < 1f; duration += Time.deltaTime) yield return null;
+        Vector3 moved = engine.transform.position - start;
+        moved.y = 0f;
+        Check(Mathf.Abs(moved.magnitude - duration * (1000f / 300f)) < 0.6f,
+            $"pacing: stationary runner does not anchor avatar ({moved.magnitude:F2}m in {duration:F2}s)");
+
+        Vector3 beforeChange = engine.transform.position;
+        bridge.OnSwiftCommand("{\"command\":\"SetTargetSpeed\",\"targetPaceKmH\":6}");
+        Check(engine.transform.position == beforeChange, "pacing: speed change does not teleport avatar");
+        Check(Mathf.Abs(engine.GetTargetSpeed() - 1000f / 600f) < 0.001f,
+            "pacing: changing pace updates actual target speed without elastic boost");
+        for (float t = 0; t < 3f; t += Time.deltaTime)
+        {
+            _cameraMover.position += Vector3.forward * 6f * Time.deltaTime;
+            yield return null;
+        }
+        Transform camera = Camera.main.transform;
+        Check(Vector3.Dot(engine.transform.position - camera.position, Vector3.forward) < 0f,
+            "pacing: faster runner overtakes avatar");
+        Check(!engine.IsWaitingForUser, "pacing: avatar behind runner continues moving");
+        for (float t = 0; t < 6f; t += Time.deltaTime) yield return null;
+        Check(Vector3.Dot(engine.transform.position - camera.position, Vector3.forward) > 0f,
+            "pacing: avatar catches and passes a slower runner");
+        Vector3 heading = engine.CurrentHeading;
+        Vector3 waitingPosition = camera.position + heading * 11f;
+        waitingPosition.y = engine.transform.position.y;
+        engine.transform.position = waitingPosition;
+        engine.ResyncPacingAnchor(waitingPosition, camera.position);
+        yield return WaitScaled(0.5f);
+        Check(engine.IsWaitingForUser, "pacing: 11m ahead enters wait");
+        bridge.OnSwiftCommand("{\"command\":\"SetTargetSpeed\",\"targetPaceKmH\":4}");
+        Check(Mathf.Abs(engine.GetTargetSpeed() - 4f / 3.6f) < 0.001f,
+            "pacing: live 4km/h is applied without old 5km/h floor");
+        yield return WaitScaled(0.5f);
+        Check(Vector3.Distance(engine.transform.position, waitingPosition) < 0.1f,
+            "pacing: changing speed while waiting keeps position fixed");
+        bridge.OnSwiftCommand("{\"command\":\"SetTargetSpeed\",\"targetPaceKmH\":0}");
+        Check(Mathf.Abs(engine.GetTargetSpeed() - 4f / 3.6f) < 0.001f,
+            "pacing: invalid live speed leaves target unchanged");
+        _cameraMover.position += heading * 5f;
+        yield return WaitScaled(1f);
+        Check(!engine.IsWaitingForUser, "pacing: closing within 7m resumes running");
+        Check(Vector3.Dot(engine.transform.forward, heading) > 0.95f,
+            "pacing: resume faces the running direction");
+        Check(Vector3.Dot(engine.transform.position - waitingPosition, heading) > 0.1f,
+            "pacing: resume actually advances in world space");
+        engine.IsSessionEnded = true;
+        Vector3 ended = engine.transform.position;
+        yield return WaitScaled(0.5f);
+        Check(Vector3.Distance(ended, engine.transform.position) < 0.05f,
+            "pacing: session end stops target-speed movement");
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
     }
 
     // ════════════════════════════════════════════════════════════════════════

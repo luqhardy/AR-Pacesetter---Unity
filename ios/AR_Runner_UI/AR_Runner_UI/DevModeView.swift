@@ -38,6 +38,11 @@ struct DevModeView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     logSection
                     statsSection
+                    NavigationLink {
+                        HeadTrackingTestView()
+                    } label: {
+                        Text("頭部姿勢の計測（試作）") // TODO: 文言の集約対象
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)

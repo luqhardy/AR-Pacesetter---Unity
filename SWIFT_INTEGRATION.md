@@ -293,3 +293,13 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 - GPS喪失バナー: `UnityBridge.gpsStatus == .lost` で表示(Unityの`GPSLost`/`GPSRecovered`イベント連動)
 - 終了: `session.end()`(→Unityへ`EndSession`)→ `UnityLauncher.pause()` → 統計画面へ遷移
 - ナビゲーション: マップ画面「開始」→ `.running`(RunningView)→ 終了 → `.stats`
+
+### 走行中のアバター速度変更 (2026-10-13)
+
+- Swift → `ARSessionManager.OnSwiftCommand`: `{"command":"SetTargetSpeed","targetPaceKmH":4.0}`。
+- 有効範囲は1〜30km/h。NaN・無限・範囲外は無視し、速度を保持する。
+- 開始済み通常走行のみ。展示デモ・終了後は適用しない。手動指定でゴースト再生は解除する。
+- Unity → Swift: `{"event":"TargetSpeedUpdated","value":4.0}` が適用の確認。
+  StartSessionでも現在の目標速度を返す。Swiftは応答を受けるまで速度操作を無効化する。
+- 待機中にも目標を変更可能だが、移動の再開条件は距離・向きの条件を優先する。
+- 通常走行開始時も1〜30km/hをそのままm/sへ変換。旧5〜20km/hへの暗黙クランプは行わない。

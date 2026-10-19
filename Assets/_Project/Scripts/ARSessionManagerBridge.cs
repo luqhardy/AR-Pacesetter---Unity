@@ -161,6 +161,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         {
             case "StartSession": HandleStartSession(cmd); break;
             case "UpdateMetrics": HandleUpdateMetrics(cmd); break;
+            case "SetTargetSpeed": HandleSetTargetSpeed(cmd); break;
             case "EndSession": HandleEndSession(); break;
             case "RequestHistory": HandleRequestHistory(); break;
             case "ResumeSession": HandleResumeSession(); break;
@@ -176,6 +177,17 @@ public class ARSessionManagerBridge : MonoBehaviour
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown command: {cmd.command}");
                 break;
         }
+    }
+
+    private void HandleSetTargetSpeed(SwiftCommand cmd)
+    {
+        if (_presentationSession || avatarEngine == null || !avatarEngine.HasStarted
+            || avatarEngine.IsSessionEnded || !PaceMath.TrySpeedToPace(cmd.targetPaceKmH, out float pace)) return;
+        // A manual target replaces the recorded ghost speed profile.
+        if (ghostDriver != null) ghostDriver.Deactivate();
+        avatarEngine.UpdateTargetPace(pace);
+        SwiftMessageSender.SendRaw("{\"event\":\"TargetSpeedUpdated\",\"value\":"
+            + cmd.targetPaceKmH.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}");
     }
 
     private void HandleStartSession(SwiftCommand cmd)
@@ -215,9 +227,8 @@ public class ARSessionManagerBridge : MonoBehaviour
             runnerTracking.BeginSession((float)cmd.targetPaceKmH, cmd.distanceKm);
 
         // km/h → 分/km 変換 (例: 12km/h → 5:00/km)
-        if (cmd.targetPaceKmH > 0.1)
+        if (PaceMath.TrySpeedToPace(cmd.targetPaceKmH, out float minutesPerKm))
         {
-            float minutesPerKm = Mathf.Clamp((float)(60.0 / cmd.targetPaceKmH), 3.0f, 12.0f);
             avatarEngine.UpdateTargetPace(minutesPerKm);
         }
 
@@ -258,6 +269,8 @@ public class ARSessionManagerBridge : MonoBehaviour
             sessionController.OnRunStarted(showUnityUi: false);
 
         avatarEngine.StartPacing();
+        SwiftMessageSender.SendRaw("{\"event\":\"TargetSpeedUpdated\",\"value\":"
+            + (60f / avatarEngine.TargetPaceMinutesPerKm).ToString(System.Globalization.CultureInfo.InvariantCulture) + "}");
 
         // 実測Motion-to-Photonのバックグラウンド計測を開始 (LatencyReportに使用)
         if (latencyRunner != null)

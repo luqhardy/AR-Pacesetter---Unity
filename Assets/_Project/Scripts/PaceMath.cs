@@ -8,6 +8,28 @@ using System.Collections.Generic;
 /// </summary>
 public static class PaceMath
 {
+    public static bool TrySpeedToPace(double kmh, out float minutesPerKm)
+    {
+        minutesPerKm = 0f;
+        if (double.IsNaN(kmh) || double.IsInfinity(kmh) || kmh < 1 || kmh > 30) return false;
+        minutesPerKm = (float)(60.0 / kmh);
+        return true;
+    }
+
+    public static bool ShouldWaitForRunner(bool waiting, float distance, float signedLead)
+        => waiting ? distance > 7f && signedLead > 0f : distance >= 10f && signedLead > 0f;
+
+    /// <summary>World travel at a configured speed; invalid samples do not move the pacer.</summary>
+    public static float TravelMeters(float metersPerSecond, float deltaSeconds)
+    {
+        if (float.IsNaN(metersPerSecond) || float.IsInfinity(metersPerSecond)
+            || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)
+            || metersPerSecond < 0f || deltaSeconds <= 0f)
+            return 0f;
+        float distance = metersPerSecond * deltaSeconds;
+        return float.IsInfinity(distance) ? 0f : distance;
+    }
+
     /// <summary>
     /// ペース文字列を分/kmへ解析する。"5:30"・"5.5"・"5:00/km"・前後空白を許容。
     /// [minMinPerKm, maxMinPerKm] の範囲外、秒>=60、不正形式は false。

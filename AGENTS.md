@@ -192,7 +192,7 @@ stateDiagram-v2
 ### 実装の約束(破ると壊れる)
 - **`AvatarEngine.IsHalted` は `GroundSnap` が毎フレーム上書きする**。恒久的な停止には `IsSessionEnded` を使う
 - **距離の単一ソース原則**: Swift主導中(`ARSessionManagerBridge.ExternalMetricsActive`)はUnity内部計測をスプリット判定へ流さない。記録・ゴール判定は `RunSessionController.AuthoritativeDistanceMeters`(新鮮なGPS優先・5秒でUnity計測へフォールバック)を共用
-- **アバターは常時「ユーザー+3m」アンカー追従**(自走ではない)。10m離隔待機は「アバター停止中にユーザーが離れる」場合にのみ発生する
+- **通常走行は設定ペースで自走** (`AvatarEngine.PacingMotion.TargetSpeed`)。3mは開始位置。走者との速度差で追い抜き可能。前方10mで待機し7mで再開、後方では追走を継続する。展示デモと明示的な `FollowUser` は従来のアンカー追従。ユーザー依頼(2026-10-12)による F-03 / §4.1 の通常走行への適用変更。
 - **Animator取得は `AvatarRigLocator.FindBestAnimator`** — コンテナに無効化された旧Animatorが残っており、素の `GetComponentInChildren<Animator>` はそれを拾う
 - **AnimatorControllerはジェネレータ管理**(`AvatarAnimatorControllerGenerator`)。手編集せず再生成する(同一パスならGUID維持でシーン参照は無傷)。閾値は km/h 基準を m/s に換算した値(Walk 0.0278 / Run 1.3889 / Sprint 4.1667)
 - **UnitySendMessage対象のGameObject名は固定**: "ARSessionManager" / "DeviceManager"(Bootstrapが自動生成)。

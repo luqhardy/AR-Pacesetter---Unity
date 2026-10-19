@@ -25,6 +25,22 @@ public class AvatarEngine : MonoBehaviour
     [SerializeField] private float targetPaceMinutesPerKm = 5.0f;
     [SerializeField] private float leadDistanceMeters = 3.0f;
 
+    public enum PacingMotion { TargetSpeed, FollowUser }
+    [SerializeField] private PacingMotion pacingMotion = PacingMotion.TargetSpeed;
+    public bool UsesTargetSpeedMotion => pacingMotion == PacingMotion.TargetSpeed && !_presentationFollowsView;
+
+    /// <summary>Switch movement policy without moving the avatar discontinuously.</summary>
+    public void SetPacingMotion(PacingMotion motion)
+    {
+        pacingMotion = motion;
+        _pacingDirection = _currentLinearDirection;
+        _isWaitingForUser = false;
+        _overtakeState = OvertakeState.None;
+        _sidestepOffset = Vector3.zero;
+        _effectiveSpeedMultiplier = 1f;
+        if (userCamera != null) ResyncAfterPause();
+    }
+
     [Header("Start Sequence")]
     [Tooltip("Safety fallback if the visual countdown is unavailable or interrupted")]
     [SerializeField] private float countdownFallbackSeconds = 4.25f;
@@ -65,6 +81,7 @@ public class AvatarEngine : MonoBehaviour
     // ═══════════════════════════════════════════════════════════════════════
 
     private Vector3 _targetPacingPosition;
+    private Vector3 _pacingDirection = Vector3.forward;
     private float   _calculatedTargetSpeedMetersPerSecond;
 
     private Vector3 _lastFrameUserPosition;
@@ -136,6 +153,7 @@ public class AvatarEngine : MonoBehaviour
     private const float WaitForUserEnterMeters = 10.0f; // これ以上離れたら待機
     private const float WaitForUserExitMeters  = 7.0f;  // ここまで戻ったら再開
     private bool _isWaitingForUser = false;
+    private Vector3 _waitHeading = Vector3.forward;
 
     // ── Public API ───────────────────────────────────────────────────────────
     public bool IsHalted { get; set; } = false;
@@ -310,7 +328,7 @@ public class AvatarEngine : MonoBehaviour
             anchor.y = transform.position.y;
             Vector3 offset = transform.position - anchor;
             offset.y = 0f;
-            if (reappeared || offset.magnitude >= WaitForUserEnterMeters)
+            if (!UsesTargetSpeedMotion && (reappeared || offset.magnitude >= WaitForUserEnterMeters))
             {
                 transform.position = anchor;
                 _isWaitingForUser = false;
@@ -327,19 +345,40 @@ public class AvatarEngine : MonoBehaviour
         // ── 離隔待機 (企画書 4.1 自律アクション) ─────────────────────────────
         // 10m以上離れたら座標を固定してユーザーへ向き、手招きで待つ。7mまで
         // 戻ったら走行再開(ヒステリシスでチャタリング防止)。
+        if (UsesTargetSpeedMotion) UpdatePurifiedHeading();
         UpdateWaitForUserState();
 
         // ── Cliff / Obstacle halting (AGENTS.md §4.2) / Session end ─────────
         if (IsHalted || IsSessionEnded || _isWaitingForUser)
         {
-            RunHaltedFaceUser();
+            if (UsesTargetSpeedMotion && _isWaitingForUser && !IsHalted && !IsSessionEnded)
+                ApplySmoothRotation(_currentLinearDirection);
+            else
+                RunHaltedFaceUser();
+            _lastFrameUserPosition = userCamera.position;
             return;
         }
 
         // ── Vector_Forward Purification (AGENTS.md §4.1) ─────────────────────
         // 進行方向は時間窓の移動平均なので毎フレーム更新する(変動フレームで飛ばすと
         // その分の移動が窓から抜け、以前はコーナーで接線への追従が遅れていた)
-        UpdatePurifiedHeading();
+        if (!UsesTargetSpeedMotion) UpdatePurifiedHeading();
+
+        if (UsesTargetSpeedMotion)
+        {
+            // Integrate world movement, not a user-relative anchor. The starting
+            // lead is only an initial condition; faster runners can pass the pacer.
+            _pacingDirection = Vector3.RotateTowards(_pacingDirection, _currentLinearDirection,
+                maxTurnDegreesPerSecond * Mathf.Deg2Rad * Time.deltaTime, 0f);
+            ApplySmoothRotation(_pacingDirection);
+            Vector3 forward = _pacingDirection;
+            forward.y = 0f;
+            _targetPacingPosition = transform.position + forward.normalized
+                * PaceMath.TravelMeters(GetTargetSpeed(), Time.deltaTime);
+            transform.position = _targetPacingPosition;
+            _lastFrameUserPosition = userCamera.position;
+            return;
+        }
 
         // ── Jitter Guard (AGENTS.md §3) ──────────────────────────────────────
         // 変動の大きいフレームは生の測定値を捨ててカルマンの予測で進める。
@@ -445,7 +484,7 @@ public class AvatarEngine : MonoBehaviour
             return;
         }
 
-        if (!IsHalted)
+        if (!IsHalted && !IsSessionEnded && !_isWaitingForUser)
         {
             _targetPacingPosition += _inertialVelocity * Time.deltaTime;
 
@@ -467,15 +506,26 @@ public class AvatarEngine : MonoBehaviour
         Vector3 toAvatar = transform.position - userCamera.position;
         toAvatar.y = 0;
         float separation = toAvatar.magnitude;
+        Vector3 waitAxis = _isWaitingForUser ? _waitHeading : _currentLinearDirection;
+        float signedLead = Vector3.Dot(toAvatar, waitAxis);
+        bool shouldWait = UsesTargetSpeedMotion
+            ? PaceMath.ShouldWaitForRunner(_isWaitingForUser, separation, signedLead)
+            : (_isWaitingForUser ? separation > WaitForUserExitMeters : separation >= WaitForUserEnterMeters);
 
-        if (!_isWaitingForUser && separation >= WaitForUserEnterMeters)
+        if (!_isWaitingForUser && shouldWait)
         {
             _isWaitingForUser = true;
+            _waitHeading = _currentLinearDirection;
             SendSafeAnimatorTrigger("Beckon"); // 手招きアクション (Animator側に用意)
             Debug.Log($"[PACER ENGINE] User fell {separation:F1}m behind — holding position and beckoning.");
         }
-        else if (_isWaitingForUser && separation <= WaitForUserExitMeters)
+        else if (_isWaitingForUser && !shouldWait)
         {
+            if (UsesTargetSpeedMotion)
+            {
+                if (Vector3.Angle(transform.forward, _currentLinearDirection) > 5f) return;
+                _pacingDirection = _currentLinearDirection;
+            }
             _isWaitingForUser = false;
             // 内部追従位置を現在位置に同期してから再開(ワープ防止)。平滑器も待機中は
             // 観測を受けておらず、そのままだと停止地点の古い推定でアバターを引き戻す
@@ -607,6 +657,11 @@ public class AvatarEngine : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     private void UpdateSpeedMaintenance()
     {
+        if (UsesTargetSpeedMotion)
+        {
+            _effectiveSpeedMultiplier = 1f;
+            return;
+        }
         // Current real distance between user and avatar anchor
         Vector3 toAvatar         = _targetPacingPosition - userCamera.position;
         toAvatar.y               = 0;
@@ -768,6 +823,7 @@ public class AvatarEngine : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     public void UpdateTargetPace(float newPaceMinutesPerKm)
     {
+        if (float.IsNaN(newPaceMinutesPerKm) || float.IsInfinity(newPaceMinutesPerKm) || newPaceMinutesPerKm <= 0f) return;
         targetPaceMinutesPerKm = newPaceMinutesPerKm;
         CalculateVelocityMatrix(newPaceMinutesPerKm);
     }
@@ -1100,7 +1156,7 @@ public class AvatarEngine : MonoBehaviour
         Debug.Log("[PACER ENGINE] Session reset — waiting for next Start command.");
     }
 
-    public float GetTargetSpeed() => _calculatedTargetSpeedMetersPerSecond * _effectiveSpeedMultiplier;
+    public float GetTargetSpeed() => _calculatedTargetSpeedMetersPerSecond * (UsesTargetSpeedMotion ? 1f : _effectiveSpeedMultiplier);
 
     public float GetBaseTargetSpeed() => _calculatedTargetSpeedMetersPerSecond;
 
@@ -1178,6 +1234,7 @@ public class AvatarEngine : MonoBehaviour
 
     private void ActivateRunMotion()
     {
+        _pacingDirection = _currentLinearDirection;
         if (!_hasStarted || _runMotionActive || IsSessionEnded)
             return;
 
@@ -1195,7 +1252,7 @@ public class AvatarEngine : MonoBehaviour
 
     private void CalculateVelocityMatrix(float pace)
     {
-        _calculatedTargetSpeedMetersPerSecond = 1000f / (pace * 60f);
+        _calculatedTargetSpeedMetersPerSecond = PaceSynchronicityMath.PaceToMetersPerSecond(pace);
         Debug.Log($"[SPEED CALCULATOR] Pace {pace:F2}/km → {_calculatedTargetSpeedMetersPerSecond:F2} m/s");
     }
 

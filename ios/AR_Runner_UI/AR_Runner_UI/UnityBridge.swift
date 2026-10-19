@@ -23,6 +23,7 @@ final class UnityBridge: NSObject, ObservableObject {
     static let shared = UnityBridge()
 
     // MARK: Published State (Swift ← Unity)
+    @Published var confirmedTargetSpeedKmH: Double? = nil
     @Published var avatarSyncRate: Int = 0       // 0–100%
     @Published var avatarState: AvatarState = .idle
     @Published var gpsStatus: GPSStatus = .searching
@@ -228,6 +229,7 @@ final class UnityBridge: NSObject, ObservableObject {
     ///   画面に適した意匠)。グラス出力中はUnityのF-07 HUDが担当する。
     func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
                       hideUnityHud: Bool = false) {
+        confirmedTargetSpeedKmH = nil
         var payload: [String: Any] = [
             "command": "StartSession",
             "targetPaceKmH": targetPaceKmH,
@@ -265,6 +267,12 @@ final class UnityBridge: NSObject, ObservableObject {
             payload["gpsAccuracy"] = gpsAccuracy
         }
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand", payload: payload)
+    }
+
+    func setTargetSpeed(kmh: Double) {
+        guard kmh.isFinite, (1.0...30.0).contains(kmh) else { return }
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "SetTargetSpeed", "targetPaceKmH": kmh])
     }
 
     /// End the session and request result data from Unity.
@@ -405,6 +413,11 @@ final class UnityBridge: NSObject, ObservableObject {
             switch event {
             case "UnityReady":
                 self.flushPendingCommands()
+            case "TargetSpeedUpdated":
+                if let kmh = dict["value"] as? Double, kmh.isFinite, (1.0...30.0).contains(kmh) {
+                    self.confirmedTargetSpeedKmH = kmh
+                    RunSettings.shared.paceKmH = kmh
+                }
             case "SyncRateUpdated":
                 self.avatarSyncRate = dict["value"] as? Int ?? 0
             case "AvatarStateChanged":

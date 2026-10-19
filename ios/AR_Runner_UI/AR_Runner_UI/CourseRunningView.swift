@@ -139,6 +139,7 @@ struct RunningView: View {
     @State private var bpm = 0
     @State private var showEndAlert = false
     @State private var showGoalOverlay = false
+    @State private var targetSpeedKmH = RunSettings.shared.paceKmH
 
     /// 画面ロック(誤タップ防止)。**画面遷移ではなくオーバーレイ**にしている —
     /// 別画面へ遷移すると UnityContainerView がヒエラルキーから外れ、ARビューの
@@ -166,6 +167,27 @@ struct RunningView: View {
     /// 走行中は腕・ポケットの端末を読めないので、統計を並べるより
     /// 大きく押せる終了操作を置くほうが役に立つ。
     private var isControlSurface: Bool { external.isGlassesConnected && hasUnityView }
+
+    private var speedControl: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Stepper(value: $targetSpeedKmH, in: 1...30, step: 0.5) {
+                Text(String(format: "アバター速度 %.1f km/h", targetSpeedKmH)) // TODO: 文言の集約対象
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .onChange(of: targetSpeedKmH) { _, speed in bridge.setTargetSpeed(kmh: speed) }
+            if let applied = bridge.confirmedTargetSpeedKmH {
+                Text(String(format: "設定済み %.1f km/h・待機中は停止", applied)) // TODO: 文言の集約対象
+                    .font(.caption)
+            } else {
+                Text("Unityの開始を待っています") // TODO: 文言の集約対象
+                    .font(.caption)
+            }
+        }
+        .foregroundColor(.white)
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .disabled(bridge.confirmedTargetSpeedKmH == nil || showGoalOverlay)
+    }
 
     var body: some View {
         ARScreen {
@@ -303,6 +325,8 @@ struct RunningView: View {
                                 .foregroundColor(.white)
                         }
 
+                        speedControl.padding(.horizontal, 28)
+
                         Button { showEndAlert = true } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "stop.fill")
@@ -359,6 +383,7 @@ struct RunningView: View {
                             .padding(.trailing, 20)
                         }
                         .padding(.top, 60)
+                        speedControl.padding(.horizontal, 20)
                         Spacer()
                     }
                 }
