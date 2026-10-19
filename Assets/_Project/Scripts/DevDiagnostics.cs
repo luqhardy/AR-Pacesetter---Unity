@@ -77,6 +77,10 @@ public static class DevDiagnostics
             Add(rows, "gps.hasHadGoodFix", gps.HasHadGoodFix ? "取得済み" : "未取得(屋内など)");
             Add(rows, "gps.signalLost", gps.IsSignalLost ? "ロスト中" : "正常");
         }
+        var sessionBridge = UnityEngine.Object.FindFirstObjectByType<ARSessionManagerBridge>(FindObjectsInactive.Include);
+        if (sessionBridge != null)
+            Add(rows, "gps.hudOnlyStart", sessionBridge.HudOnlyWithoutGps
+                ? "ON(START の時点でGPSが無ければHUDだけで始める)" : "OFF(既定 — GPSが無くてもアバターを出す)");
 
         // ── ARグラス出力 ─────────────────────────────────────────────
         var glass = UnityEngine.Object.FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
@@ -115,7 +119,9 @@ public static class DevDiagnostics
 
         // ── 状態と描画 ───────────────────────────────────────────────
         var state = UnityEngine.Object.FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
-        if (state != null) Add(rows, "fsm.state", state.currentState.ToString());
+        if (state != null)
+            Add(rows, "fsm.state", state.currentState == GameStateController.ARVisionState.Standby
+                ? $"Standby({state.CurrentStandbyCause})" : state.currentState.ToString());
 
         var visibility = UnityEngine.Object.FindFirstObjectByType<AvatarVisibilityDiagnostics>(FindObjectsInactive.Include);
         if (visibility != null)

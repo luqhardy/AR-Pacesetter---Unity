@@ -175,7 +175,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 
 | ターゲットGameObject | command | フィールド | Unity側の動作 |
 |---|---|---|---|
-| `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意), `selfPaced`(任意: true でアバターが目標ペースで走る — 遅れると前へ離れ(最大9.5m)速ければ近づく。AR設定のスイッチ・既定 false = 走者+3m。遅れ = START からの正規の距離 − 目標ペースの距離(`SelfPacedLead`/`SelfPacedTarget`)。展示デモでは使わない), `routeLatLon`(任意: S8 で選んだ過去の走行の経路 `[緯度0, 経度0, 緯度1, 経度1, ...]`。「ルートを外れたら案内する」が ON のときだけ。外れたらサイレントルート復帰 — 判定は GPS の座標のまま `RouteDeviation`/`RouteDeviationGate`。無ければ前の走行のルートを消す) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → 走行をarmed状態にする。`3-2-1-START`完了後に時計・距離・同期・CSV・アバター走行を開始。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
+| `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意), `selfPaced`(任意: true でアバターが目標ペースで走る — 遅れると前へ離れ(最大9.5m)速ければ近づく。AR設定のスイッチ・既定 false = 走者+3m。遅れ = START からの正規の距離 − 目標ペースの距離(`SelfPacedLead`/`SelfPacedTarget`)。展示デモでは使わない), `hudOnlyWithoutGps`(任意: true なら START の時点でGPSが使えない — 新鮮な測位が無い・精度10m以上 — とき、アバターを出さずHUDと警告だけで始め、精度5m以内の測位で現れる。AR設定のスイッチ・既定 false = 従来どおりアバターを出す。GPSロスト判定OFF・展示デモでは無効), `routeLatLon`(任意: S8 で選んだ過去の走行の経路 `[緯度0, 経度0, 緯度1, 経度1, ...]`。「ルートを外れたら案内する」が ON のときだけ。外れたらサイレントルート復帰 — 判定は GPS の座標のまま `RouteDeviation`/`RouteDeviationGate`。無ければ前の走行のルートを消す) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → 走行をarmed状態にする。`3-2-1-START`完了後に時計・距離・同期・CSV・アバター走行を開始。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
 | `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm`, `gpsLatitude`, `gpsLongitude`, `gpsAccuracy`, `locationSampleFresh`, `speedSampleValid` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定。測位は`RunnerTrackingState`のGPS+ARKit方位融合、`GpsSignalMonitor`のロスト判定、F-11 CSVへ供給。`locationSampleFresh=true`はCoreLocationの**新しく、かつ精度ゲート(20m以下)を通ったfixだけ**、`speedSampleValid=true`は同じ採用fixで`CLLocation.speed >= 0`のときだけ設定する。精度不良の生fixは`gpsAccuracy`としてロスト判定には届くが、距離/速度の鮮度は更新しない。これによりキャッシュ再送や不良fixを実測扱いせず、有効な速度0(静止)と未計測を区別する。`distanceKm`は実測のみで、設定ペースを実測値として送らない |
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RetrySaveSession` | — | 結果画面(S7)の「保存に失敗しました」→ 再試行。直前の走行の履歴保存をやり直し、`SessionSaveRetried` で返す。成功すれば中断スナップショットを消す(失敗しても控えは残り、次に Unity が起動したときに復元)。保存済みなら何もせず成功を返す(二重に保存しない)。走行後の Unity は止めてあるので、Swift は応答まで(最大5秒)だけ動かす |
@@ -205,7 +205,7 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 | `UnityReady` | — | 起動後、受信ブリッジ(`ARSessionManager`/`DeviceManager`)が揃った時点で1回。**Swiftはこれを受けるまでコマンドを溜め、受信後に順に送る**(Unity起動前の `StartSession`・`ConnectXREAL` が消えないように)。`UpdateMetrics`/`UpdateGlassPose`/`UpdateHeadYaw` は溜めずに捨て、グラスの接続/切断は最新1件のみ。届かない古いエクスポートでも起動3秒後に送り出す |
 | `SyncRateUpdated` | `value` (int 0-100) | 走行中 1Hz |
 | `AvatarStateChanged` | `state` = Idle/Run/Slow/Fast/Goal/Lost | 状態変化時 |
-| `GPSLost` / `GPSRecovered` | — | GPS FSM遷移時(慣性移動・フェード・GPS起因のスタンバイ)。グラス切断のスタンバイでは送らない |
+| `GPSLost` / `GPSRecovered` | `awaitingFix`(GPSLost のみ・任意: true = START からGPSを待っている HUD のみ — アバターはまだ出ていない) | GPS FSM遷移時(慣性移動・フェード・GPS起因のスタンバイ・GPS待ちのHUDのみ)。グラス切断のスタンバイでは送らない |
 | `VrmImportResult` | `accepted`, `name`, `report`(実測値つき説明), `reason`(断った理由) | 取り込み/選択の結果。**断った理由を必ず持つ** — VRChat向けアバターは三角形数の上限に掛かることが多く、「失敗しました」だけでは利用者が直しようがない |
 | `VrmAvatarList` | `current`, `avatars`: `{name, path}` の配列 | 選べるアバターの一覧 |
 | `Diagnostics` | `rows`: `{key, value}` の配列(表示順を保つ) | 開発者モードの要求時のみ |
@@ -300,6 +300,7 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 - 背景: UnityFrameworkリンク時は `UnityContainerView`(ARカメラ+アバター)、未リンク時は従来のモック背景に自動フォールバック
 - `onAppear`: `UnityLauncher.launch()` → `ARSessionManager.start(paceKmH:distanceKm:)`(設定値は`RunSettings.shared`経由でRunningSettingsViewから受領)
 - HUD: 距離/経過時間=`ARSessionManager`、シンクロ率=`UnityBridge.avatarSyncRate`(Unityから1Hz)、ペース=設定値の分'秒"換算
-- GPS喪失バナー: `UnityBridge.gpsStatus == .lost` で表示(Unityの`GPSLost`/`GPSRecovered`イベント連動)
+- GPS喪失バナー: `UnityBridge.gpsStatus == .lost` で表示(Unityの`GPSLost`/`GPSRecovered`イベント連動)。
+  `awaitingFix` 付きなら「GPS測位待ち — 測位できるとアバターが現れます」(`gpsAwaitingFirstFix`)
 - 終了: `session.end()`(→Unityへ`EndSession`)→ `UnityLauncher.pause()` → 統計画面へ遷移
 - ナビゲーション: マップ画面「開始」→ `.running`(RunningView)→ 終了 → `.stats`

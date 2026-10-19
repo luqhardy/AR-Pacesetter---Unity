@@ -167,7 +167,9 @@ stateDiagram-v2
 
 - `TransitionToState(Reaccumulation)` は `SimulatedGPSAccuracyRadius` を 99 に戻す。精度を設定するのは**遷移の後**。
 - 復帰の遷移表は `GpsSignalPolicy`(純ロジック)。Standby へは原因つき(`EnterStandby`)で入る。
-  GPS復帰で ReAccumulation へ進むのは原因が `GpsLost` のときだけ — グラス切断(§8.3)は再スタート操作を待つ。
+  GPS復帰で ReAccumulation へ進むのは原因が `GpsLost` と `AwaitingGps`(START の時点でGPSが無くHUDだけで始めた —
+  AR設定のスイッチ・既定OFF)のときだけ — グラス切断(§8.3)は再スタート操作を待つ。
+  StartSession は前の走行のGPS起因の状態を Normal へ戻す(GPS待ちのまま終えた走行を持ち越さない)。
 
 ---
 
@@ -226,6 +228,10 @@ stateDiagram-v2
 - アバターの透過率・発光は `AvatarMaterialSet`(モデル配下の全レンダラーの全マテリアル)で操作する。
   `renderer.material` は1枚目だけ — Y Bot は2メッシュなので半身しか変わらない
 - GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う(iPhoneでは開発者モードの「屋内テスト」スイッチ)。既定値(`true`)は仕様どおりに保つ。
+- **GPSが使えないときはHUDだけ**(AR設定「HUDだけで走り始める」・**既定OFF**・StartSession の `hudOnlyWithoutGps`):
+  START の時点で新鮮な測位が無いか精度10m以上なら `EnterStandby(StandbyCause.AwaitingGps)`(アバター非表示・HUD下部に
+  「測位後にアバターが現れます」)。精度5m以内で ReAccumulation → Normal。判定は `GpsSignalPolicy.ShouldStartHudOnly`。
+  GPSロスト判定OFF(屋内テスト)と展示デモでは入らない — 復帰を判定する者がいない/アバターを消さないため
   屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)
 - 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する
 - IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、エディタ=カメラ差分近似)。`SetImuAcceleration` はC#専用で、Swiftからは呼べない

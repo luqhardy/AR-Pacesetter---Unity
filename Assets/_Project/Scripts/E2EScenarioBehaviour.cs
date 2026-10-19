@@ -1569,6 +1569,9 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // ── Step 6a': 選んだルート(GPS)から外れたらサイレントルート復帰(HANDOVER §5「ルート同期」) ──
         yield return StartCoroutine(RunSelectedRouteTest(bridge, engine));
 
+        // ── Step 6a(hud): GPSが使えないときはHUDだけ(タスク表 ARグラス・AR設定のスイッチ・既定OFF) ──
+        yield return StartCoroutine(RunHudOnlyWithoutGpsTest(bridge, engine, stateController, hud));
+
         // ── Step 6b: グラスへ出している走行の終わり(タスク表 ARグラス「ランニング終了」) ──
         // 挨拶 → 消滅 → 結果カード → グラスの表示 OFF(詳しい結果は iPhone の結果画面で)
         yield return StartCoroutine(RunGlassFinishTest(bridge, hud));
@@ -1769,8 +1772,91 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return WaitScaled(0.2f);
     }
 
-    /// <summary>NoiseBase からの東・北(m)を緯度経度にして、精度5mの新しい測位として送る(ノイズ無し)</summary>
-    private static void SendRouteFix(ARSessionManagerBridge bridge, double east, double north)
+    /// <summary>
+    /// GPSが使えないときはHUDだけ(タスク表 ARグラス・AR設定のスイッチ・既定OFF)。START の時点で測位が無ければ
+    /// アバターを出さず HUD に警告を出し、精度5m以内の測位で現れる。スイッチの無い走行は従来どおりアバターを出し、
+    /// GPS待ちのまま終えた状態も次の走行へ持ち越さない
+    /// </summary>
+    private IEnumerator RunHudOnlyWithoutGpsTest(ARSessionManagerBridge bridge, AvatarEngine engine,
+                                                 GameStateController fsm, PeripheralHUDManager hud)
+    {
+        var gps = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        Check(fsm != null && gps != null && hud != null, "hud-only: GameStateController, GpsSignalMonitor and the HUD exist");
+        if (fsm == null || gps == null || hud == null) yield break;
+        const string start = "{\"command\":\"StartSession\",\"targetPaceKmH\":10.0,\"distanceKm\":5.0," +
+                             "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0";
+
+        // スイッチ ON で始める。測位は送らない(GPS が使えない)
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand(start + ",\"hudOnlyWithoutGps\":true}");
+        yield return null;
+        Check(bridge.HudOnlyWithoutGps, "hud-only: StartSession hudOnlyWithoutGps turns the switch on");
+        Check(fsm.currentState == GameStateController.ARVisionState.Normal,
+              "hud-only: nothing is hidden before START (countdown)");
+
+        float startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        yield return WaitScaled(0.1f);
+        Check(fsm.IsAwaitingInitialGps && !engine.gameObject.activeInHierarchy,
+              $"hud-only: no GPS at START hides the avatar ({fsm.currentState}/{fsm.CurrentStandbyCause})");
+        Check(hud.IsHudVisible && hud.IsSafetyWarningVisible
+              && (hud.SafetyWarningText.Contains("アバターが現れます") || hud.SafetyWarningText.Contains("AVATAR WILL APPEAR")),
+              $"hud-only: the HUD stays on with a waiting-for-GPS warning ('{hud.SafetyWarningText}')");
+
+        // HUD は走行を数え続ける。精度12m(ロストの10m以上)では出さない
+        float hudTime = hud.ElapsedTimeSeconds;
+        for (float t = 0f; t < 1.5f; t += Time.deltaTime)
+        {
+            SendRouteFix(bridge, east: 0.0, north: 0.0, accuracy: 12f);
+            yield return null;
+        }
+        // HUD のタイムは壁時計(E2E は時間を早回しするので、ゲーム内1.5秒は実時間0.5秒)
+        Check(hud.ElapsedTimeSeconds > hudTime + 0.2f, $"hud-only: the HUD keeps timing the run ({hudTime:F1}s -> {hud.ElapsedTimeSeconds:F1}s)");
+        Check(fsm.IsAwaitingInitialGps && !engine.gameObject.activeInHierarchy,
+              "hud-only: a 12m fix is not enough to bring the avatar out");
+
+        // 精度4m の測位が続く — 再集積(1.5秒)を経てアバターが走者の前に現れる
+        float waited = 0f;
+        while (fsm.currentState != GameStateController.ARVisionState.Normal && waited < 6f)
+        {
+            SendRouteFix(bridge, east: 0.0, north: 0.0, accuracy: 4f);
+            waited += Time.deltaTime;
+            yield return null;
+        }
+        yield return null;
+        Vector3 gap = engine.transform.position - _cameraMover.position;
+        gap.y = 0f;
+        Check(fsm.currentState == GameStateController.ARVisionState.Normal && engine.gameObject.activeInHierarchy,
+              $"hud-only: a 4m fix brings the avatar out ({waited:F1}s)");
+        Check(gap.magnitude < 6f, $"hud-only: the avatar appears ahead of the runner ({gap.magnitude:F1}m)");
+        Check(!hud.IsSafetyWarningVisible, "hud-only: the warning clears once the avatar is out");
+
+        // GPS待ちのまま終える → スイッチの無い次の走行は、GPSが無くても従来どおりアバターを出す
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand(start + ",\"hudOnlyWithoutGps\":true}");
+        yield return null;
+        startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        yield return WaitScaled(0.1f);
+        Check(fsm.IsAwaitingInitialGps, "hud-only: a second run without GPS also starts HUD-only");
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand(start + "}");
+        yield return null;
+        startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        yield return WaitScaled(0.3f);
+        Check(!bridge.HudOnlyWithoutGps && fsm.currentState == GameStateController.ARVisionState.Normal
+              && engine.gameObject.activeInHierarchy && !hud.IsSafetyWarningVisible,
+              $"hud-only: without the switch the avatar shows with no GPS, as before ({fsm.currentState}/{fsm.CurrentStandbyCause})");
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+    }
+
+    /// <summary>NoiseBase からの東・北(m)を緯度経度にして、新しい測位として送る(ノイズ無し・既定は精度5m)</summary>
+    private static void SendRouteFix(ARSessionManagerBridge bridge, double east, double north, float accuracy = 5f)
     {
         var ci = System.Globalization.CultureInfo.InvariantCulture;
         double lat = NoiseBaseLat + north / 111320.0;
@@ -1778,7 +1864,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         bridge.OnSwiftCommand(
             "{\"command\":\"UpdateMetrics\",\"paceKmH\":10.8,\"heartRate\":140,\"distanceKm\":0.1," +
             $"\"gpsLatitude\":{lat.ToString("F7", ci)},\"gpsLongitude\":{lon.ToString("F7", ci)}," +
-            "\"gpsAccuracy\":5.0,\"locationSampleFresh\":true,\"speedSampleValid\":true}");
+            $"\"gpsAccuracy\":{accuracy.ToString("F1", ci)},\"locationSampleFresh\":true,\"speedSampleValid\":true}}");
     }
 
     private IEnumerator RunGlassFinishTest(ARSessionManagerBridge bridge, PeripheralHUDManager hud)

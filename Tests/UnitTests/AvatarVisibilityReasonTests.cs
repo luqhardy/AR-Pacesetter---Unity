@@ -53,6 +53,20 @@ public class AvatarVisibilityReasonTests
     }
 
     [Test]
+    public void GPS待ちでHUDだけの開始をGPSロストと報告しない()
+    {
+        // START の時点でGPSが無くHUDだけで始めた(AR設定)。消えたのではなく、まだ出していない
+        var i = Healthy();
+        i.GameObjectActive = false;
+        i.FsmState = "Standby";
+        i.AwaitingInitialGps = true;
+
+        Assert.IsFalse(AvatarVisibilityReason.Resolve(i, out string reason));
+        StringAssert.Contains("GPS待ち", reason);
+        StringAssert.DoesNotContain("GPSロスト", reason);
+    }
+
+    [Test]
     public void FSMがNormalなのに無効なら外部要因として報告する()
     {
         var i = Healthy();

@@ -26,6 +26,9 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var avatarSyncRate: Int = 0       // 0–100%
     @Published var avatarState: AvatarState = .idle
     @Published var gpsStatus: GPSStatus = .searching
+    /// GPSロストのうち「START の時点でGPSが無く、HUDだけで始めた」もの(HudOnlyStart)。
+    /// アバターはまだ一度も出ていないので、バナーを「慣性走行中」にしない
+    @Published var gpsAwaitingFirstFix = false
     /// アバターが見えていない理由(Unity AvatarVisibilityDiagnostics)。見えていれば nil。
     /// 実機で「消えた」を「どの経路で消えたか」に変えるための診断表示
     @Published var avatarHiddenReason: String? = nil
@@ -241,7 +244,8 @@ final class UnityBridge: NSObject, ObservableObject {
     ///   ARビューがiPhoneに出ている間はSwiftUIのHUDを使う(手に持って正面から見る
     ///   画面に適した意匠)。グラス出力中はUnityのF-07 HUDが担当する。
     func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
-                      hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false) {
+                      hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false,
+                      hudOnlyWithoutGps: Bool = false) {
         // 前回の走行の結果を消す。残すと、今回の SessionEnded が届かなかったときに
         // 結果画面が前回の数字を今回のものとして出す
         lastResult = nil
@@ -260,6 +264,10 @@ final class UnityBridge: NSObject, ObservableObject {
         // アバターが目標ペースで走る(遅れると前へ離れる — AvatarPacing・既定は「走者+3m」)
         if selfPaced {
             payload["selfPaced"] = true
+        }
+        // START の時点でGPSが使えなければHUDだけで始める(HudOnlyStart・既定はアバターを出す)
+        if hudOnlyWithoutGps {
+            payload["hudOnlyWithoutGps"] = true
         }
         // 選んだルート(S8)。外れたらアバターが案内する(サイレントルート復帰 — RouteGuidance)
         if let route = routeLatLon, route.count >= 4 {
@@ -504,8 +512,10 @@ final class UnityBridge: NSObject, ObservableObject {
                 }
             case "GPSLost":
                 self.gpsStatus = .lost
+                self.gpsAwaitingFirstFix = HudOnlyStart.isAwaitingFirstFix(gpsLostEvent: dict)
             case "GPSRecovered":
                 self.gpsStatus = .recovered
+                self.gpsAwaitingFirstFix = false
             case "AvatarVisibility":
                 // Unityが判定した「アバターが見えない経路」。見えていれば nil
                 let visible = dict["visible"] as? Bool ?? true
@@ -799,7 +809,8 @@ final class ARSessionManager: ObservableObject {
     private var configuredPaceKmH: Double = 0
 
     func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
-               hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false) {
+               hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false,
+               hudOnlyWithoutGps: Bool = false) {
         isSessionActive = true
         startDate = Date()
         elapsedSeconds = 0
@@ -819,7 +830,8 @@ final class ARSessionManager: ObservableObject {
 
         bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm,
                             ghostDateIso: ghostDateIso, hideUnityHud: hideUnityHud,
-                            routeLatLon: routeLatLon, selfPaced: selfPaced)
+                            routeLatLon: routeLatLon, selfPaced: selfPaced,
+                            hudOnlyWithoutGps: hudOnlyWithoutGps)
 
         // 実測が届くたびに送る — 画面ロック中もCoreLocationは動き続けるため、
         // タイマーが止まってもUnityへの供給が途切れない(M3)

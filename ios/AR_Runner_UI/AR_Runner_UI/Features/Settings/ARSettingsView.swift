@@ -14,6 +14,8 @@ struct ARSettingsView: View {
     @State private var showAvatarLibrary = false
     /// アバターが目標ペースで走る(既定 OFF = 走者の3m前に付いていく — AvatarPacing)
     @AppStorage(AvatarPacing.storageKey) private var avatarSelfPaced = false
+    /// 走り始めにGPSが使えなければHUDだけで始める(既定 OFF = アバターを出す — HudOnlyStart)
+    @AppStorage(HudOnlyStart.storageKey) private var hudOnlyWithoutGps = false
 
     /// 準備画面と同じ判定(手動の接続はここでは扱わない)
     private var glassStatus: GlassRowStatus {
@@ -74,6 +76,20 @@ struct ARSettingsView: View {
                             }
                             .tint(.arYellow)
                             Text(avatarSelfPaced ? AppStrings.ARSettings.selfPacedOnNote : AppStrings.ARSettings.selfPacedOffNote)
+                                .font(.system(size: 12))
+                                .foregroundColor(.arGrayText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        // タスク表 ARグラス「GPSが使えない場合はHUDのみ」— 既定はアバターを出す
+                        SettingsSectionCard(icon: "location.slash", title: AppStrings.ARSettings.withoutGps) {
+                            Toggle(isOn: $hudOnlyWithoutGps) {
+                                Text(AppStrings.ARSettings.hudOnlyWithoutGps)
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                            .tint(.arYellow)
+                            Text(hudOnlyWithoutGps ? AppStrings.ARSettings.hudOnlyOnNote : AppStrings.ARSettings.hudOnlyOffNote)
                                 .font(.system(size: 12))
                                 .foregroundColor(.arGrayText)
                                 .fixedSize(horizontal: false, vertical: true)

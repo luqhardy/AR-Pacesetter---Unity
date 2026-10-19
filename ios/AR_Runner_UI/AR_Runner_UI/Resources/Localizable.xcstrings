@@ -69,6 +69,57 @@
         }
       }
     },
+    "arSettings.hudOnlyWithoutGps" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start with the HUD only"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HUDだけで走り始める"
+          }
+        }
+      }
+    },
+    "arSettings.hudOnlyWithoutGps.offNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off (default): the avatar is shown even without GPS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフ(既定): GPSが使えなくてもアバターを表示します"
+          }
+        }
+      }
+    },
+    "arSettings.hudOnlyWithoutGps.onNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If GPS isn't available when you start, you run with just the HUD and a warning. The avatar appears once GPS locks on (within 5 m)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "走り始めにGPSが使えなければ、アバターを出さずHUDと警告だけで走ります。GPSをつかむ(精度5m以内)とアバターが現れます"
+          }
+        }
+      }
+    },
     "arSettings.notConnected" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -184,6 +235,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AR設定"
+          }
+        }
+      }
+    },
+    "arSettings.withoutGps" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When GPS isn't available"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GPSが使えないとき"
           }
         }
       }
@@ -2955,6 +3023,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "目標距離を達成しました"
+          }
+        }
+      }
+    },
+    "running.gpsAwaitingFirstFix" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for GPS — the avatar appears once located"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GPS測位待ち — 測位できるとアバターが現れます"
           }
         }
       }

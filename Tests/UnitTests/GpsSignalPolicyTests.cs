@@ -82,6 +82,45 @@ public class GpsSignalPolicyTests
         Assert.AreEqual(Action.None, GpsSignalPolicy.Decide(Phase.Other, true, false));
     }
 
+    private static bool HudOnly(float since, float acc, bool optedIn = true, bool lostHandling = true)
+        => GpsSignalPolicy.ShouldStartHudOnly(optedIn, lostHandling, since, Stale, acc, LostAt);
+
+    [Test]
+    public void HUDだけで始めるのは既定OFF()
+    {
+        Assert.IsFalse(HudOnly(float.PositiveInfinity, -1f, optedIn: false),
+            "既定は従来どおり、GPSが無くてもアバターを出す(良好な測位の前はロスト判定しない)");
+        Assert.IsFalse(HudOnly(0.2f, 35f, optedIn: false));
+    }
+
+    [Test]
+    public void ONならSTARTの時点で測位が無いか精度10m以上のときHUDだけで始める()
+    {
+        Assert.IsTrue(HudOnly(float.PositiveInfinity, -1f), "測位が一度も届いていない");
+        Assert.IsTrue(HudOnly(float.NaN, 4f), "経過が数でない");
+        Assert.IsTrue(HudOnly(3f, 4f), "途絶えている — 精度が良くても古い測位は使えない");
+        Assert.IsTrue(HudOnly(0.2f, 35f), "屋内");
+        Assert.IsTrue(HudOnly(0.2f, 10f), "ロストのしきい値ちょうど");
+        Assert.IsFalse(HudOnly(0.2f, 9.9f), "ロストにならない精度ならアバターを出す");
+        Assert.IsFalse(HudOnly(0.2f, 4f));
+    }
+
+    [Test]
+    public void GPSロストの判定を止めている間はHUDだけで始めない()
+    {
+        // 屋内テスト(SetGpsLostHandling false)では復帰を判定する者がいない — 走行中ずっとアバターが出なくなる
+        Assert.IsFalse(HudOnly(float.PositiveInfinity, -1f, lostHandling: false));
+    }
+
+    [Test]
+    public void HUDだけのスタンバイは精度5m以内の測位で再集積へ進む()
+    {
+        Assert.AreEqual(Action.BeginReaccumulation, GpsSignalPolicy.Decide(Phase.StandbyAwaitingGps, false, true));
+        Assert.AreEqual(Action.None, GpsSignalPolicy.Decide(Phase.StandbyAwaitingGps, false, false),
+            "5〜10mでは出さない(ロストと復帰のヒステリシスと同じ)");
+        Assert.AreEqual(Action.None, GpsSignalPolicy.Decide(Phase.StandbyAwaitingGps, true, false));
+    }
+
     [Test]
     public void 復帰待ちの間ロストが続けば何もしない()
     {

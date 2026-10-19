@@ -59,6 +59,7 @@ public class AvatarVisibilityDiagnostics : MonoBehaviour
             PlaneOcclusionEnabled = planeOcclusion != null && planeOcclusion.OccludeAvatarBehindPlanes,
             GlassDisconnected    = stateController != null
                 && stateController.CurrentStandbyCause == GameStateController.StandbyCause.GlassDisconnected,
+            AwaitingInitialGps   = stateController != null && stateController.IsAwaitingInitialGps,
         };
         FillCameraRelation(ref inputs);
 

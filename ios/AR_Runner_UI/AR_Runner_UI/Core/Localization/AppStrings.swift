@@ -189,6 +189,7 @@ enum AppStrings {
         static let goalReached: LocalizedStringKey = "running.goalReached"
         static let lowBattery: LocalizedStringKey = "running.lowBattery"
         static let gpsLost: LocalizedStringKey = "running.gpsLost"
+        static let gpsAwaitingFirstFix: LocalizedStringKey = "running.gpsAwaitingFirstFix"
         static func avatarHidden(_ reason: String) -> LocalizedStringKey { "running.avatarHidden \(reason)" }
         static let lockTitle: LocalizedStringKey = "running.lock.title"
         // 計測は止めずに知らせる警告(タスク表 S6 異常系)
@@ -271,6 +272,10 @@ enum AppStrings {
         static let selfPaced: LocalizedStringKey = "arSettings.selfPaced"
         static let selfPacedOnNote: LocalizedStringKey = "arSettings.selfPaced.onNote"
         static let selfPacedOffNote: LocalizedStringKey = "arSettings.selfPaced.offNote"
+        static let withoutGps: LocalizedStringKey = "arSettings.withoutGps"
+        static let hudOnlyWithoutGps: LocalizedStringKey = "arSettings.hudOnlyWithoutGps"
+        static let hudOnlyOnNote: LocalizedStringKey = "arSettings.hudOnlyWithoutGps.onNote"
+        static let hudOnlyOffNote: LocalizedStringKey = "arSettings.hudOnlyWithoutGps.offNote"
     }
 
     /// スマホ設定

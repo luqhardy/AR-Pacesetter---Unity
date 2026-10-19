@@ -22,6 +22,11 @@ public static class GpsSignalPolicy
         FadeOut,
         /// <summary>F-10のフェード完了によるスタンバイ。GPS復帰で ReAccumulation へ進む。</summary>
         StandbyAfterGpsLoss,
+        /// <summary>
+        /// START の時点でGPSが使えず、HUDだけで始めたスタンバイ(<see cref="ShouldStartHudOnly"/>)。
+        /// GPSロスト後のスタンバイと同じく、復帰で ReAccumulation へ進んでアバターが現れる。
+        /// </summary>
+        StandbyAwaitingGps,
         /// <summary>それ以外(グラス切断・低バッテリーのスタンバイ、ReAccumulation中など)。監視は触らない。</summary>
         Other
     }
@@ -58,6 +63,24 @@ public static class GpsSignalPolicy
             && accuracyMeters <= recoveredThresholdMeters;
     }
 
+    /// <summary>
+    /// 走行開始(START)の時点でGPSが使えなければ、アバターを出さずHUDだけで始めるか
+    /// (タスク表 ARグラス「GPSが使えない場合はHUDのみ」2026-10-19・AR設定のスイッチ・<b>既定OFF</b>)。
+    /// 使えない = 新鮮な測位が無い、または精度がロストのしきい値(10m)以上。
+    ///
+    /// <para>既定(OFF)では従来どおり、良好な測位を一度も得ていない間はロスト判定せずアバターを出す
+    /// (<see cref="IsLost"/> の requireInitialFix)。GPSロストの自動判定を止めている間(屋内テスト)は
+    /// 復帰を判定する者がいない — HUDだけで始めると走行中ずっとアバターが出ないので、始めない。</para>
+    /// </summary>
+    public static bool ShouldStartHudOnly(bool optedIn, bool lostHandlingEnabled,
+                                          float secondsSinceUpdate, float staleTimeoutSeconds,
+                                          float accuracyMeters, float lostThresholdMeters)
+    {
+        if (!optedIn || !lostHandlingEnabled) return false;
+        bool fresh = secondsSinceUpdate < staleTimeoutSeconds; // NaN・未受信(∞)は新鮮でない
+        return !fresh || accuracyMeters < 0f || accuracyMeters >= lostThresholdMeters;
+    }
+
     /// <summary>局面と判定結果から、監視が起こすべき遷移を決める(AGENTS.md §5 の図そのもの)。</summary>
     public static Action Decide(Phase phase, bool lost, bool recovered)
     {
@@ -69,6 +92,7 @@ public static class GpsSignalPolicy
             case Phase.FadeOut: // 1秒のフェード完了前に戻れば Normal へ直接
                 return recovered ? Action.ReturnToNormal : Action.None;
             case Phase.StandbyAfterGpsLoss:
+            case Phase.StandbyAwaitingGps:
                 return recovered ? Action.BeginReaccumulation : Action.None;
             default:
                 return Action.None;

@@ -299,7 +299,8 @@ struct RunningView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "location.slash.fill")
                                 .font(.system(size: 13))
-                            Text(AppStrings.Running.gpsLost)
+                            // START からGPSを待っている(HUDだけで開始)ときは、アバターはまだ出ていない
+                            Text(bridge.gpsAwaitingFirstFix ? AppStrings.Running.gpsAwaitingFirstFix : AppStrings.Running.gpsLost)
                                 .font(.system(size: 13, weight: .semibold))
                         }
                         .foregroundColor(.black)
@@ -392,7 +393,9 @@ struct RunningView: View {
                         // S8 で選んだルート(案内を ON にしたときだけ)
                         routeLatLon: RunSettings.shared.guidanceRoute,
                         // AR設定「アバターが目標ペースで走る」(既定 OFF = 走者+3m)
-                        selfPaced: AvatarPacing.isSelfPaced(in: .standard)
+                        selfPaced: AvatarPacing.isSelfPaced(in: .standard),
+                        // AR設定「GPSが使えないとき HUDだけで走り始める」(既定 OFF = アバターを出す)
+                        hudOnlyWithoutGps: HudOnlyStart.isEnabled(in: .standard)
                     )
                 } else {
                     // §8.3: グラス切断で準備画面へ戻った後の再スタート。

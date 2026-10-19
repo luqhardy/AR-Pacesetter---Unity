@@ -12,6 +12,7 @@ using UnityEngine;
 ///   {"event":"SyncRateUpdated","value":87}
 ///   {"event":"AvatarStateChanged","state":"Run"}   // Idle/Run/Slow/Fast/Goal/Lost
 ///   {"event":"GPSLost"} / {"event":"GPSRecovered"}
+///   {"event":"GPSLost","awaitingFix":true}        // START からGPSを待っている(HUDのみで開始)
 ///   {"event":"LatencyReport","ms":16.4}
 /// </summary>
 public static class SwiftMessageSender
@@ -44,8 +45,9 @@ public static class SwiftMessageSender
     public static void SendUnityReady()
         => SendRaw("{\"event\":\"UnityReady\"}");
 
-    public static void SendGpsLost()
-        => SendRaw("{\"event\":\"GPSLost\"}");
+    /// <param name="awaitingFirstFix">START の時点でGPSが無く、HUDだけで始めた(アバターはまだ一度も出ていない)</param>
+    public static void SendGpsLost(bool awaitingFirstFix = false)
+        => SendRaw(awaitingFirstFix ? "{\"event\":\"GPSLost\",\"awaitingFix\":true}" : "{\"event\":\"GPSLost\"}");
 
     public static void SendGpsRecovered()
         => SendRaw("{\"event\":\"GPSRecovered\"}");

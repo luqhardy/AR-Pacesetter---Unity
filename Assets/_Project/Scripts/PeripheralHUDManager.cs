@@ -68,6 +68,9 @@ public class PeripheralHUDManager : MonoBehaviour
     private const string GpsSearchingWarning = "GPS信号を探索中：安全のため減速してください";
     // 日本語フォントが端末に無いときの代わり(何も描かれないよりよい)
     private const string GpsSearchingWarningEnglish = "SEARCHING FOR GPS: SLOW DOWN FOR SAFETY";
+    // START の時点でGPSが無くHUDだけで始めたとき(AR設定のスイッチ)。アバターがいない理由を伝える
+    private const string GpsAwaitingWarning = "GPS信号を探索中：測位後にアバターが現れます";
+    private const string GpsAwaitingWarningEnglish = "WAITING FOR GPS: AVATAR WILL APPEAR";
     private GameStateController _gameState;
     private PaceHudDisplay.PaceState _currentPaceState = PaceHudDisplay.PaceState.Unknown;
     private bool _peripheralLayoutApplied;
@@ -372,7 +375,12 @@ public class PeripheralHUDManager : MonoBehaviour
         _skin?.SetWarning(show, Time.unscaledTime, textSafetyWarning);
 
         if (show)
-            textSafetyWarning.text = _japaneseFont != null || _skin == null ? GpsSearchingWarning : GpsSearchingWarningEnglish;
+        {
+            bool japanese = _japaneseFont != null || _skin == null;
+            textSafetyWarning.text = _gameState.IsAwaitingInitialGps
+                ? (japanese ? GpsAwaitingWarning : GpsAwaitingWarningEnglish)
+                : (japanese ? GpsSearchingWarning : GpsSearchingWarningEnglish);
+        }
     }
 
     /// <summary>
@@ -458,6 +466,9 @@ public class PeripheralHUDManager : MonoBehaviour
     /// <summary>E2E/検証用: F-10の警告が今表示されているか。</summary>
     public bool IsSafetyWarningVisible =>
         textSafetyWarning != null && textSafetyWarning.gameObject.activeSelf;
+
+    /// <summary>E2E/検証用: 警告の文言(表示していなければ空)</summary>
+    public string SafetyWarningText => IsSafetyWarningVisible ? textSafetyWarning.text : "";
 
     /// <summary>E2E/検証用: F-10 の警告が HUD と同じキャンバスに載っているか(表示切替・セーフエリアが効く)。</summary>
     public bool SafetyWarningOnHudCanvas =>

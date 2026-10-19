@@ -15,15 +15,20 @@ public class GameStateController : MonoBehaviour
 
     /// <summary>
     /// スタンバイに入った原因。GPS復帰で ReAccumulation へ進めてよいのは
-    /// <see cref="GpsLost"/> のときだけ — グラス切断(§8.3)は再接続後の再スタート操作を、
-    /// 低バッテリー退避は利用者の判断を待つ。
+    /// <see cref="GpsLost"/> と <see cref="AwaitingGps"/> のときだけ — グラス切断(§8.3)は再接続後の
+    /// 再スタート操作を、低バッテリー退避は利用者の判断を待つ。
     /// </summary>
     public enum StandbyCause
     {
         None,
         GpsLost,
         GlassDisconnected,
-        Other
+        Other,
+        /// <summary>
+        /// 走行開始(START)の時点でGPSが使えず、アバターを出さずHUDだけで始めた(AR設定のスイッチ・既定OFF —
+        /// <see cref="GpsSignalPolicy.ShouldStartHudOnly"/>)。精度5m以内の測位で ReAccumulation へ進む
+        /// </summary>
+        AwaitingGps
     }
 
     [Header("Current Status")]
@@ -33,14 +38,19 @@ public class GameStateController : MonoBehaviour
     public StandbyCause CurrentStandbyCause { get; private set; } = StandbyCause.None;
 
     /// <summary>
-    /// GPSロスト由来の状態か(慣性移動・フェードアウト・GPS起因のスタンバイ)。
+    /// GPSロスト由来の状態か(慣性移動・フェードアウト・GPS起因のスタンバイ・GPS待ちのHUDのみ)。
     /// Swiftへの GPSLost 通知・HUDのF-10警告はこれを見る。グラス切断や低バッテリーの
     /// スタンバイを「GPS喪失」と報告しないため、Standby は原因で区別する
     /// </summary>
     public bool IsGpsLossState =>
         currentState == ARVisionState.InertialMovement
         || currentState == ARVisionState.FadeOut
-        || (currentState == ARVisionState.Standby && CurrentStandbyCause == StandbyCause.GpsLost);
+        || (currentState == ARVisionState.Standby
+            && (CurrentStandbyCause == StandbyCause.GpsLost || CurrentStandbyCause == StandbyCause.AwaitingGps));
+
+    /// <summary>START の時点でGPSが使えず、HUDだけで走っている(<see cref="StandbyCause.AwaitingGps"/>)</summary>
+    public bool IsAwaitingInitialGps =>
+        currentState == ARVisionState.Standby && CurrentStandbyCause == StandbyCause.AwaitingGps;
 
     [Header("References")]
     [SerializeField] private GameObject avatarTarget;
