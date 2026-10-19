@@ -51,6 +51,14 @@ final class HeadTrackingTests: XCTestCase {
         XCTAssertTrue(HeadYawSample.shouldSend(now: 10, lastSent: nil))
         XCTAssertFalse(HeadYawSample.shouldSend(now: 10.01, lastSent: 10))
         XCTAssertTrue(HeadYawSample.shouldSend(now: 10 + HeadYawSample.sendInterval, lastSent: 10))
+        // 60Hz で届く頭の向きは2回に1回送る(浮動小数の誤差で3回に1回 = 20Hz にならない)
+        var sent = 0
+        var last: TimeInterval? = nil
+        for i in 0..<60 {
+            let now = 100 + Double(i) / 60.0
+            if HeadYawSample.shouldSend(now: now, lastSent: last) { sent += 1; last = now }
+        }
+        XCTAssertEqual(sent, 30)
         // 時計が戻った(再起動等)なら送る
         XCTAssertTrue(HeadYawSample.shouldSend(now: 5, lastSent: 10))
     }

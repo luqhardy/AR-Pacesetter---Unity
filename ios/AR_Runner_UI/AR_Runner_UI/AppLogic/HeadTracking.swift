@@ -50,6 +50,7 @@ nonisolated enum HeadTrackingStatus: Equatable {
 nonisolated enum HeadYawSample {
     /// Unity へ送る間隔(秒)。グラスは60fpsだが、頭の向きは30Hzで足りる(Unity は毎フレーム最新値を使う)
     static let sendInterval: TimeInterval = 1.0 / 30.0
+    private static let sendTolerance: TimeInterval = 0.001
 
     /// CoreMotion のヨー(ラジアン・上から見て反時計回りが正)を Unity のヨー(度・右回りが正)へ。
     /// 基準(0°の向き)は AirPods 任せで任意 — Unity が進行方向との差の平均を「まっすぐ前」とする
@@ -61,6 +62,8 @@ nonisolated enum HeadYawSample {
     /// 前回送ってから間隔が空いたか
     static func shouldSend(now: TimeInterval, lastSent: TimeInterval?) -> Bool {
         guard let lastSent else { return true }
-        return now - lastSent >= sendInterval || now < lastSent
+        // 1ms の余裕: 浮動小数の誤差でちょうど間隔ぶんの差が僅かに足りず、60Hz の受信が
+        // 30Hz ではなく 20Hz(3回に1回)でしか送られなくなるのを防ぐ
+        return now - lastSent >= sendInterval - sendTolerance || now < lastSent
     }
 }
