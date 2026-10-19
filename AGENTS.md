@@ -241,6 +241,8 @@ stateDiagram-v2
   グラスは Follow(固定)なので、首振りは Unity が進行方向ヨーへ足して打ち消す(`HeadYawBaseline`)。Anchor モードでは足さない
 - 準備画面(S4)では **ARグラスが必須**(未接続・ミラーリングでは「次へ」を押せない — `DeviceGate`)。
   iPhone 画面だけで試すときは開発者モード「ARグラスなしで走行を始める」を使い、走者に渡す前に OFF へ戻す
+- **選んだルートからの逸脱(`RouteDeviation`)は GPS の座標のまま測る** — 経路を AR の世界へ置かない(原点・ヨーが任意で位置合わせの誤差が乗る)。
+  案内は既定OFF(S8 のスイッチ)で、しきい値・持続時間は `RouteDeviationGate`(トラックの GPS 誤差で反応しない値)。作った往復ルートは渡さない
 - `tools/prepare-free-signing.sh` の実行結果(Bundle ID・署名設定の一時改変)はコミットしない。CIが検知して落とす
 
 ### ペース単位の規約

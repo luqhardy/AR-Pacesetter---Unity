@@ -17,6 +17,8 @@ struct MapRouteView: View {
     @State private var selectedRouteID: String?
     /// 「詳細を見る」で開いている候補。閉じても選択は変えない(タスク表 S8)
     @State private var detailCandidate: RouteCandidate?
+    /// 「ルートを外れたらアバターが案内する」(既定 OFF。過去に走ったルートでだけ使える — RouteGuidance)
+    @AppStorage(RouteGuidance.storageKey) private var routeGuidanceEnabled = false
 
     /// 候補: 経路のある過去の走行を目標距離(S5で確定した値)に近い順に。
     /// 1件も無ければ、現在地から北へ行って戻る往復を作る(タスク表 S8「候補が無いときは既定のルート」)
@@ -159,11 +161,19 @@ struct MapRouteView: View {
                                 .padding(.top, 10)
                         }
 
+                        Spacer().frame(height: 16)
+
+                        // 選んだルートから外れたらアバターが案内する(HANDOVER §5「ルート同期」)
+                        routeGuidanceCard
+                            .padding(.horizontal, 24)
+
                         Spacer().frame(height: 24)
 
                         // ルートが選ばれていないと開始できない(タスク表 S8 異常系)
                         ARButton(AppStrings.Route.start) {
                             guard selectedRoute != nil else { return }
+                            RunSettings.shared.guidanceRoute = RouteGuidance.payload(for: selectedRoute,
+                                                                                    enabled: routeGuidanceEnabled)
                             onNext()
                         }
                         .disabled(selectedRoute == nil)
@@ -177,6 +187,29 @@ struct MapRouteView: View {
         .sheet(item: $detailCandidate) { route in
             RouteDetailSheet(route: route)
         }
+    }
+
+    /// 「ルートを外れたらアバターが案内する」。作った往復ルートでは使えない
+    private var routeGuidanceCard: some View {
+        let available = RouteGuidance.isAvailable(for: selectedRoute)
+        return VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $routeGuidanceEnabled) {
+                Text(AppStrings.Route.guidanceToggle)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+            .tint(.arYellow)
+            .disabled(!available)
+            Text(available ? AppStrings.Route.guidanceNote : AppStrings.Route.guidanceUnavailable)
+                .font(.system(size: 12))
+                .foregroundColor(.arGrayText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .background(Color.arCard)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.arBorder, lineWidth: 1))
+        .opacity(available ? 1 : 0.6)
     }
 }
 

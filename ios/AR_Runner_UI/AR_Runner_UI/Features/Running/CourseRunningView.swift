@@ -388,7 +388,9 @@ struct RunningView: View {
                         distanceKm: RunSettings.shared.distanceKm,
                         ghostDateIso: RunSettings.shared.ghostDateIso,
                         // iPhoneに映している間はSwiftUIがHUDを持つ
-                        hideUnityHud: !ExternalDisplayManager.shared.isGlassesConnected
+                        hideUnityHud: !ExternalDisplayManager.shared.isGlassesConnected,
+                        // S8 で選んだルート(案内を ON にしたときだけ)
+                        routeLatLon: RunSettings.shared.guidanceRoute
                     )
                 } else {
                     // §8.3: グラス切断で準備画面へ戻った後の再スタート。
@@ -404,8 +406,9 @@ struct RunningView: View {
                 }
             }
             .onDisappear {
-                // ゴースト指定は1走行限り
+                // ゴースト指定・選んだルートは1走行限り
                 RunSettings.shared.ghostDateIso = nil
+                RunSettings.shared.guidanceRoute = nil
                 // 自動スリープの無効化はこの画面の間だけ(タスク表 S6「画面破棄時に解除」)
                 UIApplication.shared.isIdleTimerDisabled = false
             }

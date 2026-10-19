@@ -141,6 +141,20 @@ public static class DevDiagnostics
                     ? $"メッシュ {planting.SolePointCount}点 / 持ち上げ {Num(planting.CurrentLiftMeters)}m"
                     : "骨からの概算(メッシュを読めない — FBXのRead/Writeを確認)");
 
+            // 選んだルート(GPS)からの逸脱。実機で「案内された/されない」を確かめる
+            var recoverer = engine.GetComponent<SilentRouteRecoverer>();
+            if (recoverer != null)
+            {
+                var gate = recoverer.GpsGate;
+                Add(rows, "route.deviation", !recoverer.HasGpsRoute
+                    ? "選んだルートなし"
+                    : gate.IsRouteFarAway
+                        ? $"ルートから {Num(gate.LastDistanceMeters)}m 以上離れている(まだ近づいていない)"
+                        : gate.LastDistanceMeters < 0.0
+                            ? $"{recoverer.GpsRoutePointCount}点・測位待ち"
+                            : $"{(gate.IsDeviated ? "逸脱中" : "ルート上")} {Num(gate.LastDistanceMeters)}m(しきい値 {Num(gate.LastEnterThresholdMeters)}m)");
+            }
+
             // 身長(要求・上限・実際)とサイズの異常。実機で「大きい/小さい」と言われたときの確認用
             Add(rows, "avatar.height",
                 $"要求 {Num(engine.RequestedHeightCm)}cm / 上限 {(engine.HeightLimitCm > 0f ? Num(engine.HeightLimitCm) + "cm" : "なし")}" +

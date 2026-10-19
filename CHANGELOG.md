@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-19 (7) — S8 で選んだルートを Unity の逸脱判定へ(既定OFF・GPS の誤差を見込む)
+
+HANDOVER §5「ルート同期」: S8 の「ルートを外れたらアバターが案内する」(既定OFF・過去の走行の経路だけ)で、選んだ経路を StartSession の `routeLatLon` で渡し、外れたらサイレントルート復帰で案内する。逸脱は経路を AR へ置かず GPS の座標のまま測り(`RouteDeviation`)、しきい値15m(精度の2倍が大きければそれ)・5秒続いたら・内側に2秒で解除・精度20m超は使わない・100m以内に近づくまで判定しない(`RouteDeviationGate`)。案内の向きだけ AR へ回す。E2E の首振りの検査は本走行の外へ移した(走行中に止まると後のシンクロ率の検査が 32% → 26% で落ちた)。
+検証: tools/verify.sh 全通過(C#コンパイル 通常・エディタ用とも 0エラー、dotnet test 463/463 — 逸脱判定12件を追加、Swift 71ファイル構文OK・Combine OK、E2E 313/313 — ルート同期8件。本走行のシンクロ率は 64%)。追加の Swift テスト4件は CI(macOS)で実行。トラックでの誤検知は実機で要確認
+
 ### 2026-10-19 (6) — iOS ビルドが3コミット続けて落ちていた(Combine の import 漏れ)/ verify.sh で検出
 
 da80e9a で S4 に足した1秒ごとの時計(`Timer.publish().autoconnect()`)が `import Combine` 無しで、CI の iOS build(compile & link)が da80e9a・d3c7dfd・34f0282 で失敗していた(Swift ロジックテスト・E2E は通っていた)。Windows の構文検査では見えないため、verify.sh の3段目に「Combine を使うファイルが import しているか」の grep 検査を足した。

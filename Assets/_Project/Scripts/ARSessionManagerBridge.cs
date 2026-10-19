@@ -8,6 +8,7 @@ using UnityEngine;
 /// 受信コマンド:
 ///   StartSession  { targetPaceKmH, distanceKm, avatarHeightCm, forwardOffsetM }
 ///   UpdateMetrics { paceKmH, heartRate, distanceKm }
+///   (StartSession は任意で routeLatLon [緯度0, 経度0, ...] — 選んだルートからの逸脱をサイレントルート復帰で案内)
 ///   EndSession    {}
 ///   RetrySaveSession {} — 履歴への保存をやり直す(結果は SessionSaveRetried {saved})
 ///
@@ -29,6 +30,9 @@ public class ARSessionManagerBridge : MonoBehaviour
         public double forwardOffsetM;
         public string mode;         // StartSession: "pace"(既定) | "ghost" / StartBoothDemo: "standing"(既定) | "walking"
         public string ghostDateIso; // mode=ghost時: 競走相手のセッションdateIso
+        // StartSession: 選んだルート(S8 で「ルートを外れたら案内する」を ON・過去の走行の経路のときだけ)。
+        // [緯度0, 経度0, 緯度1, 経度1, ...]。無ければ選んだルート無し(サイレントルート復帰は従来どおり)
+        public double[] routeLatLon;
         // UpdateMetrics の測位サンプル(§8.1 ロスト判定 / §5.2 CSVログ用)。
         // gpsAccuracy > 0 が有効サンプルの目印(CoreLocation同様、負値/未送信は無効)
         public double gpsLatitude;
@@ -200,6 +204,10 @@ public class ARSessionManagerBridge : MonoBehaviour
             sessionController.ResetForNewSession();
             _lastSentAvatarState = ""; // Idle→Run遷移を再送させる
         }
+
+        // 選んだルート(GPS)。無い走行でも呼んで、前の走行のルートを持ち越さない
+        var routeRecoverer = avatarEngine.GetComponent<SilentRouteRecoverer>();
+        if (routeRecoverer != null) routeRecoverer.SetGpsRoute(cmd.routeLatLon);
 
         // リセットで false に戻るため、必ずリセット後に立てる
         ExternalMetricsActive = true;

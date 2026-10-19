@@ -175,7 +175,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 
 | ターゲットGameObject | command | フィールド | Unity側の動作 |
 |---|---|---|---|
-| `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → 走行をarmed状態にする。`3-2-1-START`完了後に時計・距離・同期・CSV・アバター走行を開始。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
+| `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意), `routeLatLon`(任意: S8 で選んだ過去の走行の経路 `[緯度0, 経度0, 緯度1, 経度1, ...]`。「ルートを外れたら案内する」が ON のときだけ。外れたらサイレントルート復帰 — 判定は GPS の座標のまま `RouteDeviation`/`RouteDeviationGate`。無ければ前の走行のルートを消す) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → 走行をarmed状態にする。`3-2-1-START`完了後に時計・距離・同期・CSV・アバター走行を開始。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
 | `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm`, `gpsLatitude`, `gpsLongitude`, `gpsAccuracy`, `locationSampleFresh`, `speedSampleValid` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定。測位は`RunnerTrackingState`のGPS+ARKit方位融合、`GpsSignalMonitor`のロスト判定、F-11 CSVへ供給。`locationSampleFresh=true`はCoreLocationの**新しく、かつ精度ゲート(20m以下)を通ったfixだけ**、`speedSampleValid=true`は同じ採用fixで`CLLocation.speed >= 0`のときだけ設定する。精度不良の生fixは`gpsAccuracy`としてロスト判定には届くが、距離/速度の鮮度は更新しない。これによりキャッシュ再送や不良fixを実測扱いせず、有効な速度0(静止)と未計測を区別する。`distanceKm`は実測のみで、設定ペースを実測値として送らない |
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RetrySaveSession` | — | 結果画面(S7)の「保存に失敗しました」→ 再試行。直前の走行の履歴保存をやり直し、`SessionSaveRetried` で返す。成功すれば中断スナップショットを消す(失敗しても控えは残り、次に Unity が起動したときに復元)。保存済みなら何もせず成功を返す(二重に保存しない)。走行後の Unity は止めてあるので、Swift は応答まで(最大5秒)だけ動かす |

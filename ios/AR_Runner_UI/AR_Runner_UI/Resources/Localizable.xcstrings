@@ -2636,6 +2636,57 @@
         }
       }
     },
+    "route.guidance.note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Works with routes you've run before. To allow for GPS error, it only guides you once you've been 15 m or more off the route (more when GPS is weak) for 5 seconds"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去に走ったルートで使えます。GPSの誤差を見込み、ルートから15m以上(GPSの精度が悪いときはさらに)外れた状態が5秒続いたときだけ案内します"
+          }
+        }
+      }
+    },
+    "route.guidance.toggle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avatar guides you back if you leave the route"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ルートを外れたらアバターが案内する"
+          }
+        }
+      }
+    },
+    "route.guidance.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not available for the suggested out-and-back route. Choose a route you've run before"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "おまかせ(往復)ルートでは使えません。過去に走ったルートを選んでください"
+          }
+        }
+      }
+    },
     "route.noRoutedRecords" : {
       "extractionState" : "manual",
       "localizations" : {

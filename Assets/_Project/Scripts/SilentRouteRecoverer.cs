@@ -1,5 +1,18 @@
+using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// サイレントルート復帰(企画書 4.3): ルートを外れたら、アバターが走者の後ろへ回ってルートの方を向いて案内する。
+///
+/// <para>ルートは2通り:</para>
+/// <list type="bullet">
+/// <item><b>選んだルート(GPS)</b> — Swift の S8 で「ルートを外れたら案内する」を ON にし、過去の走行の経路を選んだとき
+///   StartSession の <c>routeLatLon</c> で届く(<see cref="SetGpsRoute"/>)。逸脱は走者の最新の測位と経路を
+///   緯度経度のまま比べ(<see cref="RouteDeviation"/>)、トラックの GPS 誤差では反応しないしきい値・持続時間で決める
+///   (<see cref="RouteDeviationGate"/>)。案内の向きだけを AR の世界へ回す(RunnerTrackingState)。</item>
+/// <item><b>インスペクタの Transform</b> — エディタの検証用。無ければ D キー / E2E の <see cref="SimulateDeviation"/>。</item>
+/// </list>
+/// </summary>
 public class SilentRouteRecoverer : MonoBehaviour
 {
     [Header("Dependencies")]
@@ -24,6 +37,39 @@ public class SilentRouteRecoverer : MonoBehaviour
     /// <summary>現在サイレント復帰(逸脱誘導)中かどうか。</summary>
     public bool IsRecovering => _isRecoveringSilently;
 
+    // ── 選んだルート(GPS)───────────────────────────────────────────────
+    private List<(double lat, double lon)> _gpsRoute = new List<(double lat, double lon)>();
+    private readonly RouteDeviationGate _gpsGate = new RouteDeviationGate();
+    private RunnerTrackingState _tracking;
+    private float _lastJudgedFixTime = -1f;
+    private Vector3 _gpsGuideWorldDirection;
+    private bool _hasGpsGuideDirection;
+
+    /// <summary>選んだルート(GPS)で判定しているか</summary>
+    public bool HasGpsRoute => _gpsRoute.Count >= RouteDeviation.MinimumPoints;
+
+    /// <summary>選んだルートの点の数(診断・E2E 用)</summary>
+    public int GpsRoutePointCount => _gpsRoute.Count;
+
+    /// <summary>選んだルートの判定の状態(診断・E2E 用)</summary>
+    public RouteDeviationGate GpsGate => _gpsGate;
+
+    /// <summary>
+    /// 選んだルートを設定する(StartSession の routeLatLon — [緯度0, 経度0, 緯度1, 経度1, ...])。
+    /// 空・null なら選んだルートは無し(従来どおり)。走行ごとに呼ばれ、前の走行の判定は持ち越さない
+    /// </summary>
+    public void SetGpsRoute(double[] flatLatLon)
+    {
+        _gpsRoute = RouteDeviation.ParseFlatLatLon(flatLatLon);
+        _gpsGate.Reset();
+        _lastJudgedFixTime = -1f;
+        _hasGpsGuideDirection = false;
+        if (_isRecoveringSilently) CeaseSilentRouteRecovery();
+        Debug.Log(HasGpsRoute
+            ? $"[SILENT RECOVERY] 選んだルート {_gpsRoute.Count} 点で逸脱を判定します(GPS)"
+            : "[SILENT RECOVERY] 選んだルートはありません");
+    }
+
     void Start()
     {
         // Bootstrap経由でアバターへ自動装着された場合の参照解決
@@ -37,11 +83,46 @@ public class SilentRouteRecoverer : MonoBehaviour
     {
         if (userCamera == null || avatarEngine == null) return;
 
+        if (HasGpsRoute)
+        {
+            UpdateGpsRoute();
+            return;
+        }
+
         float crossTrackError = CalculateRouteDeviation(userCamera.position);
 
         if (crossTrackError >= deviationThresholdMeters && !_isRecoveringSilently)
             InitiateSilentRouteRecovery();
         else if (crossTrackError < deviationThresholdMeters && _isRecoveringSilently)
+            CeaseSilentRouteRecovery();
+
+        if (_isRecoveringSilently)
+            ExecuteTrailingAndGuidingLogic();
+    }
+
+    /// <summary>選んだルート(GPS)の判定。新しい測位が来たときだけ数え、走行中(START 後〜終了前)だけ案内する</summary>
+    private void UpdateGpsRoute()
+    {
+        if (!avatarEngine.IsRunMotionActive) return;
+        if (_tracking == null) _tracking = FindFirstObjectByType<RunnerTrackingState>(FindObjectsInactive.Include);
+        if (_tracking == null) return;
+
+        float fixTime = _tracking.LastAcceptedGpsFixTime;
+        if (fixTime > _lastJudgedFixTime)
+        {
+            double sinceLast = _lastJudgedFixTime < 0f ? 0.0 : fixTime - _lastJudgedFixTime;
+            _lastJudgedFixTime = fixTime;
+            if (RouteDeviation.TryCrossTrack(_gpsRoute, _tracking.Latitude, _tracking.Longitude,
+                                             out double distance, out double east, out double north, out _))
+            {
+                _gpsGate.Update(distance, _tracking.GpsAccuracyMeters, sinceLast);
+                _hasGpsGuideDirection = _tracking.TryGeographicToWorldDirection(east, north, out _gpsGuideWorldDirection);
+            }
+        }
+
+        if (_gpsGate.IsDeviated && !_isRecoveringSilently)
+            InitiateSilentRouteRecovery();
+        else if (!_gpsGate.IsDeviated && _isRecoveringSilently)
             CeaseSilentRouteRecovery();
 
         if (_isRecoveringSilently)
@@ -160,6 +241,10 @@ public class SilentRouteRecoverer : MonoBehaviour
 
     private Vector3 GetNearestRouteTarget()
     {
+        // 選んだルート(GPS): 経路上の最寄り点の方へ(GPS と AR の向きの対応が決まっているときだけ)
+        if (HasGpsRoute && _hasGpsGuideDirection && userCamera != null)
+            return userCamera.position + _gpsGuideWorldDirection * 20.0f;
+
         if (routeWaypoints != null && routeWaypoints.Length >= 2)
         {
             int nextIdx = Mathf.Min(_nearestSegmentIndex + 1, routeWaypoints.Length - 1);

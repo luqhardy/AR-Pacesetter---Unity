@@ -703,31 +703,6 @@ public class E2EScenarioBehaviour : MonoBehaviour
                     Check(Mathf.Abs(hud.EdgeInsetFraction - 0.90f) < 0.001f,
                         $"glass: HUD pulled into the glass safe area (got {hud.EdgeInsetFraction:F2})");
 
-                // 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」): AirPods の頭の向きを
-                // 進行方向との差にして描画の向きへ足す。最初のサンプルを「まっすぐ前」とみなす
-                deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
-                yield return null;
-                Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
-                    $"head: the first AirPods sample is taken as looking straight ahead ({glassRig.AppliedHeadYawDegrees:F1}°)");
-                deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
-                yield return null;
-                Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees - 30f) < 2f,
-                    $"head: turning the head 30° right turns the glass view with it ({glassRig.AppliedHeadYawDegrees:F1}°)");
-
-                // 挿し直したら「まっすぐ前」を取り直す。AirPods が送り続けている間に抜き挿しすると、
-                // 以前は切断前の基準を引きずり、進行方向が変わっていれば最大90°ずれた向きから始まった
-                deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
-                yield return null;
-                deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
-                deviceBridge.OnSwiftCommand(
-                    "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
-                yield return null;
-                Check(glassRig.IsGlassOutputActive && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
-                    $"head: reconnecting the glasses takes a fresh straight-ahead baseline ({glassRig.AppliedHeadYawDegrees:F1}°)");
-                yield return WaitScaled(HeadPoseMath.DefaultHeadYawMaxAgeSeconds + 0.2f);
-                Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
-                    "head: the view falls back to the travel heading when AirPods stop sending");
-
                 // 将来のグラス実姿勢供給。来れば採用し、途切れれば進行方向ヨーへ自動で戻る
                 deviceBridge.OnSwiftCommand(
                     "{\"command\":\"UpdateGlassPose\",\"yaw\":30,\"pitch\":0,\"roll\":0,\"timestamp\":0}");
@@ -1585,6 +1560,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(hud.CurrentHudVisibility > 0.9f, "hud: restored after gaze settles");
         }
 
+        // ── Step 6a: 首振り(AirPods の頭の向き)— 本走行のシンクロ率を乱さないよう走行の外で ──
+        yield return StartCoroutine(RunHeadTurnTest());
+
+        // ── Step 6a': 選んだルート(GPS)から外れたらサイレントルート復帰(HANDOVER §5「ルート同期」) ──
+        yield return StartCoroutine(RunSelectedRouteTest(bridge, engine));
+
         // ── Step 6b: グラスへ出している走行の終わり(タスク表 ARグラス「ランニング終了」) ──
         // 挨拶 → 消滅 → 結果カード → グラスの表示 OFF(詳しい結果は iPhone の結果画面で)
         yield return StartCoroutine(RunGlassFinishTest(bridge, hud));
@@ -1598,6 +1579,144 @@ public class E2EScenarioBehaviour : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     // 展示ブースの体験モード: 台本の見せ場が本番の経路で起き、何も保存されないこと
     // ════════════════════════════════════════════════════════════════════════
+    /// <summary>
+    /// 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」)。本走行の外で行う —
+    /// 走行中に止まって待つと、後の「走行中のシンクロ率」の検査がその分だけ下がる(2026-10-19 に 32% → 26% で落ちた)
+    /// </summary>
+    private IEnumerator RunHeadTurnTest()
+    {
+        var deviceBridge = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
+        var glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (deviceBridge == null || glassRig == null) yield break;
+
+        deviceBridge.OnSwiftCommand(
+            "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+        yield return null;
+        Check(glassRig.IsGlassOutputActive, "head: glass output is on for the head-turn checks");
+
+        // 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」): AirPods の頭の向きを
+        // 進行方向との差にして描画の向きへ足す。最初のサンプルを「まっすぐ前」とみなす
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
+        yield return null;
+        Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
+            $"head: the first AirPods sample is taken as looking straight ahead ({glassRig.AppliedHeadYawDegrees:F1}°)");
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+        yield return null;
+        Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees - 30f) < 2f,
+            $"head: turning the head 30° right turns the glass view with it ({glassRig.AppliedHeadYawDegrees:F1}°)");
+
+        // 挿し直したら「まっすぐ前」を取り直す。AirPods が送り続けている間に抜き挿しすると、
+        // 以前は切断前の基準を引きずり、進行方向が変わっていれば最大90°ずれた向きから始まった
+        deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
+        yield return null;
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+        deviceBridge.OnSwiftCommand(
+            "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+        yield return null;
+        Check(glassRig.IsGlassOutputActive && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
+            $"head: reconnecting the glasses takes a fresh straight-ahead baseline ({glassRig.AppliedHeadYawDegrees:F1}°)");
+        yield return WaitScaled(HeadPoseMath.DefaultHeadYawMaxAgeSeconds + 0.2f);
+        Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
+            "head: the view falls back to the travel heading when AirPods stop sending");
+
+        deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
+        yield return null;
+        // 切断はスタンバイへ遷移させるため、後続シナリオのために通常へ戻す
+        var fsm = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
+        if (fsm != null) fsm.TransitionToState(GameStateController.ARVisionState.Normal);
+        yield return null;
+    }
+
+    /// <summary>
+    /// 選んだルート(S8・過去の走行の経路)からの逸脱を GPS で判定し、サイレントルート復帰で案内する。
+    /// トラックの誤差(精度5m)では反応せず、30m外れて5秒続いたら案内、戻って2秒で解除
+    /// </summary>
+    private IEnumerator RunSelectedRouteTest(ARSessionManagerBridge bridge, AvatarEngine engine)
+    {
+        var recoverer = engine.GetComponent<SilentRouteRecoverer>();
+        Check(recoverer != null, "route: SilentRouteRecoverer is on the avatar");
+        if (recoverer == null) yield break;
+
+        // 走行中のものがあれば閉じ、北へ300mのルートつきで始める
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var route = new System.Text.StringBuilder();
+        for (int i = 0; i <= 30; i++)
+        {
+            double lat = NoiseBaseLat + i * 10.0 / 111320.0;
+            if (i > 0) route.Append(',');
+            route.Append(lat.ToString("F7", ci)).Append(',').Append(NoiseBaseLon.ToString("F7", ci));
+        }
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":10.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0,\"routeLatLon\":[" + route + "]}");
+        yield return null;
+        Check(recoverer.HasGpsRoute && recoverer.GpsRoutePointCount == 31,
+              $"route: the selected route arrives with StartSession ({recoverer.GpsRoutePointCount} points)");
+
+        float startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        Check(engine.IsRunMotionActive, "route: the run starts with a selected route");
+
+        // ルートの上(誤差の範囲で横に最大10m揺れる)— 案内しない
+        float north = 0f;
+        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        {
+            north += 3f * Time.deltaTime;
+            SendRouteFix(bridge, east: 10.0 * System.Math.Sin(t * 3.0), north: north);
+            yield return null;
+        }
+        Check(!recoverer.IsRecovering && !recoverer.GpsGate.IsDeviated,
+              $"route: GPS noise on the route does not trigger recovery ({recoverer.GpsGate.LastDistanceMeters:F1}m)");
+
+        // 30m 外れる — 5秒続くまでは案内しない、続いたら案内する
+        float offStarted = Time.time;
+        bool recoveredTooEarly = false;
+        for (float t = 0f; t < 7f && !recoverer.IsRecovering; t += Time.deltaTime)
+        {
+            north += 3f * Time.deltaTime;
+            SendRouteFix(bridge, east: 30.0, north: north);
+            yield return null;
+            if (recoverer.IsRecovering && Time.time - offStarted < 4.5f) recoveredTooEarly = true;
+        }
+        Check(recoverer.IsRecovering && engine.IsOverriddenByRecovery,
+              $"route: 30m off the route for 5s starts silent recovery ({recoverer.GpsGate.LastDistanceMeters:F1}m " +
+              $"after {Time.time - offStarted:F1}s)");
+        Check(!recoveredTooEarly, "route: a short excursion alone does not start recovery");
+
+        // ルートへ戻る — 2秒で解除
+        for (float t = 0f; t < 4f && recoverer.IsRecovering; t += Time.deltaTime)
+        {
+            north += 3f * Time.deltaTime;
+            SendRouteFix(bridge, east: 2.0, north: north);
+            yield return null;
+        }
+        Check(!recoverer.IsRecovering && !engine.IsOverriddenByRecovery,
+              "route: returning to the route ends the recovery");
+
+        // 後続のシナリオへ持ち越さない(ルートなしの走行で選んだルートは消える)
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":10.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0}");
+        yield return null;
+        Check(!recoverer.HasGpsRoute, "route: a run without a selected route clears the previous one");
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+    }
+
+    /// <summary>NoiseBase からの東・北(m)を緯度経度にして、精度5mの新しい測位として送る(ノイズ無し)</summary>
+    private static void SendRouteFix(ARSessionManagerBridge bridge, double east, double north)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        double lat = NoiseBaseLat + north / 111320.0;
+        double lon = NoiseBaseLon + east / (111320.0 * System.Math.Cos(NoiseBaseLat * System.Math.PI / 180.0));
+        bridge.OnSwiftCommand(
+            "{\"command\":\"UpdateMetrics\",\"paceKmH\":10.8,\"heartRate\":140,\"distanceKm\":0.1," +
+            $"\"gpsLatitude\":{lat.ToString("F7", ci)},\"gpsLongitude\":{lon.ToString("F7", ci)}," +
+            "\"gpsAccuracy\":5.0,\"locationSampleFresh\":true,\"speedSampleValid\":true}");
+    }
+
     private IEnumerator RunGlassFinishTest(ARSessionManagerBridge bridge, PeripheralHUDManager hud)
     {
         var card = FindFirstObjectByType<GlassRunSummaryCard>(FindObjectsInactive.Include);

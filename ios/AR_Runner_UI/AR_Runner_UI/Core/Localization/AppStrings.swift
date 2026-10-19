@@ -169,6 +169,9 @@ enum AppStrings {
         static var generatedTitle: String { resolve("route.generated.title") }
         static let generatedNote: LocalizedStringKey = "route.generated.note"
         static let generatedNoLocation: LocalizedStringKey = "route.generated.noLocation"
+        static let guidanceToggle: LocalizedStringKey = "route.guidance.toggle"
+        static let guidanceNote: LocalizedStringKey = "route.guidance.note"
+        static let guidanceUnavailable: LocalizedStringKey = "route.guidance.unavailable"
     }
 
     /// 走行中(S6)・ロック画面
