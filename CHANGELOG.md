@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-19 (10) — HUD プレビューに「GPS待ちのHUDのみ」を追加
+
+AGENTS.md「HUD の見た目を変えたら HudPreviewRunner で画像に書き出す」に従い、5枚目 `5_awaiting_gps` を足した。新しい警告「GPS信号を探索中：測位後にアバターが現れます」は23文字すべて描かれ、F-10 の警告と同じカプセルに余白つきで収まる(変更不要)。
+検証: tools/verify.sh 全通過(C#コンパイル 通常・エディタ用とも 0エラー、dotnet test 477/477、Swift 75ファイル構文OK、E2E 332/332)、HudPreviewRunner 終了コード0
+
 ### 2026-10-19 (9) — GPSが使えないときはHUDだけで走り始める(既定OFF)
 
 タスク表 ARグラス「GPS未接続時はアバター非表示・HUDのみ」(GPS 分)。AR設定に「HUDだけで走り始める」(既定OFF・StartSession の `hudOnlyWithoutGps`)。ON なら START の時点で新鮮な測位が無いか精度10m以上のとき、`StandbyCause.AwaitingGps` でアバターを出さず、HUD 下部に「測位後にアバターが現れます」、iPhone に「GPS測位待ち」(`GPSLost` の `awaitingFix`)。精度5m以内で再集積を経て現れる。GPSロスト判定OFF(屋内テスト)・展示デモでは入らない。あわせて StartSession が前の走行のGPS起因の状態を Normal へ戻す(GPS待ちのまま終えると次の走行でアバターが出なかった)。

@@ -126,7 +126,7 @@ iPhone画面用の「隅から100px」のままでは時間・ペースが読め
   日本語フォントが無い端末では英語の文言にする。開発者モードの `hud.jaFont` で読み込めたフォントが分かる
 
 **見た目を変えたら画像で確かめる**: `Unity.exe -batchmode -projectPath <repo> -executeMethod HudPreviewRunner.Run -logFile hud-preview.log`
-(エディタでは Build → Capture HUD Preview)。`Builds/HudPreview/` に4状態(維持・遅れ・スプリット・GPS喪失)×2枚 —
+(エディタでは Build → Capture HUD Preview)。`Builds/HudPreview/` に5状態(維持・遅れ・スプリット・GPS喪失・GPS待ちのHUDのみ)×2枚 —
 `*_glass.png` はグラスが出す光そのもの(黒=透明)、`*_seethrough.png` は晴れたトラックに重ねた近似。
 
 ---
