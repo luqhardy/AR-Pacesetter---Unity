@@ -40,6 +40,10 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | 離隔待機(10mで座標固定+手招き、7mで再開) | `AvatarEngine.cs` | **E2E自動** |
 | バイタル警告(HR185+で深青+CalmDownSign) | `AvatarVisualsAndActions.cs` | **E2E自動** |
 | VFX(起動粒子集積・終了挨拶消滅・接地パルス) | `AvatarVFXController.cs` | エディタ目視 |
+| グラスでの走行終了(挨拶→消滅→結果カード約4秒→表示OFF。Swift はその間 Unity を止めない) | `GlassRunSummaryCard.cs` + `RunSummaryText.cs` | **Unit + E2E自動**(カードが出て消え、HUDも消える) |
+| サイズの異常系(要求身長100〜230cm・測れない/桁外れの検知・画角による上限の下限100cm・スケールイン中断の復元) | `AvatarScale.cs` + `AvatarEngine.ApplyHeightCm` + `AvatarVFXController` | **Unit + E2E自動**。開発者モード `avatar.height` / `avatar.heightAnomaly` |
+| 首振り(AirPods の頭の向きを進行方向との差にしてグラスの描画の向きへ足す。S4 で接続したときだけ) | Unity: `HeadPoseMath.HeadYawBaseline` + `GlassViewRig` / Swift: `HeadphoneHeadTracker.swift` | **Unit + E2E自動**(Unity側)・Swift Unit(CI)・**見え方は実機要** |
+| 遅れ(5m以上・オーラが出る)で手招き | `ProceduralGestureDriver.cs` | **E2E自動**(展示デモの遅れ区間) |
 | 追い抜き/追い抜かれ動作 | `AvatarEngine.cs` + `OvertakeBehaviourController.cs` | エディタ(O/Pキー) |
 
 ### AR HUD (企画書 4.2)
@@ -85,6 +89,13 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | 実測センサー(CoreLocation/HealthKit/バックグラウンド) | `LocationTracker.swift` / `HeartRateMonitor.swift` | 実機要 |
 | 日本語・英語(走者が見る画面。既定は日本語・スマホ設定で English / 端末に合わせる を選べる。スタッフ画面・開発者モードは日本語のみ) | `Core/Localization/AppStrings.swift` + `Resources/Localizable.xcstrings` | CI(`LocalizationCatalogTests`)・実機の言語切替は要確認 |
 | AR設定・スマホ設定(実際に効く項目のみ: グラスの状態・アバター / 言語・位置情報) | `Features/Settings/` | 実機要 |
+| AR設定のアバター選択の反映(応答5秒で失敗表示+再送信。走行後で止めてある Unity は応答の間だけ動かす) | `AppLogic/SettingDelivery.swift` + `UnityBridge.retryAvatarSelection` | Swift Unit(CI)・実機要 |
+| 準備画面 S4(グラス必須・接続中/不完全/切断/走行中の切断の出し分け・AirPods は任意) | `DeviceConnectView.swift` + `AppLogic/GlassConnectionStatus.swift` / `HeadTracking.swift` | Swift Unit(CI)・実機要。グラスなしで試すときは開発者モードのスイッチ |
+| ランニング設定 S5(時間・距離・ペースの相互依存 — 距離は動かさない。進む前の最終チェック) | `AppLogic/RunTargetLink.swift` | Swift Unit(CI) |
+| ルート選択 S8(最初の候補を選択・候補0件なら往復ルート・詳細ポップアップ・未選択は開始不可) | `AppLogic/RouteCandidates.swift` + `MapRouteView.swift` | Swift Unit(CI) |
+| 走行中 S6(電池・低電力・AirPods の警告、ロック画面の GPS 表示、画面を離れたら自動スリープの無効化を解除) | `AppLogic/RunPowerRecord.swift`(`RunPowerWarning`) + `CourseRunningView.swift` | Swift Unit(CI)・実機要 |
+| ラン結果 S7(詳細=カロリー・疲労度・評価、保存失敗の再試行、極端な値の書式) | `StatsHistoryView.swift` + `AppLogic/RunResultFormat.swift` / Unity `RunSessionController.RetrySave` | Swift Unit(CI) + **E2E自動**(疲労度の送信・再試行で二重保存しない) |
+| 記録中に落ちた後のホーム(「前回の記録」を「-」) | `AppLogic/RunInterruption.swift` | Swift Unit(CI) |
 
 ## 3. 検証手段(再現手順)
 
@@ -135,8 +146,15 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   **実測値が出るのは iOS実機のみ**(エディタ・E2Eは -1)なので、
   §10 の20ms達成の主張には実機でのCSV取得が必要。
 
+- **タスク表(チームのスプレッドシート)で判断待ちの項目(2026-10-19 時点)**: どれも実装すると仕様や他の担当に踏み込むため、手を付けていない
+  - 「指定した速さで走る」— アバターは「走者+3m」追従の設計(AGENTS.md §6)。目標ペースで自走させるかは製品の判断
+  - 「GPS/BT 未接続時はアバター非表示・HUDのみ」— 屋内でもアバターを出す現方針(`RequireInitialFixBeforeLost`)・展示デモと衝突する
+  - S8-1 ルートのカスタマイズ・ルートの学習(画面の仕様が無い)、S5 自動計算の「概要 4.2 ルート提案の詳細」(資料が見つからず、距離を保つ決まりで実装)
+  - 設定メニューの身体情報の更新・途中で戻る・不正値(身体情報入力 S9-2 の画面が先に要る)
+  - Apple Watch・AirPods の電池残量の警告(iOS から取れない)
 - **XREAL head-pose/IMU入力は原理的に取得不能(2026-09-16 調査で確定)**: XREAL SDKはAndroid専用でiOS版が存在せず、Air系がUSB-HIDで出しているIMUもiOSアプリからは触れない(公開APIが無くMFi/DriverKit対象外)。**回避策は無い**ため、第1期の空間トラッキングはiPhoneのARKit単独で確定。グラスは「平面スクリーン1枚」として扱う。
   受け口だけは通してある(`UpdateGlassPose` → `GlassViewRig.SetExternalHeadPose`。0.25秒途切れれば§4.1の進行方向ヨーへ自動復帰)。
+  **首振り(ヨー)だけは 2026-10-19 から AirPods で補える**(`UpdateHeadYaw`・S4 で接続したときだけ)。Bluetooth 経由のぶん遅れるはずなので、見え方は実機で要確認
   **グラスの画面モードは Follow(固定) にすること** — Anchorだとグラス側X1が頭回転を打ち消すためUnity側と二重補正になる。
   根拠・数値・設計判断は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
 - ~~**F-03の3.0mとXREAL Oneの画角が両立しない**~~ → **解決(2026-10-13 チーム判断: 3.0mは保ち大きさを譲る)**: グラス出力中は `GlassViewRig` が画角に頭から足元まで収まる身長を上限にする(XREAL One で約144cm。足元のオーラも見える)。iPhone画面では175cmのまま。E2Eで「収まる・足元が見える・切断で175cmに戻る」を固定。**実機での見え方(小さく見えすぎないか)は要確認**
@@ -163,7 +181,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 - ~~**フレーム時間依存の平滑化**~~ → **全箇所移行済み**(2026-09-17)。`AvatarEngine`・`GroundSnap`・`SilentRouteRecoverer` は `FrameSmoothing.Factor` を経由し、`SpatialKalmanFilter` は時間単位化した。**新規コードで `Lerp(a, b, Time.deltaTime * k)` を書かないこと** — 1フレームが 1/k 秒を超えると 係数が1に飽和して瞬間移動になる(実機の走行中フレームは最大330msに達する)。`FrameSmoothing.Factor(Time.deltaTime, k)` を使う
 - ~~**§10の接地(±5cm)は未達: 立脚期の足が床へ約6cm沈む**~~ → **解消**(2026-09-24)。原因はMixamo走行クリップが立脚期に足をGroundSnapの原点平面より下げること(スキンメッシュ最下頂点で最大-0.104m)。`FootPlanting` がモデル読込時にバインドポーズのメッシュから足/つま先の足裏の点を選び、毎フレーム最下点が床より下ならモデルを持ち上げる(上げるだけ・空中局面は残す)。E2Eは焼いたメッシュの最下頂点(補正とは独立の真値)で1歩幅ぶん判定し **-0.011m**(持ち上げ最大0.096m)。**残作業: エディタ/実機で走りの見た目(立脚期の持ち上げによる上下動)を目視確認**
 - **実地フィールドテスト**: `Docs/FIELD_TEST_PLAN.md` の T1〜T9 を実施(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)
-- **ルート同期**: MapRouteView(Swift)で表示するコースがUnityの逸脱判定(`SilentRouteRecoverer.routeWaypoints`)へ未接続。実ルート運用時はStartSessionへポリライン(緯度経度→開始点基準のローカル座標変換)を追加する必要がある。現状の逸脱検知はシミュレーション(D キー/E2E)のみ
+- **ルート同期**: MapRouteView(Swift)で表示するコース(過去ルート・候補0件のときの往復ルート)がUnityの逸脱判定(`SilentRouteRecoverer.routeWaypoints`)へ未接続。実ルート運用時はStartSessionへポリライン(緯度経度→開始点基準のローカル座標変換)を追加する必要がある。現状の逸脱検知はシミュレーション(D キー/E2E)のみ
 - **`SafetyAndSystemController` が未配線(TTC危険警告・低バッテリー退避が実行時に不在)**: スクリプトは存在するが、
   シーン(`SampleScene.unity`)にもプレハブにも配置されておらず、`ARVisionSystemsBootstrap` の `Ensure<>` にも無い。
   `AddComponent` する箇所も皆無なので**実行時には一度も生成されない**。結果として TTC赤フラッシュ+警告音+振動、
