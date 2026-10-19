@@ -713,6 +713,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 yield return null;
                 Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees - 30f) < 2f,
                     $"head: turning the head 30° right turns the glass view with it ({glassRig.AppliedHeadYawDegrees:F1}°)");
+
+                // 挿し直したら「まっすぐ前」を取り直す。AirPods が送り続けている間に抜き挿しすると、
+                // 以前は切断前の基準を引きずり、進行方向が変わっていれば最大90°ずれた向きから始まった
+                deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
+                yield return null;
+                deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+                deviceBridge.OnSwiftCommand(
+                    "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+                yield return null;
+                Check(glassRig.IsGlassOutputActive && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
+                    $"head: reconnecting the glasses takes a fresh straight-ahead baseline ({glassRig.AppliedHeadYawDegrees:F1}°)");
                 yield return WaitScaled(HeadPoseMath.DefaultHeadYawMaxAgeSeconds + 0.2f);
                 Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
                     "head: the view falls back to the travel heading when AirPods stop sending");
@@ -1285,6 +1296,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             }
 
             stateController.TransitionToState(GameStateController.ARVisionState.FadeOut);
+            float fadeStartedAt = Time.time;
             yield return WaitScaled(0.5f);
             bool allFading = fadeMaterials.Count > 0;
             string alphas = "";
@@ -1296,8 +1308,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
             }
             Check(allFading, $"materials: every material is fading mid fade-out (alphas {alphas.Trim()})");
             yield return WaitScaled(1.0f);
+            // フェードの最後の1フレームと、このコルーチンの再開が同じフレームに重なると、遷移の直前に
+            // 判定してしまう(2026-10-19 に一度だけ落ちた — 直後のログで Standby に入っていた)。
+            // 1秒のフェードに対し最大2.5秒まで待ち、実際にかかった時間を結果に残す
+            for (float extra = 0f; extra < 1.0f
+                 && stateController.currentState != GameStateController.ARVisionState.Standby; extra += Time.deltaTime)
+                yield return null;
             Check(stateController.currentState == GameStateController.ARVisionState.Standby,
-                "gps: fade-out completes into Standby (F-10)");
+                $"gps: fade-out completes into Standby (F-10) after {Time.time - fadeStartedAt:F2}s (fade 1s)");
             if (visibility != null)
             {
                 yield return null;

@@ -120,6 +120,9 @@ public sealed class GlassViewRig : MonoBehaviour
         EnsureOutputCamera();
         TakeOverFromArCamera();
         IsGlassOutputActive = true;
+        // 首振りの「まっすぐ前」は接続し直すたびに取り直す。切断中に進行方向が変わっていると、
+        // 古い基準のままでは最大90°ずれた向きから始まり、戻るまで数十秒かかる
+        _headYawBaseline.Reset();
 
         ApplyFitHeightLimit();
         ReportOpticalFit();
@@ -137,6 +140,8 @@ public sealed class GlassViewRig : MonoBehaviour
         if (!IsGlassOutputActive) return;
 
         IsGlassOutputActive = false;
+        _headYawBaseline.Reset();
+        AppliedHeadYawDegrees = 0f;
         ActiveProfile = GlassDisplayProfile.PhoneScreen;
         OrientationSource = HeadOrientationSource.PhoneCamera;
         AppliedDownPitchDegrees = 0f;

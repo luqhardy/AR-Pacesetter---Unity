@@ -115,6 +115,11 @@ struct MapRouteView: View {
                             refreshSelection()
                         }
                         .onChange(of: candidates.map(\.id)) { _, _ in refreshSelection() }
+                        // 往復ルートは現在地が取れてから線が引ける。選んだまま線が付いたら地図をそこへ合わせる
+                        // (以前は現在地の拡大のままで、数kmの線が画面外にあった)
+                        .onChange(of: selectedRoute?.hasLine) { _, hasLine in
+                            if hasLine == true, let route = selectedRoute { focusMap(on: route) }
+                        }
 
                         Spacer().frame(height: 20)
 
