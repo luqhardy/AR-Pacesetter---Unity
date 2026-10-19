@@ -1563,6 +1563,9 @@ public class E2EScenarioBehaviour : MonoBehaviour
         // ── Step 6a: 首振り(AirPods の頭の向き)— 本走行のシンクロ率を乱さないよう走行の外で ──
         yield return StartCoroutine(RunHeadTurnTest());
 
+        // ── Step 6a'': 自走モード(タスク表「指定した速さで走る」)— GPS を送る前に(カメラの移動だけでペースを測る) ──
+        yield return StartCoroutine(RunSelfPacedTest(bridge, engine));
+
         // ── Step 6a': 選んだルート(GPS)から外れたらサイレントルート復帰(HANDOVER §5「ルート同期」) ──
         yield return StartCoroutine(RunSelectedRouteTest(bridge, engine));
 
@@ -1625,6 +1628,67 @@ public class E2EScenarioBehaviour : MonoBehaviour
         var fsm = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
         if (fsm != null) fsm.TransitionToState(GameStateController.ARVisionState.Normal);
         yield return null;
+    }
+
+    /// <summary>
+    /// 自走モード(タスク表「指定した速さで走る」・既定OFF): アバターは目標ペースで走ったときの位置にいる。
+    /// 遅れると前へ離れ(9.5m まで — 離隔待機には入らない)、速ければ近づく。既定の走行は「走者+3m」のまま
+    /// </summary>
+    private IEnumerator RunSelfPacedTest(ARSessionManagerBridge bridge, AvatarEngine engine)
+    {
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0,\"selfPaced\":true}");
+        yield return null;
+        Check(engine.IsSelfPaced, "pace-mode: StartSession selfPaced turns the self-paced mode on");
+
+        float startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        Check(engine.IsRunMotionActive, "pace-mode: the self-paced run starts");
+
+        Vector3 dir = Vector3.forward;
+        // 目標ペースどおり(13km/h ≒ 3.6m/s)— 前方距離はほぼ3m
+        for (float t = 0f; t < 3f; t += Time.deltaTime)
+        {
+            MoveRig(dir * 3.6f * Time.deltaTime);
+            yield return null;
+        }
+        float onPaceLead = engine.DisplayedLeadDistanceMeters;
+        // 遅れを速さの積分で取っていたときは、目標ペースどおりでも 8.2m に出ていた(平滑化の立ち上がりの偏り)
+        Check(onPaceLead < 4.5f, $"pace-mode: on target pace the avatar stays near 3m ({onPaceLead:F1}m)");
+
+        // 遅い(1.5m/s)— 遅れた分だけ前へ離れる。9.5m で止まり、離隔待機(10m)には入らない
+        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        {
+            MoveRig(dir * 1.5f * Time.deltaTime);
+            yield return null;
+        }
+        float behindLead = engine.DisplayedLeadDistanceMeters;
+        Check(behindLead > onPaceLead + 3f && behindLead <= SelfPacedLead.MaxDisplayedLeadMeters + 0.01f,
+              $"pace-mode: falling behind lets the avatar pull ahead ({onPaceLead:F1}m -> {behindLead:F1}m)");
+        Check(!engine.IsWaitingForUser, "pace-mode: pulling ahead stays short of the 10m wait-for-runner");
+
+        // 速い(6m/s)— 近づく
+        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        {
+            MoveRig(dir * 6f * Time.deltaTime);
+            yield return null;
+        }
+        float catchUpLead = engine.DisplayedLeadDistanceMeters;
+        Check(catchUpLead < behindLead - 3f,
+              $"pace-mode: running faster closes the gap ({behindLead:F1}m -> {catchUpLead:F1}m)");
+
+        // 既定に戻る(次の走行で selfPaced が無ければ「走者+3m」)
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0}");
+        yield return null;
+        Check(!engine.IsSelfPaced && Mathf.Abs(engine.DisplayedLeadDistanceMeters - 3f) < 0.01f,
+              "pace-mode: a run without selfPaced is back to the runner + 3m anchor");
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
     }
 
     /// <summary>

@@ -267,6 +267,10 @@ enum AppStrings {
         static let brightnessNote: LocalizedStringKey = "arSettings.brightnessNote"
         static let avatar: LocalizedStringKey = "arSettings.avatar"
         static let chooseAvatar: LocalizedStringKey = "arSettings.chooseAvatar"
+        static let pacing: LocalizedStringKey = "arSettings.pacing"
+        static let selfPaced: LocalizedStringKey = "arSettings.selfPaced"
+        static let selfPacedOnNote: LocalizedStringKey = "arSettings.selfPaced.onNote"
+        static let selfPacedOffNote: LocalizedStringKey = "arSettings.selfPaced.offNote"
     }
 
     /// スマホ設定

@@ -86,6 +86,74 @@
         }
       }
     },
+    "arSettings.pacing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How the avatar runs"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アバターの走り方"
+          }
+        }
+      }
+    },
+    "arSettings.selfPaced" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avatar runs at your target pace"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アバターが目標ペースで走る"
+          }
+        }
+      }
+    },
+    "arSettings.selfPaced.offNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off (default): the avatar always stays 3 m ahead of you and shows when you're behind with its colour and the light line"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフ(既定): アバターはいつもあなたの3m前に付いていき、遅れは色と光のラインで知らせます"
+          }
+        }
+      }
+    },
+    "arSettings.selfPaced.onNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The avatar runs at your target pace. If you fall behind it pulls ahead (up to 9.5 m), and it comes back as you speed up. Its colour, the light line and a beckoning wave show when you're behind"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アバターは目標ペースで走ります。遅れると前へ離れていき(最大9.5m)、速く走ると近づきます。色・光のライン・手招きで遅れを知らせます"
+          }
+        }
+      }
+    },
     "arSettings.subtitle" : {
       "extractionState" : "manual",
       "localizations" : {

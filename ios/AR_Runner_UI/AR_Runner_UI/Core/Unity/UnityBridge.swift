@@ -241,7 +241,7 @@ final class UnityBridge: NSObject, ObservableObject {
     ///   ARビューがiPhoneに出ている間はSwiftUIのHUDを使う(手に持って正面から見る
     ///   画面に適した意匠)。グラス出力中はUnityのF-07 HUDが担当する。
     func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
-                      hideUnityHud: Bool = false, routeLatLon: [Double]? = nil) {
+                      hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false) {
         // 前回の走行の結果を消す。残すと、今回の SessionEnded が届かなかったときに
         // 結果画面が前回の数字を今回のものとして出す
         lastResult = nil
@@ -256,6 +256,10 @@ final class UnityBridge: NSObject, ObservableObject {
         if let ghost = ghostDateIso, !ghost.isEmpty {
             payload["mode"] = "ghost"
             payload["ghostDateIso"] = ghost
+        }
+        // アバターが目標ペースで走る(遅れると前へ離れる — AvatarPacing・既定は「走者+3m」)
+        if selfPaced {
+            payload["selfPaced"] = true
         }
         // 選んだルート(S8)。外れたらアバターが案内する(サイレントルート復帰 — RouteGuidance)
         if let route = routeLatLon, route.count >= 4 {
@@ -795,7 +799,7 @@ final class ARSessionManager: ObservableObject {
     private var configuredPaceKmH: Double = 0
 
     func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
-               hideUnityHud: Bool = false, routeLatLon: [Double]? = nil) {
+               hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false) {
         isSessionActive = true
         startDate = Date()
         elapsedSeconds = 0
@@ -815,7 +819,7 @@ final class ARSessionManager: ObservableObject {
 
         bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm,
                             ghostDateIso: ghostDateIso, hideUnityHud: hideUnityHud,
-                            routeLatLon: routeLatLon)
+                            routeLatLon: routeLatLon, selfPaced: selfPaced)
 
         // 実測が届くたびに送る — 画面ロック中もCoreLocationは動き続けるため、
         // タイマーが止まってもUnityへの供給が途切れない(M3)

@@ -8,7 +8,8 @@ using UnityEngine;
 /// 受信コマンド:
 ///   StartSession  { targetPaceKmH, distanceKm, avatarHeightCm, forwardOffsetM }
 ///   UpdateMetrics { paceKmH, heartRate, distanceKm }
-///   (StartSession は任意で routeLatLon [緯度0, 経度0, ...] — 選んだルートからの逸脱をサイレントルート復帰で案内)
+///   (StartSession は任意で routeLatLon [緯度0, 経度0, ...] — 選んだルートからの逸脱をサイレントルート復帰で案内、
+///    selfPaced true — アバターが目標ペースで走り、遅れると前へ離れる(既定は走者+3m))
 ///   EndSession    {}
 ///   RetrySaveSession {} — 履歴への保存をやり直す(結果は SessionSaveRetried {saved})
 ///
@@ -33,6 +34,8 @@ public class ARSessionManagerBridge : MonoBehaviour
         // StartSession: 選んだルート(S8 で「ルートを外れたら案内する」を ON・過去の走行の経路のときだけ)。
         // [緯度0, 経度0, 緯度1, 経度1, ...]。無ければ選んだルート無し(サイレントルート復帰は従来どおり)
         public double[] routeLatLon;
+        // StartSession: 自走モード(アバターが目標ペースで走る — 遅れると前へ離れる。既定 false = 走者+3m)
+        public bool selfPaced;
         // UpdateMetrics の測位サンプル(§8.1 ロスト判定 / §5.2 CSVログ用)。
         // gpsAccuracy > 0 が有効サンプルの目印(CoreLocation同様、負値/未送信は無効)
         public double gpsLatitude;
@@ -204,6 +207,9 @@ public class ARSessionManagerBridge : MonoBehaviour
             sessionController.ResetForNewSession();
             _lastSentAvatarState = ""; // Idle→Run遷移を再送させる
         }
+
+        // 自走モード(タスク表「指定した速さで走る」)。展示デモでは使わない(台本のずらしと取り合う)
+        avatarEngine.SetSelfPaced(cmd.selfPaced && !_dispatchingPresentation);
 
         // 選んだルート(GPS)。無い走行でも呼んで、前の走行のルートを持ち越さない
         var routeRecoverer = avatarEngine.GetComponent<SilentRouteRecoverer>();

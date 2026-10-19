@@ -141,6 +141,10 @@ public static class DevDiagnostics
                     ? $"メッシュ {planting.SolePointCount}点 / 持ち上げ {Num(planting.CurrentLiftMeters)}m"
                     : "骨からの概算(メッシュを読めない — FBXのRead/Writeを確認)");
 
+            Add(rows, "avatar.pacing", engine.IsSelfPaced
+                ? $"自走(目標ペース)— 前方 {Num(engine.DisplayedLeadDistanceMeters)}m"
+                : "走者+3m(既定)");
+
             // 選んだルート(GPS)からの逸脱。実機で「案内された/されない」を確かめる
             var recoverer = engine.GetComponent<SilentRouteRecoverer>();
             if (recoverer != null)

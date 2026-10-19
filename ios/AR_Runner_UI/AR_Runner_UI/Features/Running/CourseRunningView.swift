@@ -390,7 +390,9 @@ struct RunningView: View {
                         // iPhoneに映している間はSwiftUIがHUDを持つ
                         hideUnityHud: !ExternalDisplayManager.shared.isGlassesConnected,
                         // S8 で選んだルート(案内を ON にしたときだけ)
-                        routeLatLon: RunSettings.shared.guidanceRoute
+                        routeLatLon: RunSettings.shared.guidanceRoute,
+                        // AR設定「アバターが目標ペースで走る」(既定 OFF = 走者+3m)
+                        selfPaced: AvatarPacing.isSelfPaced(in: .standard)
                     )
                 } else {
                     // §8.3: グラス切断で準備画面へ戻った後の再スタート。

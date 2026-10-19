@@ -12,6 +12,8 @@ struct ARSettingsView: View {
     @ObservedObject private var bridge = UnityBridge.shared
     @ObservedObject private var external = ExternalDisplayManager.shared
     @State private var showAvatarLibrary = false
+    /// アバターが目標ペースで走る(既定 OFF = 走者の3m前に付いていく — AvatarPacing)
+    @AppStorage(AvatarPacing.storageKey) private var avatarSelfPaced = false
 
     /// 準備画面と同じ判定(手動の接続はここでは扱わない)
     private var glassStatus: GlassRowStatus {
@@ -61,6 +63,20 @@ struct ARSettingsView: View {
                             SettingsActionButton(title: AppStrings.ARSettings.chooseAvatar) {
                                 showAvatarLibrary = true
                             }
+                        }
+
+                        // タスク表 ARグラス「指定した速さで走る」— 既定は「走者+3m」
+                        SettingsSectionCard(icon: "figure.run", title: AppStrings.ARSettings.pacing) {
+                            Toggle(isOn: $avatarSelfPaced) {
+                                Text(AppStrings.ARSettings.selfPaced)
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                            .tint(.arYellow)
+                            Text(avatarSelfPaced ? AppStrings.ARSettings.selfPacedOnNote : AppStrings.ARSettings.selfPacedOffNote)
+                                .font(.system(size: 12))
+                                .foregroundColor(.arGrayText)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .padding(.horizontal, 24)

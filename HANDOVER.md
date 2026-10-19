@@ -44,6 +44,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | サイズの異常系(要求身長100〜230cm・測れない/桁外れの検知・画角による上限の下限100cm・スケールイン中断の復元) | `AvatarScale.cs` + `AvatarEngine.ApplyHeightCm` + `AvatarVFXController` | **Unit + E2E自動**。開発者モード `avatar.height` / `avatar.heightAnomaly` |
 | 首振り(AirPods の頭の向きを進行方向との差にしてグラスの描画の向きへ足す。S4 で接続したときだけ) | Unity: `HeadPoseMath.HeadYawBaseline` + `GlassViewRig` / Swift: `HeadphoneHeadTracker.swift` | **Unit + E2E自動**(Unity側)・Swift Unit(CI)・**見え方は実機要** |
 | 遅れ(5m以上・オーラが出る)で手招き | `ProceduralGestureDriver.cs` | **E2E自動**(展示デモの遅れ区間) |
+| 自走モード(アバターが目標ペースで走る — 遅れると前へ最大9.5m・速ければ近づく。AR設定のスイッチ・**既定OFF**) | `SelfPacedLead.cs`(`SelfPacedTarget`)+ `AvatarEngine.UpdateSelfPacedLead` / Swift `AvatarPacing.swift` | **Unit + E2E自動**(目標ペースで3.2m・遅れて9.5m・速くて2.2m)・実機要 |
 | 追い抜き/追い抜かれ動作 | `AvatarEngine.cs` + `OvertakeBehaviourController.cs` | エディタ(O/Pキー) |
 
 ### AR HUD (企画書 4.2)
@@ -147,7 +148,6 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   §10 の20ms達成の主張には実機でのCSV取得が必要。
 
 - **タスク表(チームのスプレッドシート)で判断待ちの項目(2026-10-19 時点)**: どれも実装すると仕様や他の担当に踏み込むため、手を付けていない
-  - 「指定した速さで走る」— アバターは「走者+3m」追従の設計(AGENTS.md §6)。目標ペースで自走させるかは製品の判断
   - 「GPS/BT 未接続時はアバター非表示・HUDのみ」— 屋内でもアバターを出す現方針(`RequireInitialFixBeforeLost`)・展示デモと衝突する
   - S8-1 ルートのカスタマイズ・ルートの学習(画面の仕様が無い)、S5 自動計算の「概要 4.2 ルート提案の詳細」(資料が見つからず、距離を保つ決まりで実装)
   - 設定メニューの身体情報の更新・途中で戻る・不正値(身体情報入力 S9-2 の画面が先に要る)
