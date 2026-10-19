@@ -341,6 +341,23 @@
         }
       }
     },
+    "avatar.notLoaded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The avatar list appears once you've started a run. You can still import a .vrm now; it will be applied when you next start a run."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アバターの一覧は、一度ランニングを始めると表示されます。.vrm の取り込みは今でもでき、次に走り始めたときに反映します。"
+          }
+        }
+      }
+    },
     "avatar.thisModel" : {
       "extractionState" : "manual",
       "localizations" : {

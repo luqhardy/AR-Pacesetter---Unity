@@ -181,7 +181,8 @@ struct AvatarLibraryView: View {
                 .textCase(.uppercase)
 
             if bridge.vrmAvatars.isEmpty {
-                Text(AppStrings.Avatar.none)
+                // 一度も一覧を受け取っていない(Unity が未起動)なら「無い」とは言わない
+                Text(bridge.vrmAvatarsLoaded ? AppStrings.Avatar.none : AppStrings.Avatar.notLoaded)
                     .font(.system(size: 13))
                     .foregroundStyle(secondaryText)
                     .padding(14)

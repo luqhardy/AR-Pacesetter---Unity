@@ -249,6 +249,7 @@ enum AppStrings {
         static let queuedTitle: LocalizedStringKey = "avatar.delivery.queued"
         static let deliveryFailed: LocalizedStringKey = "avatar.delivery.failed"
         static let resend: LocalizedStringKey = "avatar.delivery.resend"
+        static let notLoaded: LocalizedStringKey = "avatar.notLoaded"
         static var thisModel: String { resolve("avatar.thisModel") }
         static var defaultModel: String { resolve("avatar.default") }
         static func fileImportFailed(_ detail: String) -> String { resolve("avatar.fileImportFailed \(detail)") }
