@@ -678,6 +678,10 @@ final class ARSessionManager: ObservableObject {
 
     @Published var elapsedSeconds: Int = 0
 
+    /// 目標ペースのアバターとの差(計算部品 PaceGap)。View はまだ購読しない。
+    /// 走行開始で nil に戻し、終了後も次の開始までは最後の値を残す。
+    @Published private(set) var paceGap: PaceGapSnapshot?
+
     private var timer: Timer?
 
     /// 経過時間の基準となる実時刻。タイマーの発火回数を数えると
@@ -690,6 +694,25 @@ final class ARSessionManager: ObservableObject {
     /// 設定ペース(推定距離の算出に使う)
     private var configuredPaceKmH: Double = 0
 
+    /// 速度のならし(PaceMetrics)。走行開始で作り直す
+    private var speedSmoother = SpeedSmoother()
+
+    /// ゴースト競走中は差の計算をしない
+    private var isGhostRun = false
+
+    /// 最後に latestFixAcceptedForMetrics == true だった GPS の時刻。
+    /// PaceGap の実測距離に使う鮮度判定用(Unity の locationSampleFresh とは別)
+    private var lastAcceptedFixDateForPaceGap: Date?
+
+    /// PaceGap に実測距離を載せてよい、受理済み GPS からの最大経過秒
+    private let paceGapFixMaxAgeSeconds: TimeInterval = 5
+
+    #if DEBUG
+    /// DEBUG ログの間引き用
+    private var lastPaceGapLogDate: Date?
+    private let paceGapLogIntervalSeconds: TimeInterval = 3
+    #endif
+
     func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
                hideUnityHud: Bool = false) {
         isSessionActive = true
@@ -700,6 +723,13 @@ final class ARSessionManager: ObservableObject {
         isDistanceEstimated = false
         lastSentFixDate = nil
         configuredPaceKmH = paceKmH
+        paceGap = nil
+        speedSmoother = SpeedSmoother()
+        isGhostRun = (ghostDateIso?.isEmpty == false)
+        lastAcceptedFixDateForPaceGap = nil
+        #if DEBUG
+        lastPaceGapLogDate = nil
+        #endif
 
         // 実測センサー起動: CoreLocation(距離/速度) + HealthKit(心拍・Watch経由)
         LocationTracker.shared.start()
@@ -782,6 +812,78 @@ final class ARSessionManager: ObservableObject {
                 distanceKm: measuredDistanceKm
             )
         }
+
+        // --- PaceGap / SpeedSmoother(追加。Unity 送信・距離推定には影響させない) ---
+        if isNewFix {
+            if tracker.latestFixAcceptedForMetrics, let fixDate {
+                lastAcceptedFixDateForPaceGap = fixDate
+            }
+            // LocationTracker は km/h しか出さないため m/s に戻す。無効時は -1 を渡し smoother 側で捨てる
+            let speedMs = tracker.hasValidSpeedMeasurement
+                ? tracker.currentSpeedKmH / 3.6
+                : -1
+            speedSmoother.add(
+                speedMetersPerSecond: speedMs,
+                at: tracker.latestFixDate ?? Date()
+            )
+        }
+        updatePaceGapSnapshot()
+    }
+
+    /// PaceGap.snapshot を計算して `paceGap` に載せる。ゴースト中は nil。
+    private func updatePaceGapSnapshot() {
+        if isGhostRun {
+            paceGap = nil
+            return
+        }
+
+        let now = Date()
+        let elapsed: Double
+        if let start = startDate {
+            elapsed = max(0, now.timeIntervalSince(start))
+        } else {
+            elapsed = Double(elapsedSeconds)
+        }
+
+        let runnerMeters: Double?
+        if !isDistanceEstimated,
+           let acceptedAt = lastAcceptedFixDateForPaceGap,
+           now.timeIntervalSince(acceptedAt) <= paceGapFixMaxAgeSeconds {
+            runnerMeters = measuredDistanceKm * 1000
+        } else {
+            runnerMeters = nil
+        }
+
+        let snapshot = PaceGap.snapshot(
+            targetPaceKmH: configuredPaceKmH,
+            elapsedSeconds: elapsed,
+            runnerDistanceMeters: runnerMeters,
+            smoothedSpeedKmH: speedSmoother.smoothedSpeedKmH(at: now)
+        )
+        paceGap = snapshot
+
+        #if DEBUG
+        let shouldLog: Bool
+        if let last = lastPaceGapLogDate {
+            shouldLog = now.timeIntervalSince(last) >= paceGapLogIntervalSeconds
+        } else {
+            shouldLog = true
+        }
+        if shouldLog {
+            lastPaceGapLogDate = now
+            let runnerText = snapshot.runnerDistanceMeters.map { String(format: "%.1f", $0) } ?? "nil"
+            let gapM = snapshot.gapMeters.map { String(format: "%.1f", $0) } ?? "nil"
+            let gapS = snapshot.gapSeconds.map { String(format: "%.1f", $0) } ?? "nil"
+            let speed = snapshot.smoothedSpeedKmH.map { String(format: "%.1f", $0) } ?? "nil"
+            print(String(
+                format: "[PaceGap] t=%.1fs avatar=%.1fm runner=%@ gapM=%@ gapS=%@ speed=%@ reliable=%@",
+                snapshot.elapsedSeconds,
+                snapshot.avatarDistanceMeters,
+                runnerText, gapM, gapS, speed,
+                snapshot.isReliable ? "true" : "false"
+            ))
+        }
+        #endif
     }
 
     func end() {
