@@ -1,17 +1,29 @@
-# Unity ヘッドレスE2E検証 (手動トリガー)
+# Unity ヘッドレスE2E検証 (PR ごと・手動実行も可)
+#
+# tools/verify.sh の4ステップ目(270件超のシナリオ)を CI でも回し、ローカルで実行し忘れた
+# 変更を PR の段階で止める。
 #
 # 事前準備(リポジトリ管理者・1回のみ):
-#   1. Unityライセンスファイル(.ulf)を取得
-#      https://game.ci/docs/github/activation を参照
-#   2. リポジトリ Settings → Secrets → Actions に UNITY_LICENSE として
+#   1. Unityライセンスファイル(.ulf)を用意する
+#      Unity Hub でライセンスを有効化した PC の C:\ProgramData\Unity\Unity_lic.ulf(Windows)
+#      / /Library/Application Support/Unity/Unity_lic.ulf(macOS)。詳細は
+#      https://game.ci/docs/github/activation
+#   2. リポジトリ Settings → Secrets and variables → Actions に UNITY_LICENSE として
 #      .ulf の中身を貼り付け
-#   3. Actionsタブ → E2E (Unity headless) → Run workflow
+#   3. Actionsタブ → E2E (Unity headless) → Run workflow で一度通ることを確かめる
 #
-# 安定運用が確認できたら on: に push を追加してプッシュ毎の回帰検証に昇格する。
+# UNITY_LICENSE が未設定(またはフォークからのPR)のあいだは、失敗ではなく「スキップ」で終わる —
+# 準備が済むまで PR が赤くならないように。
 name: E2E (Unity headless)
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "Assets/**"
+      - "Packages/**"
+      - "ProjectSettings/**"
+      - ".github/workflows/e2e.yml"
 
 jobs:
   e2e:
@@ -37,8 +49,10 @@ jobs:
         shell: bash
         run: |
           if [ -z "$UNITY_LICENSE" ]; then
-            echo "::error::UNITY_LICENSE secret が未設定です (ワークフロー冒頭のコメント参照)"
-            exit 1
+            echo "::notice::UNITY_LICENSE secret が未設定のため E2E をスキップしました (ワークフロー冒頭のコメント参照)"
+            echo "E2E はスキップ: UNITY_LICENSE secret が未設定(またはフォークからのPR)" >> "$GITHUB_STEP_SUMMARY"
+            touch /tmp/e2e.log
+            exit 0
           fi
           echo "$UNITY_LICENSE" > /tmp/license.ulf
           unity-editor -batchmode -nographics -quit -manualLicenseFile /tmp/license.ulf -logFile /tmp/activate.log || true

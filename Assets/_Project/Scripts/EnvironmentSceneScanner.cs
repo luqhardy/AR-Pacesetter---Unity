@@ -1,7 +1,11 @@
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.XR.ARFoundation;
+#if UNITY_IOS && !UNITY_EDITOR
+// ARKit のアセンブリは iOS ビルドにしか含まれない。使うのも下の同じ条件のブロックだけ
+// (無条件だと Android ビルドが CS0234 で止まる)
 using UnityEngine.XR.ARKit;
+#endif
 using Unity.XR.CoreUtils;
 
 /// <summary>

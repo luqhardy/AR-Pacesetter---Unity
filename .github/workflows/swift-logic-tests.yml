@@ -1,0 +1,45 @@
+# iOS アプリの純ロジックのテスト (macOSランナー・Unity 不要)
+#
+# 対象: ios/AR_Runner_UI/AR_Runner_UI/AppLogic(UIに依存しない Foundation だけのコード)。
+# 体験モードのスタッフ画面の進行・ARグラスの接続状態・アバター非表示の履歴など、
+# 2026-10 に実機で不具合を踏んだ判断を `swift test` で縛る。
+#
+# Windows では Swift のリンクに Visual Studio の C ランタイムが要り実行できないため、
+# ローカルでは Mac の tools/verify.sh、それ以外はこのワークフローが唯一の実行場所。
+name: Swift logic tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "ios/**"
+      - ".github/workflows/swift-logic-tests.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/swift-logic-tests.yml"
+
+jobs:
+  test:
+    name: swift test (ios/AppLogic)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # AppLogic は `nonisolated struct` を使う(Swift 6.1 以降)。アプリと同じ Xcode 26 系で回す
+      - name: Select Xcode
+        run: |
+          XCODE_APP=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE_APP" ]; then
+            echo "選択: $XCODE_APP"
+            sudo xcode-select -s "$XCODE_APP"
+          else
+            echo "::warning::Xcode 26系が見つかりません。既定の Xcode で実行します"
+          fi
+          swift --version
+
+      - name: swift test
+        run: swift test --package-path ios

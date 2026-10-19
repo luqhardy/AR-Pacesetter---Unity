@@ -29,15 +29,20 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 
       ```
       "C:\Program Files\Unity\Hub\Editor\6000.3.17f1\Editor\Unity.exe" -batchmode -quit ^
-        -projectPath "C:\Users\luqma\AR Pacesetter" ^
+        -buildTarget iOS -projectPath "C:\Users\luqma\AR Pacesetter" ^
         -executeMethod IOSBuildExporter.ExportIOS -logFile export.log
       ```
 
-      終了コード0で成功。`ios/UnityExport/` が生成される
-- [ ] エクスポート後に `git diff ProjectSettings/ProjectSettings.asset` を確認。
-      `preloadedAssets` が空になっていたら**元に戻す**(空のままだとXR(ARKit)ローダーが初期化されない)
-- [ ] **`ios/UnityExport/` をUSBメモリにコピーする(約1.5GB)**
-      このフォルダは生成物なのでgit管理外 = cloneしても付いてこない
+      終了コード0で成功。`ios/UnityExport/` が**毎回作り直される**(古いエクスポートへ上書きしない)。
+      **`-buildTarget iOS` は必須** — iOS がアクティブでないとエクスポータが止まる(ARKitのネイティブ
+      プラグインは `UNITY_IOS` 定義で入るため、無いまま書き出すとARKitが動かない)。
+      エディタのメニューから実行するときは、先に Build Profiles でアクティブなプラットフォームを iOS にする
+- [ ] (2026-10-13〜 不要)`ProjectSettings.asset` の `preloadedAssets` はエクスポータが自動で戻す
+- [ ] **エクスポートを Mac へ渡す** — どちらか:
+      - **おすすめ**: `tools/publish-unity-export.sh` で GitHub Release に公開し、Mac で
+        `tools/fetch-unity-export.sh` を実行する(USB不要・CIも同じものを使う。展開と実行権限の修復まで自動)
+      - `ios/UnityExport/` をUSBメモリにコピーする(約1.3GB)。このフォルダは生成物なので git 管理外 = clone しても付いてこない。
+        **既存の `ios/UnityExport` に上書き・マージしない**(Finder の「両方とも残す」で出来る `… 2` が duplicate symbol の原因になる)
 
 ## 2. Mac側: 準備(15分)
 
@@ -97,10 +102,12 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
       - [ ] Team: 自分のApple ID(Personal Team)を選択
       - [ ] "Automatically manage signing" がON
       - [ ] エラーが出る場合はBundle IDを更にユニークなものへ変更
-- [ ] **`Data` フォルダの Target Membership を付け替える**(エクスポートのたびに必要)
+- [ ] **`Data` フォルダの Target Membership は自動で UnityFramework になる**(2026-10-07〜)。
+      エクスポート後処理(`Assets/Editor/AddBluetoothFramework.cs`)が付け替える。
+      それより古いエクスポートや、手でXcodeプロジェクトを作り直したときだけ下を実行する
 
       ```bash
-      ./tools/relink-unity-export.sh
+      sh tools/relink-unity-export.sh
       ```
 
       `ios/UnityExport/` は生成物なので、エクスポートのたびに作り直されて設定が消える。
@@ -153,7 +160,7 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
             外部ディスプレイのシーンが生成されていない
       - [ ] 開発者モードで `glass.output = グラスへ出力中` /
             `glass.fillsScreen = 一致(画面を埋めている)` を確認
-      - [ ] `glass.fit` に光学適合の実測が出る(3.0m前方のアバターは全身が入らない — 既知)
+      - [ ] `glass.fit` に光学適合の実測が出る(3.0m前方のアバターが約144cmで頭から足元まで収まる)
 - [ ] CSVを開き、`imu_accel_x/y/z` が **0以外の実測値**で埋まっていることを確認
       (実機ではCoreMotionから100Hzで供給される)
 
@@ -161,8 +168,9 @@ SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION
 
 | 症状 | 原因と対処 |
 |---|---|
+| リンクエラー: duplicate symbol(同じ関数が2つ) | Finder の「両方とも残す」で出来た `… 2.cpp` 等の衝突コピーがビルドに混ざっている。`ios/UnityExport` を上書きコピー・マージしない。現在のエクスポータは出力先を毎回作り直し、Unityのキャッシュに衝突コピーがあれば消してから書き出す |
 | 起動直後にクラッシュ(dyld: Library not loaded) | UnityFrameworkが **Embed & Sign** になっていない(手順3) |
-| ビルドは通るが、Unityの読み込み中(走行画面へ入るとき)にクラッシュ | `Data` の Target Membership が未変更。**再エクスポートのたびに**`./tools/relink-unity-export.sh` を実行(手順3)。Clean Build Folder では直らない(設定はエクスポートされたプロジェクト側にあるため)。直前のXcodeコンソールに `Data/` や `global-metadata.dat` が見つからない旨が出ることが多い |
+| ビルドは通るが、Unityの読み込み中(走行画面へ入るとき)にクラッシュ | `Data` の Target Membership が未変更。現在のエクスポータは自動で付け替えるので、まず**再エクスポート**。古いエクスポートなら `sh tools/relink-unity-export.sh`(手順3)。Clean Build Folder では直らない(設定はエクスポートされたプロジェクト側にあるため)。直前のXcodeコンソールに `Data/` や `global-metadata.dat` が見つからない旨が出ることが多い |
 | 走行画面が暗く「未リンク」と出る | UnityFramework が読み込めていない。Embed & Sign を確認(手順3の注記) |
 | 直したはずの不具合が実機で直っていない | **エクスポートが古い**。Unity側のC#を変えたら再エクスポートが必要。CIも古いエクスポートに対して緑になるため気づきにくい(警告は出る) |
 | 署名エラー(HealthKit) | 手順2のスクリプトを実行していない |

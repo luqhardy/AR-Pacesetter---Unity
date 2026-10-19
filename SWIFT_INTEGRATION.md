@@ -44,12 +44,17 @@ Unityメニュー **Build → Export iOS (ios/UnityExport)** を実行。
 - **Player Settings の使用目的文が空だとエクスポートは失敗する**: `Microphone`/`Location`/`Bluetooth` を
   スクリプトが使う場合、Unity側(`ProjectSettings`)の Usage Description が空のままだと
   `BuildFailedException` になる(Swiftアプリ側の`INFOPLIST_KEY_*`とは別物で、両方必要)。設定済み
-- バッチ実行: `Unity.exe -batchmode -quit -projectPath <repo> -executeMethod IOSBuildExporter.ExportIOS`
+- バッチ実行: `Unity.exe -batchmode -quit -buildTarget iOS -projectPath <repo> -executeMethod IOSBuildExporter.ExportIOS`
+  (**`-buildTarget iOS` は必須** — iOS がアクティブでないとエクスポータが止まる。ARKitのネイティブプラグインが入らないため)
   — 失敗時は終了コード1を返す
-- **エクスポート後は `ProjectSettings/ProjectSettings.asset` の差分を必ず確認すること**:
-  ビルド処理が `preloadedAssets` を空にすることがある。ここには
-  `Assets/XR/XRGeneralSettings.asset` が含まれており、**空のままコミットするとプレイヤービルドで
-  XR(ARKit)ローダーが初期化されなくなる**。空になっていたら復元してからコミットする
+- **`preloadedAssets` はエクスポータが自動で戻す**(2026-10-13〜): ビルド処理が `ProjectSettings.asset` の
+  `preloadedAssets` を空にすることがあり、ここには `Assets/XR/XRGeneralSettings.asset` が含まれる —
+  **空のままコミットするとプレイヤービルドで XR(ARKit)ローダーが初期化されなくなる**。以前はエクスポートのたびに
+  `git checkout -- ProjectSettings/ProjectSettings.asset` が要ったが、`IOSBuildExporter` がビルド前の値へ戻して保存する
+- **エクスポート → 梱包 → GitHub Release 公開を1コマンドで**: `tools/publish-unity-export.sh`
+  (タグ `unity-export-<HEADの8桁>`。iOS ビルド CI が既定で使い、Mac は `tools/fetch-unity-export.sh` で取得できる —
+  今のチェックアウトに含まれる最新のエクスポートを選び、展開・実行権限の修復までする。
+  `--dry-run` で公開せず梱包まで)
 - エクスポート対象シーンは `EditorBuildSettings` の有効シーン。空の場合は
   `Assets/Scenes/SampleScene.unity` にフォールバックする([IOSBuildExporter.cs](Assets/Editor/IOSBuildExporter.cs))
 
@@ -175,12 +180,12 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
 | `ARSessionManager` | `ResumeSession` | — | §8.3: グラス再接続後、**準備画面からの再スタート操作**でスタンバイ中の表示のみ復帰(新規セッションは開始せず記録は継続) |
-| `ARSessionManager` | `SetGpsLostHandling` | `enabled` (bool) | F-09/F-10の自動判定を実行時に切替。**既定はON**(基本設計書どおり)。屋内デモで「掴んだ後に消えないでほしい」場面用の明示的スイッチで、定数を書き換える運用(戻し忘れる)を無くすために用意した。なお**良好な初回測位まではロスト判定しない**のはUnity側の既定動作なので、屋内で走り出す前に消えることはこの設定に関わらず起きない |
+| `ARSessionManager` | `SetGpsLostHandling` | `enabled` (bool) | F-09/F-10の自動判定を実行時に切替。**既定はON**(基本設計書どおり)。屋内デモで「掴んだ後に消えないでほしい」場面用の明示的スイッチで、定数を書き換える運用(戻し忘れる)を無くすために用意した。iPhoneでは**開発者モードの「屋内テスト」スイッチ**から送る(表示は Unity の `Diagnostics` の `gps.autoLostHandling` から作り、画面側では状態を持たない)。なお**良好な初回測位まではロスト判定しない**のはUnity側の既定動作なので、屋内で走り出す前に消えることはこの設定に関わらず起きない |
 | `ARSessionManager` | `RequestDiagnostics` | — | 開発者モード用の状態スナップショット(M2Pの実測有無・IMU供給元・グラスの画角と光学適合・GPS判定・§10統計・FSM・fps)を `Diagnostics` イベントで返す。**未計測は -1 のまま返す** |
 | `ARSessionManager` | `RequestLogFiles` | — | F-11走行ログCSVの一覧(新しい順・最大30件)を `LogFiles` イベントで返す。CSVは `persistentDataPath/RunLogs/` にあり**アプリからは他に取り出す手段が無い**ため、開発者モードの共有シートで書き出す |
 | `ARSessionManager` | `ImportVrmAvatar` / `SelectVrmAvatar` | `path` (string) | 差し替えアバター(VRM)を適用する。`path` は**サンドボックス内の絶対パス** — ドキュメントピッカーが返すURLはセキュリティスコープ付きでUnityからは読めないため、Swift側で `Documents/Avatars/` へコピーしてから渡す。結果は `VrmImportResult` で返る |
 | `ARSessionManager` | `RequestVrmAvatars` | — | 選べるアバターの一覧(同梱 + 取り込み)を `VrmAvatarList` で返す |
-| `ARSessionManager` | `StartBoothDemo` | `mode`("standing" 既定 / "walking"), `targetPaceKmH`(任意。0ならモードの既定 12 / 6 km/h) | 展示ブースの体験モード(`BoothDemoController`)。`standing` は約52秒の台本(ジャスト→遅れ→追い抜き→ゴール)を本番と同じ経路で流す。`walking` は来場者自身の移動(ARKit)で追従させ、60秒で終わる。**どちらもアバターを消さない**(GPSロスト判定OFF・来場者の正面に保つ)。実行中に送るとやり直し。**デモの走行は履歴・CSV・`SessionEnded` を残さない**(HealthKitへ保存されない)。デモ中はSwiftの `UpdateMetrics` をUnityが無視する。利用者の走行中は開始せず `BoothDemoEnded(completed:false)` を返す。詳細は [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md) |
+| `ARSessionManager` | `StartBoothDemo` | `mode`("standing" 既定 / "walking"), `targetPaceKmH`(任意。0ならモードの既定 12 / 6 km/h) | 展示ブースの体験モード(`BoothDemoController`)。`standing` は約52秒の台本(ジャスト→遅れ→追い抜き→ゴール)を本番と同じ経路で流す。`walking` は来場者自身の移動(ARKit)で追従させ、60秒で終わる。**どちらもアバターを消さない**(GPSロスト判定OFF・来場者の正面に保つ)。アバターは145cm(3.0m先でグラスに全身が収まる大きさ)。実行中に送るとやり直し。**デモの走行は履歴・CSV・`SessionEnded` を残さない**(HealthKitへ保存されない)。デモ中はSwiftの `UpdateMetrics` をUnityが無視する。利用者の走行中は開始せず `BoothDemoEnded(completed:false)` を返す。詳細は [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md) |
 | `ARSessionManager` | `StopBoothDemo` | — | 体験モードを中断する(スタッフ操作)。GPSロスト演出の途中でも、アバターは見える状態に戻る |
 | `DeviceManager` | `ConnectXREAL` | `model`(任意), `pixelWidth`(任意), `pixelHeight`(任意), `refreshHz`(任意) | ReadyチェックのARグラスをConnectedへ。併せて**グラスの画角で描く出力リグ**(`GlassViewRig`)を起動する — iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えないため。画角はグラスから取得できないので解像度・リフレッシュレートから機種を推定し、1920×1080(One/One Pro/Air2で共通)は **XREAL One** を既定とする。`model`があればそれが優先。詳細は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) |
 | `DeviceManager` | `DisconnectXREAL` | — | §8.3: スタンバイ移行でアバターを消去。**走行セッションは終了させない**ためF-11のCSVログはBG継続。再接続だけではアバターを復帰させない(安全のため`ResumeSession`が必要) |
@@ -204,8 +209,8 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 | `Diagnostics` | `rows`: `{key, value}` の配列(表示順を保つ) | 開発者モードの要求時のみ |
 | `LogFiles` | `directory`, `files`: `{name, path, bytes, modifiedIso}` の配列 | 開発者モードの要求時のみ |
 | `LatencyReport` | `ms` (double), `maxMs`・`overBudgetRatio`・`sampleCount`(実測サンプルがある時のみ) | 走行中 1Hz。**F-11のCSV `latency_m2p` と同じ `SensorTimingBridge` の実測値**(ARKitフレームのセンサー時刻と `CADisplayLink.targetTimestamp` の差)。`ms = -1` は未計測で、合成値は一切入らない。`maxMs`/`overBudgetRatio` は1Hzの瞬時値では拾えない超過を捉えるための区間統計 |
-| `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories` | EndSession応答(目標距離の自動終了を含む)。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
-| `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`}] | RequestHistory応答 |
+| `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories`, `saved` | EndSession応答(目標距離の自動終了を含む)。`saved=false` は履歴への保存に失敗(容量不足等)— 結果画面が知らせる。省略時(古いエクスポート)は true 扱い。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
+| `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`, `route`}] | RequestHistory応答。`route` は走った経路 `[[緯度,経度],...]`(古い順・約10m間隔に間引き・最大240点、2026-10-13 より前の記録は空)。Swift は最後に受け取った履歴を端末(Caches)にも保存し、Unity 起動前のホーム・履歴画面で使う |
 | `BoothDemoProgress` | `mode`, `beat`(OnPace/FallingBehind/CatchingUp/Overtaking/Settling/FinalStretch。歩行は Walking), `elapsedSeconds`, `totalSeconds` | 体験モードの区間が変わるたび(スタッフ画面の進行表示用) |
 | `BoothDemoEnded` | `mode`, `completed`(最後まで進んだか), `reason`(中断・開始失敗の理由) | 体験モードの終了時。**`SessionEnded` の代わりに送る** — Swiftはこれを受けてもHealthKitへ保存しない。受け側はスタッフ画面 `BoothDemoView` |
 | `LowBattery` | — | **現在発火しない** — 唯一の送出元 `SafetyAndSystemController` が実行時に生成されないため(HANDOVER.md §5)。Swift側の購読は将来の有効化に備えて残置。※HUDのバッテリー黄色点滅(`PeripheralHUDManager`)は別実装で正常動作 |
@@ -233,7 +238,9 @@ Unity側の受信オブジェクト(`ARSessionManager`/`DeviceManager` GameObjec
 
 以後の UI開発はこのリポジトリの `ios/` で行い、AR-runner側には必要に応じて還元する。
 Xcode 16形式(FileSystemSynchronizedRootGroup)のため、`ios/AR_Runner_UI/AR_Runner_UI/` に
-.swiftファイルを置くだけでビルド対象になる。
+.swiftファイルを置くだけでビルド対象になる。フォルダ構成は hsuyaminmyat625/AR_project と同じ(2026-10-14〜):
+`App/`(起動・画面遷移)/ `Core/`(共通部品・Unity・グラス・位置情報・文言)/ `Features/<機能>/`(画面)/
+`Resources/`(アセット・`Localizable.xcstrings`)/ `AppLogic/`(UI に依存しない判断・`swift test` の対象)。
 
 ## ゴール判定(実装済み)
 
@@ -281,12 +288,12 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 - 初回のみ UnityFramework の Embed & Sign と Data フォルダの Target Membership 変更が手動(上記②)
 - `ConnectXREAL` はXREAL SDKの初期化ではない(**iOS版SDKは存在しない**)。Readyチェックの更新と、表示メトリクスに基づく出力リグ(画角・視点・HUDセーフエリア)の起動を行う。DeviceConnectViewのARグラス行タップでも送信される
 - **グラス固有のhead-pose/IMUはiOSからは取得できない**(原理的制約。根拠は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) §2-1)。空間トラッキングはiPhoneのARKitが担い、グラスへ出す向きは §4.1 の移動平均済み進行方向(ヨーのみ)から作る。グラス側は**画面モードを Follow(固定)**にしておくこと — Anchorだと二重補正になる
-- **F-03の3.0mとXREAL Oneの画角は両立しない**: 身長1.75mのアバターは3.0m前方で垂直31.1°を占め、Oneの垂直画角25.7°に全身が入らない(全身には3.7m必要)。足元のオーラ(§7.2)・接地の見えにも影響するためチーム判断が要る
+- **グラス出力中のアバターは約144cm**(XREAL One): 3.0m前方(F-03)のまま全身を画角に収めるため、Unity が身長に上限をかける(AGENTS.md §7-1 — 2026-10-13 チーム判断)。Swift が送る `avatarHeightCm`(175)は iPhone 画面で使われる
 - バックグラウンド中はUnity(AR描画)は停止する — 計測のみ継続し、復帰時にHUD/アバターが追いつく
 
 ## 走行画面の配線(実装済み)
 
-`RunningView`([CourseRunningView.swift](ios/AR_Runner_UI/AR_Runner_UI/CourseRunningView.swift))に統合済み:
+`RunningView`([CourseRunningView.swift](ios/AR_Runner_UI/AR_Runner_UI/Features/Running/CourseRunningView.swift))に統合済み:
 - 背景: UnityFrameworkリンク時は `UnityContainerView`(ARカメラ+アバター)、未リンク時は従来のモック背景に自動フォールバック
 - `onAppear`: `UnityLauncher.launch()` → `ARSessionManager.start(paceKmH:distanceKm:)`(設定値は`RunSettings.shared`経由でRunningSettingsViewから受領)
 - HUD: 距離/経過時間=`ARSessionManager`、シンクロ率=`UnityBridge.avatarSyncRate`(Unityから1Hz)、ペース=設定値の分'秒"換算

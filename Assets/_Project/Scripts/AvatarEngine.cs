@@ -813,8 +813,10 @@ public class AvatarEngine : MonoBehaviour
         if (targetDirection.sqrMagnitude < 0.001f) return;
 
         Quaternion targetRot = Quaternion.LookRotation(targetDirection);
+        // 展示デモは位置と同じ速さで体の向きも回す(遅いと横向きのまま走って見える)
+        float turnRate = _presentationFollowsView ? PresentationTurnDegreesPerSecond : maxTurnDegreesPerSecond;
         _smoothRotation      = Quaternion.RotateTowards(_smoothRotation, targetRot,
-                                                        maxTurnDegreesPerSecond * Time.deltaTime);
+                                                        turnRate * Time.deltaTime);
         transform.rotation   = _smoothRotation;
     }
 
@@ -912,6 +914,26 @@ public class AvatarEngine : MonoBehaviour
     /// インポート設定でモデルの素の大きさは変わるため、決め打ちだと実物と合わない。
     /// </summary>
     /// <returns>適用できたか(モデル未解決・計測失敗時は false で現状維持)</returns>
+    /// <summary>
+    /// 身長の上限(cm)。0 なら上限なし。ARグラスへ出力している間、<see cref="GlassViewRig"/> が
+    /// 「その画角で頭から足元まで収まる身長」を入れる(AGENTS.md §7-1 — 2026-10-13 チーム判断で
+    /// 3.0m前方(F-03)は保ち、大きさを譲る)。iPhone画面では上限なしで要求どおりの身長
+    /// </summary>
+    public float HeightLimitCm { get; private set; }
+
+    /// <summary>実際に適用する身長(cm)= 要求身長と上限の小さい方</summary>
+    public float EffectiveHeightCm =>
+        HeightLimitCm > 0f ? Mathf.Min(RequestedHeightCm, HeightLimitCm) : RequestedHeightCm;
+
+    /// <summary>身長の上限を設定して即座に適用し直す。0 で解除。</summary>
+    public void SetHeightLimitCm(float limitCm)
+    {
+        float next = limitCm > 0f ? limitCm : 0f;
+        if (Mathf.Approximately(next, HeightLimitCm)) return;
+        HeightLimitCm = next;
+        ReapplyHeight();
+    }
+
     public bool ApplyHeightCm(float heightCm)
     {
         if (heightCm > 0f) RequestedHeightCm = heightCm;
@@ -925,7 +947,7 @@ public class AvatarEngine : MonoBehaviour
 
         // スケール1相当の素の高さ。これを基準に必要な倍率を出す
         float unitHeight = MeasureUnitHeight(model);
-        if (!AvatarScale.TryComputeScale(unitHeight, 1f, RequestedHeightCm, out float scale))
+        if (!AvatarScale.TryComputeScale(unitHeight, 1f, EffectiveHeightCm, out float scale))
         {
             Debug.LogWarning($"[AVATAR SCALE] 素の身長を計測できず適用を見送りました " +
                              $"(unitHeight={unitHeight:F3}m)");
@@ -935,7 +957,8 @@ public class AvatarEngine : MonoBehaviour
         float before = unitHeight * model.localScale.y;
         model.localScale = Vector3.one * scale;
 
-        Debug.Log($"[AVATAR SCALE] 身長 {RequestedHeightCm:F0}cm へ調整: " +
+        Debug.Log($"[AVATAR SCALE] 身長 {EffectiveHeightCm:F0}cm へ調整" +
+                  (EffectiveHeightCm < RequestedHeightCm ? $"(要求 {RequestedHeightCm:F0}cm・グラスの画角に合わせた上限)" : "") + ": " +
                   $"変更前 {before:F2}m → scale {scale:F3} (公称 {MeasuredAvatarHeightMeters:F2}m)");
         return true;
     }
@@ -1024,13 +1047,23 @@ public class AvatarEngine : MonoBehaviour
 
     private float DisplayedLeadMeters => leadDistanceMeters + _presentationLeadOffsetMeters;
 
+    /// <summary>
+    /// 実際にアバターを置いている前方距離(m)= 目標リード + 展示デモのずらし。本番走行では目標リードと同じ。
+    /// グラスの俯角はこの距離で決める(9m先へ離れたとき頭が視野の上へ切れないように)。
+    /// </summary>
+    public float DisplayedLeadDistanceMeters => DisplayedLeadMeters;
+
     // ── 展示デモ: アバターを来場者の正面に保つ ───────────────────────────────
     // §4.1 の Gaze Lock(視線を進行方向に使わない)は**走行中の**酔い防止のための約束で、
     // 走らない展示デモでは逆に「向きを変えるとアバターが消える」原因になる。
     // ここで使うのは頭ではなくiPhone(胸のマウント)の向き=体の正面。
-    // 呼吸や体の揺れで左右に振れないよう、不感帯を超えてから旋回上限(45°/s)で向き直る
-    private const float PresentationTurnStartDegrees = 12f; // これ以上ずれたら向き直り始める
-    private const float PresentationTurnStopDegrees = 1f;   // ここまで揃ったら止める
+    // 呼吸や体の揺れで左右に振れないよう、不感帯を超えてから向き直る。
+    // 走行の旋回上限(45°/s)は酔い防止の値で、立ったまま意図して向きを変える来場者には遅すぎた
+    // (90°で約2.5秒・12°未満は無反応 — 2026-10-09 実機「体を傾けてもすぐ反応しない」)
+    private const float PresentationTurnStartDegrees = 4f;      // これ以上ずれたら向き直り始める
+    private const float PresentationTurnStopDegrees = 1f;       // ここまで揃ったら止める
+    private const float PresentationTurnDegreesPerSecond = 180f; // 90°の向き直りが0.5秒
+    private const float PresentationPositionLerpSpeed = 8f;     // 位置の平滑(時定数0.125秒。走行は2.5)
     private bool _presentationFollowsView;
     private bool _presentationTurning;
 
@@ -1065,7 +1098,7 @@ public class AvatarEngine : MonoBehaviour
         {
             _currentLinearDirection = Vector3.RotateTowards(
                 _currentLinearDirection, view,
-                maxTurnDegreesPerSecond * Mathf.Deg2Rad * Time.deltaTime, 0f);
+                PresentationTurnDegreesPerSecond * Mathf.Deg2Rad * Time.deltaTime, 0f);
             _currentLinearDirection.y = 0f;
             _currentLinearDirection.Normalize();
             if (Vector3.Angle(_currentLinearDirection, view) <= PresentationTurnStopDegrees)
@@ -1300,6 +1333,8 @@ public class AvatarEngine : MonoBehaviour
 
     private float GetEffectivePositionLerpSpeed()
     {
+        // 展示デモ(立ったまま向きを変える)は来場者の正面へすぐ回り込ませる
+        if (_presentationFollowsView) return PresentationPositionLerpSpeed;
         // Faster lerp during sprint, slower when waiting for user to catch up
         return _overtakeState == OvertakeState.Overtaking ? 4.0f : 2.5f;
     }

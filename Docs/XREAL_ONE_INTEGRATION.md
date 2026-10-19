@@ -107,6 +107,23 @@ Anchorが使えない理由は2つ。
 iPhone画面用の「隅から100px」のままでは時間・ペースが読めない位置に載るため、
 グラス接続中は有効表示域を **90%** に絞る(`PeripheralHUDManager.ApplyEdgeInsetFraction`)。
 
+### 3-4. HUDの見た目(加算表示の制約・2026-10-16〜)
+
+グラスは光を**足して**見せる(光学シースルー)。**黒は透けて見えない** — 暗いパネル・影・黒い縁取りはグラスでは消える
+(TMP の黒アウトラインもグラスでは効いていない)。面を明るく塗ると路面が見えにくくなり、電池も食う。
+そのため HUD は面を塗らず、細い線・小さなラベル・数値の淡い発光で組む(`PeripheralHudSkin`):
+
+- 左上 = TIME / DISTANCE、右上 = PACE(維持=緑・遅れ=赤)と状態(ON PACE / BEHIND)と**ペースゲージ**
+  (中央の目印=目標・右=速い・左=遅い、±30秒/km で端 — `PaceHudDisplay.GaugePosition`)。中央は空、下部は F-10 の警告だけ(F-07 のまま)
+- 数値は数字だけ等幅(桁が変わっても揺れない)。フォントは Inter(`Resources/Fonts/HUD-Inter_SDF`・OFL)。色はアプリのアクセント(ライム)
+- **F-10 の警告(日本語)は端末のフォント**(iOS はヒラギノ)で描く。同梱の Inter / LiberationSans には日本語が無く、
+  2026-10-16 まで警告は ARテンプレートの別キャンバスに載ったうえ**1文字も描かれていなかった**(E2E は「出ている」しか見ていなかった)。
+  日本語フォントが無い端末では英語の文言にする。開発者モードの `hud.jaFont` で読み込めたフォントが分かる
+
+**見た目を変えたら画像で確かめる**: `Unity.exe -batchmode -projectPath <repo> -executeMethod HudPreviewRunner.Run -logFile hud-preview.log`
+(エディタでは Build → Capture HUD Preview)。`Builds/HudPreview/` に4状態(維持・遅れ・スプリット・GPS喪失)×2枚 —
+`*_glass.png` はグラスが出す光そのもの(黒=透明)、`*_seethrough.png` は晴れたトラックに重ねた近似。
+
 ---
 
 ## 4. 発見した仕様上の衝突(チーム判断が要る)
@@ -131,9 +148,13 @@ XREAL One の垂直画角は **25.7°** なので、**全身は入らない**。
 3. **アバターを小さくする**(等身大でなくなる)
 4. **One Pro へ機材変更**する(それでも3.2m必要)
 
-現状の実装は 1.(俯角で中心に寄せたうえで欠けを許容)。数値は接続時にログへ出て、
-`GlassViewRig.FullBodyFitsInFov` / `NearestVisibleGroundMeters` で読める。
-E2Eでも「収まらない」ことを固定して検知漏れを防いでいる。
+**決定(2026-10-13 チーム判断)は 3.(大きさを譲る)。** 3.0m前方は保ち、グラスへ出力している間だけ
+`GlassViewRig` が「その画角で頭から足元まで収まる身長」(`GlassOpticsMath.MaxFullBodyHeightMeters` − 余白3cm)を
+`AvatarEngine.SetHeightLimitCm` で上限にする。XREAL One では **約144cm**(俯角約14.7°・地面は2.96m先から見える =
+足元のオーラも視野内)、One Pro では画角が広いぶん高くなる。iPhone画面に戻ると要求どおり(175cm)。
+数値は接続時にログへ出て、`GlassViewRig.FitHeightLimitCm` / `FullBodyFitsInFov` / `NearestVisibleGroundMeters` で読める。
+E2Eで「収まる・足元が見える・切断で戻る」を固定している。
+(2026-10-13 以前の実装は 1. 欠けを許容 だった)
 
 ---
 

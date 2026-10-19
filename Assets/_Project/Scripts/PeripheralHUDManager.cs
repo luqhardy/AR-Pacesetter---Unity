@@ -66,6 +66,8 @@ public class PeripheralHUDManager : MonoBehaviour
 
     // F-10: ロスト継続時にHUD下部へ出す赤字警告(設計書の文言そのまま)
     private const string GpsSearchingWarning = "GPS信号を探索中：安全のため減速してください";
+    // 日本語フォントが端末に無いときの代わり(何も描かれないよりよい)
+    private const string GpsSearchingWarningEnglish = "SEARCHING FOR GPS: SLOW DOWN FOR SAFETY";
     private GameStateController _gameState;
     private PaceHudDisplay.PaceState _currentPaceState = PaceHudDisplay.PaceState.Unknown;
     private bool _peripheralLayoutApplied;
@@ -83,6 +85,13 @@ public class PeripheralHUDManager : MonoBehaviour
     private bool _yawInitialized = false;
     private float _suppressUntil = -1f;
     private float _hudVisibility = 1.0f;
+
+    // グラス向けの見た目(PeripheralHudSkin)。F-07 のレイアウトを使うときだけ作る
+    private PeripheralHudSkin _skin;
+    private TMP_FontAsset _japaneseFont;
+    // E2E・診断が読む素の値(画面の文字は等幅のためのタグ入り)
+    private string _plainDistance = string.Empty;
+    private string _plainPace = string.Empty;
 
     // Session read access for the result/stop flow
     public float ElapsedTimeSeconds => _elapsedTimeSeconds;
@@ -130,6 +139,8 @@ public class PeripheralHUDManager : MonoBehaviour
         // 装飾側で何かあってもF-07の配置だけは確実に適用される
         ApplyPeripheralLayout();
 
+        // F-10 の警告は日本語。同梱フォントに日本語が無いため端末のフォントを使う
+        _japaneseFont = PeripheralHudSkin.LoadJapaneseFont();
         if (textSafetyWarning == null)
             BuildSafetyWarningLabel();
 
@@ -140,6 +151,8 @@ public class PeripheralHUDManager : MonoBehaviour
 
         // 企画書 §2 アダプティブ表示: 1pxアウトラインで高コントラストを確保
         ApplyHighContrastOutline();
+        // グラス向けの淡い発光(アウトラインと同じマテリアルを触るので後に)
+        _skin?.ApplyGlow(textTime, textDistance, textPace, textNotificationAlert);
 
         // Initialize HUD text displays if optional
         if (textNotificationAlert != null)
@@ -196,7 +209,9 @@ public class PeripheralHUDManager : MonoBehaviour
         int seconds = Mathf.FloorToInt(_elapsedTimeSeconds % 60f);
         if (textTime != null)
         {
-            textTime.text = string.Format("{0:00}:{1:00}", minutes, seconds);
+            textTime.text = _skin != null
+                ? PeripheralHudSkin.FormatTime(minutes, seconds)
+                : string.Format("{0:00}:{1:00}", minutes, seconds);
         }
 
         // 2. Track Cumulative Distance Covered (Meters -> Kilometers)
@@ -238,7 +253,8 @@ public class PeripheralHUDManager : MonoBehaviour
                 ? PresentationDistanceMeters
                 : _cumulativeDistanceMeters;
             float totalKm = shownMeters / 1000f;
-            textDistance.text = string.Format("{0:F2} km", totalKm);
+            _plainDistance = string.Format("{0:F2} km", totalKm);
+            textDistance.text = _skin != null ? PeripheralHudSkin.FormatDistance(totalKm) : _plainDistance;
         }
 
         // 3. F-07 右上=現在ペース(遅れ=赤 / 維持=緑)
@@ -251,7 +267,8 @@ public class PeripheralHUDManager : MonoBehaviour
                 ? PaceHudDisplay.KmhToPaceMinutesPerKm(measuredKmh)
                 : PaceHudDisplay.SpeedToPaceMinutesPerKm(_smoothedSpeedMps);
 
-            textPace.text = PaceHudDisplay.Format(currentPace);
+            _plainPace = PaceHudDisplay.Format(currentPace);
+            textPace.text = _skin != null ? PeripheralHudSkin.FormatPace(_plainPace) : _plainPace;
 
             PaceHudDisplay.PaceState state = PaceHudDisplay.Evaluate(
                 currentPace, avatarEngine.TargetPaceMinutesPerKm,
@@ -264,6 +281,9 @@ public class PeripheralHUDManager : MonoBehaviour
 
             // 首振り抑制のアルファを潰さないよう、色だけ差し替える
             textPace.color = new Color(paceColor.r, paceColor.g, paceColor.b, textPace.color.a);
+            _skin?.SetPaceState(state, paceColor, textPace);
+            _skin?.SetGauge(PaceHudDisplay.GaugePosition(currentPace, avatarEngine.TargetPaceMinutesPerKm),
+                            paceColor, Time.deltaTime);
         }
 
         UpdateSafetyWarning();
@@ -349,9 +369,10 @@ public class PeripheralHUDManager : MonoBehaviour
 
         if (textSafetyWarning.gameObject.activeSelf != show)
             textSafetyWarning.gameObject.SetActive(show);
+        _skin?.SetWarning(show, Time.unscaledTime, textSafetyWarning);
 
         if (show)
-            textSafetyWarning.text = GpsSearchingWarning;
+            textSafetyWarning.text = _japaneseFont != null || _skin == null ? GpsSearchingWarning : GpsSearchingWarningEnglish;
     }
 
     /// <summary>
@@ -361,28 +382,48 @@ public class PeripheralHUDManager : MonoBehaviour
     /// </summary>
     private void BuildSafetyWarningLabel()
     {
-        Canvas canvas = FindFirstObjectByType<Canvas>(FindObjectsInactive.Include);
-        if (canvas == null) return;
+        // HUD と同じキャンバスへ。以前は FindFirstObjectByType<Canvas>() で、ARテンプレートの別キャンバス
+        // ("UI")に載っていた — HUD の表示切替・セーフエリア・首振り減光と無関係な場所に出ていた
+        Transform parent = _skin != null ? _skin.WarningContainer
+                         : textTime != null && textTime.canvas != null ? textTime.canvas.rootCanvas.transform
+                         : FindFirstObjectByType<Canvas>(FindObjectsInactive.Include)?.transform;
+        if (parent == null) return;
 
         GameObject go = new GameObject("SafetyWarning", typeof(RectTransform), typeof(CanvasRenderer));
-        go.transform.SetParent(canvas.transform, false);
+        go.layer = parent.gameObject.layer;
+        go.transform.SetParent(parent, false);
 
         textSafetyWarning = go.AddComponent<TextMeshProUGUI>();
-        // 既存HUDと同じフォントを引き継ぐ(未指定だとマテリアル未解決でアウトラインが効かない)
-        if (textTime != null && textTime.font != null)
+        // 日本語を描けるフォント(端末のフォント)。無ければ HUD のフォント(英語の文言にする)
+        if (_japaneseFont != null)
+            textSafetyWarning.font = _japaneseFont;
+        else if (textTime != null && textTime.font != null)
             textSafetyWarning.font = textTime.font;
-        textSafetyWarning.fontSize = 22;
+        textSafetyWarning.fontSize = _skin != null ? 34 : 22;
+        textSafetyWarning.fontStyle = _skin != null ? FontStyles.Bold : FontStyles.Normal;
         textSafetyWarning.alignment = TextAlignmentOptions.Center;
-        textSafetyWarning.color = PaceBehindRed;
+        textSafetyWarning.color = _skin != null ? PeripheralHudSkin.Alert : PaceBehindRed;
         textSafetyWarning.raycastTarget = false;
         textSafetyWarning.enableWordWrapping = false;
 
         RectTransform rt = go.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0.5f, 0f);
-        rt.anchorMax = new Vector2(0.5f, 0f);
-        rt.pivot = new Vector2(0.5f, 0f);
-        rt.anchoredPosition = new Vector2(0f, 64f);
-        rt.sizeDelta = new Vector2(900f, 44f);
+        if (_skin != null)
+        {
+            // カプセルの中いっぱい
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.offsetMin = new Vector2(28f, 0f);
+            rt.offsetMax = new Vector2(-28f, 0f);
+        }
+        else
+        {
+            rt.anchorMin = new Vector2(0.5f, 0f);
+            rt.anchorMax = new Vector2(0.5f, 0f);
+            rt.pivot = new Vector2(0.5f, 0f);
+            rt.anchoredPosition = new Vector2(0f, 64f);
+            rt.sizeDelta = new Vector2(900f, 44f);
+        }
 
         ApplyOutline(textSafetyWarning); // 明るい路面でも読めるよう黒アウトライン
         go.SetActive(false);
@@ -406,6 +447,7 @@ public class PeripheralHUDManager : MonoBehaviour
         // 隠すときは警告も一緒に伏せる(Swift側がGPSバナーを出すため二重にならない)
         if (!visible && textSafetyWarning != null)
             textSafetyWarning.gameObject.SetActive(false);
+        _skin?.SetVisible(visible);
 
         Debug.Log($"[HUD] Unity側HUDを{(visible ? "表示" : "非表示")}に切り替え");
     }
@@ -417,11 +459,40 @@ public class PeripheralHUDManager : MonoBehaviour
     public bool IsSafetyWarningVisible =>
         textSafetyWarning != null && textSafetyWarning.gameObject.activeSelf;
 
+    /// <summary>E2E/検証用: F-10 の警告が HUD と同じキャンバスに載っているか(表示切替・セーフエリアが効く)。</summary>
+    public bool SafetyWarningOnHudCanvas =>
+        textSafetyWarning != null && textTime != null && textSafetyWarning.canvas != null && textTime.canvas != null
+        && textSafetyWarning.canvas.rootCanvas == textTime.canvas.rootCanvas;
+
+    /// <summary>
+    /// E2E/検証用: F-10 の警告で実際に描かれた文字数。フォントに字が無いと 0 になる
+    /// (表示中=activeSelf だけでは「出ているのに読めない」を見逃す)。
+    /// </summary>
+    public int SafetyWarningDrawnCharacterCount
+    {
+        get
+        {
+            if (textSafetyWarning == null || !textSafetyWarning.gameObject.activeInHierarchy) return 0;
+            textSafetyWarning.ForceMeshUpdate();
+            TMP_TextInfo info = textSafetyWarning.textInfo;
+            int drawn = 0;
+            for (int i = 0; i < info.characterCount; i++)
+            {
+                TMP_CharacterInfo c = info.characterInfo[i];
+                // 字が無いと「欠字の印」(□ など)に置き換わる — それは描けていない
+                if (c.isVisible && c.character != '□') drawn++;
+            }
+            return drawn;
+        }
+    }
+
     /// <summary>E2E/検証用: 距離表示の文字列。</summary>
-    public string CurrentDistanceText => textDistance != null ? textDistance.text : string.Empty;
+    public string CurrentDistanceText => !string.IsNullOrEmpty(_plainDistance) ? _plainDistance
+                                       : textDistance != null ? textDistance.text : string.Empty;
 
     /// <summary>E2E/検証用: 現在ペース表示の文字列。</summary>
-    public string CurrentPaceText => textPace != null ? textPace.text : string.Empty;
+    public string CurrentPaceText => !string.IsNullOrEmpty(_plainPace) ? _plainPace
+                                   : textPace != null ? textPace.text : string.Empty;
 
     /// <summary>E2E/検証用: 現在ペースの判定状態(緑=維持 / 赤=遅れ)。</summary>
     public PaceHudDisplay.PaceState CurrentPaceState => _currentPaceState;
@@ -449,6 +520,11 @@ public class PeripheralHUDManager : MonoBehaviour
         SetReadoutVisible(textFatigueIndex, false);
         SetReadoutVisible(textGrade, false);
 
+        // グラス向けの見た目(コーナーの枠・ラベル・状態表示・警告の器)。フォントが読めなければ従来の見た目
+        RectTransform canvasRect = textTime != null && textTime.canvas != null
+            ? textTime.canvas.rootCanvas.transform as RectTransform : null;
+        _skin = PeripheralHudSkin.Build(canvasRect, textTime, textDistance, textPace, textNotificationAlert);
+
         ApplyPeripheralAnchors();
 
         Debug.Log("[HUD] F-07 周辺視野レイアウトを適用: 補助表示5件を非表示、時間/距離=左上・ペース=右上へ再配置");
@@ -461,6 +537,16 @@ public class PeripheralHUDManager : MonoBehaviour
     private void ApplyPeripheralAnchors()
     {
         Vector2 inset = EdgeInsetPixels();
+
+        if (_skin != null)
+        {
+            // readout は枠の中に固定。枠ごとセーフエリアの内側へ寄せる
+            _skin.ApplyInset(inset);
+            AnchorTo(textNotificationAlert, new Vector2(0.5f, 1f), new Vector2(0f, -(250f + inset.y)),
+                     TextAlignmentOptions.Center);
+            if (textNotificationAlert != null) textNotificationAlert.rectTransform.sizeDelta = new Vector2(1000f, 140f);
+            return;
+        }
 
         // 左上: 時間・距離 / 右上: 現在ペース
         AnchorTo(textTime,     new Vector2(0f, 1f), new Vector2(100f + inset.x, -(100f + inset.y)), TextAlignmentOptions.TopLeft);
@@ -558,6 +644,7 @@ public class PeripheralHUDManager : MonoBehaviour
 
     private void ApplyHudAlpha(float alpha)
     {
+        _skin?.SetAlpha(alpha);
         SetTextAlpha(textHeartRate, alpha);
         SetTextAlpha(textTime, alpha);
         SetTextAlpha(textDistance, alpha);
@@ -734,7 +821,10 @@ public class PeripheralHUDManager : MonoBehaviour
     {
         if (textNotificationAlert == null) yield break;
 
-        textNotificationAlert.text = string.Format("[SPLIT] {0}KM: Average Sync {1:F1}%!", kmMarker, avgSync);
+        textNotificationAlert.text = _skin != null
+            ? $"<size=48%><cspace=0.35em><color=#{ColorUtility.ToHtmlStringRGB(PeripheralHudSkin.Accent)}>SPLIT</color></cspace></size>\n" +
+              $"{kmMarker:0}<size=55%> KM</size>   <size=48%><cspace=0.2em>SYNC {avgSync:F0}%</cspace></size>"
+            : string.Format("[SPLIT] {0}KM: Average Sync {1:F1}%!", kmMarker, avgSync);
         Color baseColor = textNotificationAlert.color;
         Transform alertTransform = textNotificationAlert.transform;
         Vector3 baseScale = Vector3.one;

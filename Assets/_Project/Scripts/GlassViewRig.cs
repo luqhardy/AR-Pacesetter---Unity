@@ -117,6 +117,7 @@ public sealed class GlassViewRig : MonoBehaviour
         TakeOverFromArCamera();
         IsGlassOutputActive = true;
 
+        ApplyFitHeightLimit();
         ReportOpticalFit();
         ApplyHudSafeArea();
         UpdateOutputCamera();
@@ -139,6 +140,10 @@ public sealed class GlassViewRig : MonoBehaviour
         if (_outputCamera != null) _outputCamera.enabled = false;
         RestoreArCamera();
         RestoreHudSafeArea();
+
+        // iPhone画面は画角が広いので、要求どおりの身長へ戻す
+        if (avatarEngine != null) avatarEngine.SetHeightLimitCm(0f);
+        _fitLimitLeadMeters = -1f;
 
         Debug.Log("[GLASS] 出力リグ停止 — iPhone画面(ARKitカメラ)の描画へ戻しました。");
     }
@@ -163,7 +168,47 @@ public sealed class GlassViewRig : MonoBehaviour
     void LateUpdate()
     {
         if (!IsGlassOutputActive) return;
+        // 走行開始(StartSession の forwardOffsetM)で前方距離が変わったら上限も取り直す
+        if (avatarEngine != null && !Mathf.Approximately(avatarEngine.LeadDistanceMeters, _fitLimitLeadMeters))
+            ApplyFitHeightLimit();
         UpdateOutputCamera();
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // 全身をグラスの画角に収める (AGENTS.md §7-1 — 2026-10-13 チーム判断)
+    // ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 画角ぎりぎりではなく少し余らせる(m)。立脚期の FootPlanting の持ち上げ(最大約10cm)や
+    /// 床の推定誤差で、頭頂が上端から出入りしないように
+    /// </summary>
+    public const float FitHeightMarginMeters = 0.03f;
+
+    private float _fitLimitLeadMeters = -1f;
+
+    /// <summary>直近にアバターへ設定した身長の上限(cm)。0 は上限なし(足元すら入らない構成)</summary>
+    public float FitHeightLimitCm { get; private set; }
+
+    /// <summary>
+    /// グラスの画角で、3.0m前方(F-03)のアバターが頭から足元まで収まる身長を上限として設定する。
+    /// 175cmのままでは垂直25.8°(XREAL One)に収まらない — 距離は仕様どおりに保ち、大きさを譲る。
+    /// 前方距離は展示デモのずらしを含まない目標リードで決める(区間ごとに身長が変わらないように)
+    /// </summary>
+    private void ApplyFitHeightLimit()
+    {
+        if (avatarEngine == null) return;
+        float lead = avatarEngine.LeadDistanceMeters;
+        _fitLimitLeadMeters = lead;
+
+        double maxHeight = GlassOpticsMath.MaxFullBodyHeightMeters(
+            eyeHeightMeters, lead, ActiveProfile.VerticalFovDegrees, maxDownPitchDegrees);
+        double limited = maxHeight - FitHeightMarginMeters;
+        FitHeightLimitCm = limited > 0.5 ? (float)(limited * 100.0) : 0f;
+
+        avatarEngine.SetHeightLimitCm(FitHeightLimitCm);
+        Debug.Log(FitHeightLimitCm > 0f
+            ? $"[GLASS] 全身を画角に収める身長の上限 {FitHeightLimitCm:F0}cm({ActiveProfile.Model}・{lead:F1}m前方)"
+            : $"[GLASS] {lead:F1}m前方では足元が画角に入らないため、身長の上限は設けません");
     }
 
     private void UpdateOutputCamera()
@@ -204,7 +249,10 @@ public sealed class GlassViewRig : MonoBehaviour
     private float ResolveHeadingYawDegrees()
     {
         Vector3 heading = Vector3.zero;
-        if (tracking != null) heading = tracking.CurrentHeading;
+        // 展示デモはアバターが来場者の正面(iPhoneの向き)を追う。グラスの視点も同じ向きにしないと、
+        // 体の向きを変えたときアバターだけが回り込んで視点は開始時の向きに残る(2026-10-09 実機)
+        if (avatarEngine != null && avatarEngine.PresentationFollowsView) heading = avatarEngine.CurrentHeading;
+        else if (tracking != null) heading = tracking.CurrentHeading;
 
         heading.y = 0f;
         if (heading.sqrMagnitude < 1e-6f && arCamera != null)
@@ -301,8 +349,10 @@ public sealed class GlassViewRig : MonoBehaviour
     // 光学的な成立可否の報告 (F-03/F-05/§7.2 への影響を実測値で出す)
     // ────────────────────────────────────────────────────────────────
 
+    // 実際に置いている距離。本番走行では目標リードと同じで、展示デモの遅れ(約9m先)・追い抜き(1.2m)
+    // のときだけ違う — 俯角を3m前提のままにすると9m先で頭が視野の上へ切れる
     private float LeadDistanceMeters()
-        => avatarEngine != null ? avatarEngine.LeadDistanceMeters : 3.0f;
+        => avatarEngine != null ? avatarEngine.DisplayedLeadDistanceMeters : 3.0f;
 
     private float AvatarHeightMeters()
     {

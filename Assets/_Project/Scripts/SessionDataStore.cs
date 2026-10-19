@@ -31,6 +31,10 @@ public class RunSessionRecord
     // プロファイルを再生するために使う。旧データは空リスト(平均ペースで代替)
     // (PaceSample は PaceSample.cs に定義 — Unity非依存でユニットテスト可能)
     public List<PaceSample> paceTimeline = new List<PaceSample>();
+
+    // 走った経路(間引き済み・古い順)。ホームの地図とルート選択の過去ルートカードが使う。
+    // 2026-10-13 より前の記録は空リスト(RoutePoint / 間引きは RouteRecorder.cs)
+    public List<RoutePoint> route = new List<RoutePoint>();
 }
 
 public static class SessionDataStore

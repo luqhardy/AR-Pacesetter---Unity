@@ -80,9 +80,11 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 |---|---|---|
 | オンボーディング(身長/体重/性別) | Unity: `UserProfile.cs` / Swift: 各View | エディタ・シミュレータ |
 | ハイブリッド入力(±ボタン/直接入力) | `RunningSettingsView.swift` ほか | シミュレータ |
-| Readyチェック(4色インジケーター・出走ゲート) | `ReadyCheckController.cs` / `Deviceconnectview.swift` | エディタ(F1-F3) |
+| Readyチェック(4色インジケーター・出走ゲート) | `ReadyCheckController.cs` / `DeviceConnectView.swift` | エディタ(F1-F3) |
 | ガードレイヤー・スリープ制御 | `RunSessionController.cs` | エディタ |
 | 実測センサー(CoreLocation/HealthKit/バックグラウンド) | `LocationTracker.swift` / `HeartRateMonitor.swift` | 実機要 |
+| 日本語・英語(走者が見る画面。既定は日本語・スマホ設定で English / 端末に合わせる を選べる。スタッフ画面・開発者モードは日本語のみ) | `Core/Localization/AppStrings.swift` + `Resources/Localizable.xcstrings` | CI(`LocalizationCatalogTests`)・実機の言語切替は要確認 |
+| AR設定・スマホ設定(実際に効く項目のみ: グラスの状態・アバター / 言語・位置情報) | `Features/Settings/` | 実機要 |
 
 ## 3. 検証手段(再現手順)
 
@@ -108,7 +110,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 
 ## 5. 未完了事項(引き継ぎ時の注意)
 
-- **展示ブースの体験モード(Kobe Calling)は実機未確認**: Unity側は履歴・CSV・`SessionEnded` を残さないことまでE2Eで検証済み。Swiftのスタッフ画面(`BoothDemoView`、ホームのメニュー → 体験モード(展示))は構文検査のみで、**Macでの初回ビルドと実機での通し確認が必要**。[Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
+- **展示ブースの体験モード(Kobe Calling)**: 2026-10-13 に実機(iPhone + XREAL One)で動作をチームが確認。本番前のリハーサル・予備手段(Windowsノート)・60分の電源/発熱は [Docs/KOBE_CALLING_CHECKLIST.md](Docs/KOBE_CALLING_CHECKLIST.md) で通す。仕組みは [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
 - **M2P(Motion-to-Photon)は未計測。CSVの `latency_m2p` 列は `-1` が入る**
 
   `LatencyBenchmarkRunner` は名前に反して M2P を測っていない。4段のうち実測はひとつも無い:
@@ -137,7 +139,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   受け口だけは通してある(`UpdateGlassPose` → `GlassViewRig.SetExternalHeadPose`。0.25秒途切れれば§4.1の進行方向ヨーへ自動復帰)。
   **グラスの画面モードは Follow(固定) にすること** — Anchorだとグラス側X1が頭回転を打ち消すためUnity側と二重補正になる。
   根拠・数値・設計判断は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
-- **F-03の3.0mとXREAL Oneの画角が両立しない(要チーム判断)**: 眼高1.55mから身長1.75mのアバターを3.0m前方に置くと垂直31.1°を占め、Oneの垂直画角25.7°に全身が入らない(全身には3.71m必要 / One Proでも3.16m)。俯角で中心へ寄せても接地点は3.38m先からしか見えないため、§7.2のオーラ(足元から放射)は事実上見えない。現実装は「欠けを許容」。`GlassViewRig.FullBodyFitsInFov` / `NearestVisibleGroundMeters` で実測でき、E2Eでも固定済み
+- ~~**F-03の3.0mとXREAL Oneの画角が両立しない**~~ → **解決(2026-10-13 チーム判断: 3.0mは保ち大きさを譲る)**: グラス出力中は `GlassViewRig` が画角に頭から足元まで収まる身長を上限にする(XREAL One で約144cm。足元のオーラも見える)。iPhone画面では175cmのまま。E2Eで「収まる・足元が見える・切断で175cmに戻る」を固定。**実機での見え方(小さく見えすぎないか)は要確認**
 - **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
   - **未実施であることの確認方法と症状(重要)**: `ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj` に
     `UnityFramework` の文字列が1つも無い場合、リンクは未実施。このとき Swift 側は

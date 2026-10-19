@@ -57,8 +57,15 @@ public static class IOSBuildExporter
             options = BuildOptions.None
         };
 
+        // ビルド後処理(XR Management)が ProjectSettings の preloadedAssets を空にすることがある。
+        // 空のままコミットされると XR(ARKit)ローダーが初期化されない — 以前はエクスポートのたびに
+        // `git checkout -- ProjectSettings/ProjectSettings.asset` を手で行う必要があった
+        UnityEngine.Object[] preloadedBefore = PlayerSettings.GetPreloadedAssets();
+
         var report = BuildPipeline.BuildPlayer(options);
         var summary = report.summary;
+
+        RestorePreloadedAssets(preloadedBefore);
 
         if (summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded)
         {
@@ -79,6 +86,17 @@ public static class IOSBuildExporter
             if (Application.isBatchMode)
                 EditorApplication.Exit(1);
         }
+    }
+
+    /// <summary>ビルドで preloadedAssets が変わっていたら元へ戻して保存する(成功・失敗どちらでも)</summary>
+    private static void RestorePreloadedAssets(UnityEngine.Object[] before)
+    {
+        UnityEngine.Object[] after = PlayerSettings.GetPreloadedAssets();
+        if (before.SequenceEqual(after)) return;
+
+        PlayerSettings.SetPreloadedAssets(before);
+        AssetDatabase.SaveAssets();
+        Debug.Log($"[iOS EXPORT] ビルドが変えた preloadedAssets を元へ戻しました({after.Length}件 → {before.Length}件)");
     }
 
     private static void EnsureIosIsActiveBuildTarget()

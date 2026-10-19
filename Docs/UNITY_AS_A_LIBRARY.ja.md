@@ -43,7 +43,7 @@ repo/
 この工程はUnityが動く環境ならどこでも実行でき、**Windowsでも可能**です。Macが要るのは手順2だけ。
 
 ```bash
-Unity.exe -batchmode -quit -projectPath <repo> \
+Unity.exe -batchmode -quit -buildTarget iOS -projectPath <repo> \
   -executeMethod IOSBuildExporter.ExportIOS -logFile export.log
 ```
 
@@ -73,7 +73,8 @@ Player Settingsの使用目的文は、ホストアプリ側の `INFOPLIST_KEY_*
 
 ビルド処理が **`preloadedAssets` を空にする**ことがあります。ここに `XRGeneralSettings.asset` が
 含まれている場合、空のままコミットするとプレイヤービルドでXR(ARKit)ローダーが初期化されません。
-**実機でしか露見しない**種類の不具合なので、毎回差分を見て必要なら戻してください。
+**実機でしか露見しない**種類の不具合です。2026-10-13 以降は `IOSBuildExporter` がビルド前の値へ自動で戻します。
+それ以外の方法でエクスポートしたときは、差分を見て必要なら戻してください。
 
 ## 4. 手順2 — Xcodeでフレームワークを繋ぐ(macOS・エクスポートごとに1回)
 
@@ -206,7 +207,7 @@ xattr -dr com.apple.quarantine ios/UnityExport   # ダウンロード由来の�
 | 症状 | 原因 |
 |---|---|
 | 起動直後に `dyld: Library not loaded` | UnityFrameworkが **Embed & Sign** になっていない |
-| ビルドは通るが、Unityの起動時にクラッシュ | `Data` フォルダの Target Membership が UnityFramework でない(`tools/relink-unity-export.sh`) |
+| ビルドは通るが、Unityの起動時にクラッシュ | `Data` フォルダの Target Membership が UnityFramework でない。現在のエクスポータは自動で付け替える — 再エクスポートするか、古いエクスポートなら `tools/relink-unity-export.sh` |
 | `ld: framework not found UnityFramework` | UnityFrameworkが未ビルド。ターゲット依存を追加する |
 | 候補一覧にターゲットが出ない | Destinationがシミュレータ。Unityは実機専用で書き出す |
 | `Undefined symbol: __mh_execute_header` | `_dyld_get_image_header(0)` を使う |

@@ -264,6 +264,7 @@ AR Pacesetter/                      ← リポジトリルート = Unityプロ�
 ├── ios/
 │   ├── ARRunner.xcworkspace        ← ★ Macで開くのはこれ（両プロジェクトを束ねる）
 │   ├── AR_Runner_UI/               ← SwiftUIアプリ（ホスト・最終ビルド対象）
+│   │   └── AR_Runner_UI/           ← App/ Core/ Features/ Resources/ AppLogic/（画面は日本語・英語）
 │   └── UnityExport/                ← Unityエクスポート産物（gitignore・生成物）
 └── SWIFT_INTEGRATION.md
 ```
@@ -276,7 +277,7 @@ SwiftUI画面込みの完成アプリは、常に **AR_Runner_UIスキームか�
 ```
 ① Unityエクスポート（Windows可）
    Unityメニュー Build → Export iOS (ios/UnityExport)
-   （CLI: Unity.exe -batchmode -quit -projectPath <repo>
+   （CLI: Unity.exe -batchmode -quit -buildTarget iOS -projectPath <repo>
           -executeMethod IOSBuildExporter.ExportIOS   ※失敗時は終了コード1）
    → ios/UnityExport/Unity-iPhone.xcodeproj が生成される
 
@@ -296,8 +297,10 @@ SwiftUI画面込みの完成アプリは、常に **AR_Runner_UIスキームか�
 - **Player Settings の使用目的文が空でないこと** — `Microphone`/`Location`/`Bluetooth` を
   スクリプトが使うため、空だと `BuildFailedException` になる。設定済み（Swiftアプリ側の
   `INFOPLIST_KEY_*` とは**別物**で、両方必要）
-- エクスポート後は `ProjectSettings.asset` の差分を確認する。ビルド処理が `preloadedAssets` を
-  空にすることがあり、`XRGeneralSettings.asset` が消えるとXR(ARKit)ローダーが初期化されなくなる
+- ビルド処理が `ProjectSettings.asset` の `preloadedAssets` を空にすることがある(`XRGeneralSettings.asset` が
+  消えるとXR(ARKit)ローダーが初期化されなくなる)。`IOSBuildExporter` がビルド前の値へ自動で戻す
+- エクスポート → 梱包 → GitHub Release 公開は `tools/publish-unity-export.sh` の1コマンド。
+  Mac で取得して `ios/UnityExport` へ入れるのは `tools/fetch-unity-export.sh`
 
 **②はMacの所有が必須ではない**: リポジトリが公開のためGitHub ActionsのmacOSランナーが無料で使える。
 Windowsで①を実行 → 生成物をCIへ渡し、macOSランナーは `xcodebuild` のみ実行する構成にすると、
@@ -320,8 +323,8 @@ Unityをランナーへ入れずに済む。実機へ入れるには署名が必
 | Unity → Swift | `UnitySwiftBridge.mm` → NSNotification `UnityToSwiftMessage` → `UnityBridge.onUnityMessage` | `SyncRateUpdated`(1Hz) / `AvatarStateChanged`(Idle・Run・Slow・Fast・Goal・Lost) / `GPSLost`・`GPSRecovered` / `LatencyReport` / `SessionEnded`（グレード・ランク・結果）/ `HistoryData` / `VoiceAlert` / ~~`LowBattery`~~（送出元が未配線のため現在発火しない） |
 
 ブリッジ用GameObjectは起動時に自動生成されるためシーン配線は不要。
-Swift側の本番配線は [`ios/AR_Runner_UI/AR_Runner_UI/UnityBridge.swift`](ios/AR_Runner_UI/AR_Runner_UI/UnityBridge.swift)（置き換え済み）と
-[`UnityLauncher.swift`](ios/AR_Runner_UI/AR_Runner_UI/UnityLauncher.swift)（UnityFramework起動・`UnityContainerView`）。
+Swift側の本番配線は [`ios/AR_Runner_UI/AR_Runner_UI/Core/Unity/UnityBridge.swift`](ios/AR_Runner_UI/AR_Runner_UI/Core/Unity/UnityBridge.swift)（置き換え済み）と
+[`UnityLauncher.swift`](ios/AR_Runner_UI/AR_Runner_UI/Core/Unity/UnityLauncher.swift)（UnityFramework起動・`UnityContainerView`）。
 UnityFramework未リンク時は自動でシミュレーションモードにフォールバックするため、SwiftUI単体開発（シミュレータ）も従来通り可能。
 
 ### テスト手順（3段階）

@@ -34,6 +34,9 @@ Thumbs.db
 /ios/UnityExport/
 ios/**/xcuserdata/
 ios/**/*.xcuserstate
+ios/**/*.xcbkptlist
+# swift test --package-path ios(AppLogic のテスト)の生成物
+/ios/.build/
 
 # Unit test build artifacts (dotnet test)
 /Tests/**/bin/
@@ -42,6 +45,10 @@ ios/**/*.xcuserstate
 # 検証時の生成物 (E2E/エクスポートのログ)
 /e2e.log
 /export.log
+/android-build.log
+/hud-preview.log
+# Android ビルド(IL2CPP)が作る一時フォルダ
+/.utmp/
 
 # Unityのクラッシュ復旧シーン(自動生成物)
 /[Aa]ssets/_Recovery/

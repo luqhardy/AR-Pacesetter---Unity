@@ -148,6 +148,45 @@ public class BoothDemoScriptTests
         Assert.IsTrue(GoalLineMath.ShouldShow(route, BoothDemoScript.DistanceAt(BoothDemoScript.TotalSeconds - 2f, SpeedMps), revealMeters));
     }
 
+    // ── 体験中のアバターがグラスの画角に収まるか(GlassViewRig と同じ式) ──────────
+    private const double EyeHeight = HeadPoseMath.DefaultEyeHeightMeters;
+    private const double MaxDownPitch = 15.0; // GlassViewRig.maxDownPitchDegrees
+    private static double XrealOneVerticalFov
+        => GlassOpticsMath.VerticalFovDegrees(GlassDisplayProfile.XrealOne.FovDegrees,
+                                              GlassDisplayProfile.XrealOne.FovAxis,
+                                              GlassDisplayProfile.XrealOne.Aspect);
+
+    /// <summary>GlassViewRig の俯角で、足元から頭頂までが視野の中にあるか</summary>
+    private static bool WholeAvatarVisible(double heightMeters, double distanceMeters)
+    {
+        double v = XrealOneVerticalFov;
+        double pitch = HeadPoseMath.ResolveDownPitchDegrees(EyeHeight, heightMeters, distanceMeters, v, MaxDownPitch);
+        double feet = GlassOpticsMath.ElevationDegrees(EyeHeight, 0.0, distanceMeters);
+        double head = GlassOpticsMath.ElevationDegrees(EyeHeight, heightMeters, distanceMeters);
+        const double eps = 1e-6;
+        return feet >= -pitch - v / 2 - eps && head <= -pitch + v / 2 + eps;
+    }
+
+    [Test]
+    public void BoothAvatar_FitsHeadToFeet_At3m_WhereFullSizeDoesNot()
+    {
+        double h = BoothDemoScript.AvatarHeightCm / 100.0;
+        Assert.IsTrue(WholeAvatarVisible(h, TargetLead), $"{h}m のアバターは3.0m先で全身が見える");
+        Assert.IsFalse(WholeAvatarVisible(1.75, TargetLead), "175cmは3.0m先で収まらない(この差が身長を変えた理由)");
+    }
+
+    [Test]
+    public void BoothAvatar_StaysInFrame_WhileFallingBehind()
+    {
+        // 俯角は実際に置いている距離で決める(GlassViewRig は DisplayedLeadDistanceMeters を使う)
+        double h = BoothDemoScript.AvatarHeightCm / 100.0;
+        for (float t = BoothDemoScript.FallingBehindStart; t < BoothDemoScript.CatchingUpStart; t += 0.5f)
+        {
+            double lead = TargetLead + BoothDemoScript.LeadOffsetAt(t);
+            Assert.IsTrue(WholeAvatarVisible(h, lead), $"t={t}s・{lead:F1}m先で全身が見える");
+        }
+    }
+
     [TestCase(0f)]
     [TestCase(-1f)]
     public void Distance_IsZero_ForNonPositiveSpeed(float speed)

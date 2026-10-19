@@ -639,11 +639,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 Check(glassRig.AppliedDownPitchDegrees > 1f && glassRig.AppliedDownPitchDegrees <= 15f,
                     $"glass: camera pitches down to fit the avatar into the narrow FoV ({glassRig.AppliedDownPitchDegrees:F1}°)");
 
-                // 第1期の要判断事項を数値で固定する(基本設計書 F-03 の 3.0m と光学系の衝突)
-                Check(!glassRig.FullBodyFitsInFov,
-                    "glass: a 1.75m avatar at 3.0m does NOT fit in the XREAL One FoV (design decision pending)");
-                Check(glassRig.NearestVisibleGroundMeters > 3.0f,
-                    $"glass: the avatar's ground contact at 3.0m is outside the FoV " +
+                // §7-1(2026-10-13 チーム判断): 3.0m前方(F-03)は保ち、グラスの画角に全身が収まる身長へ縮める。
+                // 以前は「175cmは収まらない・足元は視野外」をここで固定していた
+                float glassHeight = engine.MeasuredAvatarHeightMeters;
+                Check(glassRig.FitHeightLimitCm > 100f && glassRig.FitHeightLimitCm < 175f,
+                    $"glass: a height limit that fits the XREAL One FoV at 3.0m is set ({glassRig.FitHeightLimitCm:F0}cm)");
+                Check(Mathf.Abs(glassHeight - glassRig.FitHeightLimitCm / 100f) < 0.03f,
+                    $"glass: the avatar is scaled to that limit while on the glasses ({glassHeight:F2}m)");
+                Check(glassRig.FullBodyFitsInFov,
+                    "glass: head to feet of the avatar at 3.0m now fits in the XREAL One FoV");
+                Check(glassRig.NearestVisibleGroundMeters <= 3.0f,
+                    $"glass: the avatar's feet (and the aura at its feet) are inside the FoV " +
                     $"(ground visible from {glassRig.NearestVisibleGroundMeters:F2}m)");
 
                 if (hud != null)
@@ -673,6 +679,11 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 if (hud != null)
                     Check(Mathf.Abs(hud.EdgeInsetFraction - 1f) < 0.001f,
                         "glass: HUD returns to the full phone screen on disconnect");
+                // iPhone画面は画角が広いので、要求どおりの身長(175cm)へ戻る
+                Check(engine.HeightLimitCm == 0f
+                      && Mathf.Abs(engine.MeasuredAvatarHeightMeters - engine.RequestedHeightCm / 100f) < 0.05f,
+                    $"glass: the avatar returns to its requested height on the phone " +
+                    $"({engine.MeasuredAvatarHeightMeters:F2}m / requested {engine.RequestedHeightCm:F0}cm)");
             }
 
             // 切断はスタンバイへ遷移させるため、後続シナリオのために通常へ戻す
@@ -891,6 +902,24 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(record.distanceMeters >= 55f, $"record: distance ~goal ({record.distanceMeters:F1}m)");
             Check(!string.IsNullOrEmpty(record.grade), "record: grade assigned");
             Check(record.paceTimeline.Count >= 2, $"record: paceTimeline sampled ({record.paceTimeline.Count})");
+
+            // 走った経路(ホームの地図・ルート選択の過去ルートカード)。ノイズ下の直進(Step 1c)で
+            // 送った GPS fix から作られる。カウントダウン中の静止テストの fix は経路に入らない
+            Check(record.route.Count >= 2, $"record: route recorded from the run's GPS fixes ({record.route.Count} points)");
+            bool routeNearRun = record.route.Count > 0;
+            foreach (RoutePoint p in record.route)
+                routeNearRun &= System.Math.Abs(p.lat - NoiseBaseLat) < 0.001 && System.Math.Abs(p.lon - NoiseBaseLon) < 0.001;
+            Check(routeNearRun, "record: route points are where the run happened (no 0,0 or stray fixes)");
+            string historyJson = SwiftMessageSender.BuildHistoryJson(new List<RunSessionRecord> { null, record });
+            Check(historyJson.StartsWith("{\"event\":\"HistoryData\",\"sessions\":[{") && historyJson.Contains("\"route\":[[34.69"),
+                "history: HistoryData carries the route to Swift (and skips null records without a stray comma)");
+
+            // 保存できたかを結果に載せる(失敗すると Swift の結果画面が「保存に失敗しました」を出す)
+            Check(session.LastSaveSucceeded, "record: the run was saved to the history store");
+            Check(SwiftMessageSender.BuildSessionResultJson(record, session.LastSaveSucceeded).Contains("\"saved\":true"),
+                "result: SessionEnded tells Swift the run was saved");
+            Check(SwiftMessageSender.BuildSessionResultJson(record, false).EndsWith(",\"saved\":false}"),
+                "result: a failed save reaches Swift as saved:false");
         }
 
         // ── Step 3: ゴースト再走(保存した記録と競走) ──────────────────────
@@ -1211,8 +1240,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
             // F-10: ロスト中はHUD下部に赤字の減速警告が出ること。
             // 実機で「アバターが理由も分からず消える」状態だったのを塞ぐ回帰テスト
             if (hud != null)
+            {
                 Check(hud.IsSafetyWarningVisible,
                     "hud: safety warning shown while GPS is lost (F-10)");
+                // 「出ている」だけでは足りない: 以前は ARテンプレートの別キャンバスに載り、同梱フォントに
+                // 日本語が無いため1文字も描かれていなかった(2026-10-16 HUD のプレビュー書き出しで発覚)
+                Check(hud.SafetyWarningOnHudCanvas,
+                    "hud: safety warning sits on the HUD canvas (not the AR template's UI canvas)");
+                int drawn = hud.SafetyWarningDrawnCharacterCount;
+                Check(drawn >= 10,
+                    $"hud: safety warning actually draws its text — the font has the glyphs ({drawn} characters drawn)");
+            }
 
             stateController.TransitionToState(GameStateController.ARVisionState.Reaccumulation);
             // 注意: Reaccumulation遷移は精度を99にリセットする(要再確認ゲート)ため、
@@ -1562,6 +1600,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         int csvBefore = CountRunLogs();
         bool gpsHandlingBefore = gps != null && gps.AutoLostHandlingEnabled;
 
+        // ブースは実物のグラスで体験する。グラスの視点(GlassViewRig)で向き・俯角を確かめる
+        var glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        var device = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
+        if (device != null)
+            device.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+
         // ── 立ったまま: Swift と同じ入口から起動 ──
         bridge.OnSwiftCommand("{\"command\":\"StartBoothDemo\",\"mode\":\"standing\"}");
         yield return null;
@@ -1577,15 +1621,35 @@ public class E2EScenarioBehaviour : MonoBehaviour
               $"booth: on-pace beat is green ({(visuals != null ? visuals.PaceColorState : "-")})");
         Check(gps == null || !gps.AutoLostHandlingEnabled,
               "booth: GPS-loss handling is off for the whole standing demo (the avatar never fades)");
+        Check(gps == null || !gps.IsMonitoring,
+              "booth: no fake GPS fixes are sent (a synthetic 'north' fix could steer the view direction)");
+        float boothHeight = BoothDemoScript.AvatarHeightCm / 100f;
+        Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - boothHeight) < 0.08f,
+              $"booth: the avatar is {boothHeight:F2}m tall so head-to-feet fits the glasses at 3m " +
+              $"({engine.MeasuredAvatarHeightMeters:F2}m)");
+        bool glassActive = glassRig != null && glassRig.IsGlassOutputActive && glassRig.OutputCamera != null;
+        Check(glassActive, "booth: the glasses output view is active for the booth checks");
+        float pitchAt3m = glassActive ? glassRig.AppliedDownPitchDegrees : 0f;
 
-        // 立ったまま体の向きを90°変えても、アバターは正面へ回り込む(部屋に置き去りにしない)
+        // 立ったまま体の向きを90°変えても、アバターは1秒以内に正面へ回り込む(部屋に置き去りにしない)。
+        // 以前は 不感帯12°・45°/s で90°に約2.5秒かかり「すぐ反応しない」と言われた(2026-10-09 実機)
         FaceRig(Quaternion.Euler(0f, 90f, 0f) * CamForwardFlat());
-        yield return WaitScaled(3.0f);
+        yield return WaitScaled(1.0f);
         Vector3 ahead = engine.transform.position - cam.position;
         ahead.y = 0f;
         float offAxis = Vector3.Angle(ahead, CamForwardFlat());
         Check(offAxis < 15f,
-              $"booth: after the visitor turns 90°, the avatar comes back in front ({offAxis:F0}° off-centre)");
+              $"booth: within 1s of a 90° turn, the avatar is back in front ({offAxis:F0}° off-centre)");
+        if (glassActive)
+        {
+            // グラスの視点も同じ向きへ回る(以前は開始時の向きに残り、アバターだけが回り込んでいた)
+            Transform outCam = glassRig.OutputCamera.transform;
+            Vector3 outForward = outCam.forward; outForward.y = 0f;
+            Vector3 toAvatar2 = engine.transform.position - outCam.position; toAvatar2.y = 0f;
+            float glassOff = Vector3.Angle(outForward, toAvatar2);
+            Check(glassOff < 15f,
+                  $"booth: the glasses view turns with the visitor and the avatar stays centred ({glassOff:F0}° off-centre)");
+        }
 
         // Swift の実測(屋内の悪い精度)は無視される — 台本と無関係にアバターが消えないこと
         bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":3,\"distanceKm\":0.001," +
@@ -1609,6 +1673,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
               "booth: HUD pace turns red while behind");
         Check(hud == null || (hud.CurrentDistanceText != "0.00 km" && hud.CurrentDistanceText.EndsWith("km")),
               $"booth: HUD distance counts up while standing still ({(hud != null ? hud.CurrentDistanceText : "-")})");
+        if (glassActive)
+        {
+            // 9m先へ離れたら視点の俯角を浅くする(3m前提のままだと頭が視野の上へ切れる)
+            float pitchAt9m = glassRig.AppliedDownPitchDegrees;
+            Check(pitchAt9m < pitchAt3m - 5f,
+                  $"booth: the glasses view tilts up when the avatar is ~9m ahead ({pitchAt3m:F1}° → {pitchAt9m:F1}°)");
+        }
 
         // ── 追い抜き: 寄って緑→青、HUDペース緑 ──
         yield return WaitForDemoTime(demo, 33f);
@@ -1910,12 +1981,20 @@ public class E2EScenarioBehaviour : MonoBehaviour
         stateController.TransitionToState(GameStateController.ARVisionState.Normal);
 
         // ② 走り続けながら 2秒ロスト → 復帰
+        // 走者は**ゲーム時間に対して等速**で動かす(1歩を50msで頭打ちにしない)。コーナー試験の
+        // 頭打ちをここで使うと、フレームが50msを超えた間だけ走者が減速する: ロスト中に108msへ
+        // 伸びると走者は3.6→1.67m/sに落ち、アバターはF-09どおりロスト前の速度で進むので数m先行し、
+        // 復帰の同期(§5)で正しく後ろへ戻る — それを「後退」と誤判定していた(2026-10-05 に1回
+        // 「1.11m後退」。エンジン側の Jitter Guard/再同期は無関係: 復帰直後の長→短フレームでも0.00m)。
+        // フレーム時間も成り行きに任せず固定する: ロスト前33ms・ロスト中108ms・復帰直後は長→短
+        PinFrameTime(0.033f);
         for (float t = 0f; t < 2.0f; t += Time.deltaTime)
         {
-            MoveRig(dir * RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f));
+            MoveRig(dir * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
         stateController.TransitionToState(GameStateController.ARVisionState.InertialMovement);
+        PinFrameTime(0.108f);
         yield return null;
         float inertialSpeed = engine.InertialVelocity.magnitude;
         Check(inertialSpeed > RunSpeedMetersPerSecond * 0.6f && inertialSpeed < RunSpeedMetersPerSecond * 1.4f,
@@ -1924,23 +2003,35 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         for (float t = 0f; t < 2.0f; t += Time.deltaTime)
         {
-            MoveRig(dir * RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f));
+            MoveRig(dir * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
         }
 
         stateController.TransitionToState(GameStateController.ARVisionState.Normal);
         float backward = 0f;
         float last = Vector3.Dot(engine.transform.position, dir);
-        for (float t = 0f; t < 1.0f; t += Time.deltaTime)
+        int resumeFrame = 0;
+        for (float t = 0f; t < 1.0f; t += Time.deltaTime, resumeFrame++)
         {
-            MoveRig(dir * RunSpeedMetersPerSecond * Mathf.Min(Time.deltaTime, 0.05f));
+            PinFrameTime(resumeFrame < 2 ? 0.108f : resumeFrame == 2 ? 0.024f : 0.033f);
+            MoveRig(dir * RunSpeedMetersPerSecond * Time.deltaTime);
             yield return null;
             float along = Vector3.Dot(engine.transform.position, dir);
             if (along < last) backward += last - along;
             last = along;
         }
+        Time.captureDeltaTime = 0f; // 以降のステップは成り行きのフレーム時間へ戻す
         Check(backward < 0.3f,
             $"inertia: no backward snap when tracking resumes after GPS loss (moved back {backward:F2}m)");
+    }
+
+    /// <summary>
+    /// 次フレーム以降の <c>Time.deltaTime</c> を <paramref name="seconds"/> に固定する
+    /// (captureDeltaTime は timeScale 倍されるので割り戻す)。0 を直接代入すれば解除。
+    /// </summary>
+    private static void PinFrameTime(float seconds)
+    {
+        Time.captureDeltaTime = seconds / Time.timeScale;
     }
 
     /// <summary>

@@ -46,6 +46,23 @@ public class RunSessionController : MonoBehaviour
         = new System.Collections.Generic.List<PaceSample>();
     private float _nextPaceSampleTime = 0f;
 
+    // 走った経路(地図用・間引き済み)。測位はブリッジが UpdateMetrics から渡す
+    private readonly RouteRecorder _route = new RouteRecorder();
+
+    /// <summary>
+    /// 走行経路の測位を1つ渡す(ブリッジが UpdateMetrics 毎に呼ぶ)。
+    /// START 後・終了前だけ記録する — カウントダウン中の足踏みや終了後の移動は経路ではない
+    /// </summary>
+    public void ReportRoutePoint(double latitude, double longitude, double accuracyMeters)
+    {
+        if (!_runActive || _finished) return;
+        if (avatarEngine != null && !avatarEngine.IsRunMotionActive) return;
+        _route.Add(latitude, longitude, accuracyMeters);
+    }
+
+    /// <summary>今の走行で記録した経路の点数(E2E検証用)</summary>
+    public int RoutePointCount => _route.Points.Count;
+
     /// <summary>
     /// Swift(CoreLocation)報告の累積距離(m)。ブリッジがUpdateMetrics毎に更新する。
     /// 鮮度が保たれている間のみUnity内部計測より優先(実機ではGPSが正)。
@@ -83,6 +100,13 @@ public class RunSessionController : MonoBehaviour
 
     public RunSessionRecord LastRecord => _lastRecord;
     public bool IsFinished => _finished;
+
+    /// <summary>
+    /// 直近の走行記録を履歴(1走行1JSON)へ保存できたか。失敗(容量不足等)は false —
+    /// 記録は中断スナップショットに残り、次に Unity が起動したとき(次の走行の開始時)に履歴へ復元を試みる。
+    /// Swift の結果画面が「保存に失敗しました」を出すために SessionEnded に載せる
+    /// </summary>
+    public bool LastSaveSucceeded { get; private set; }
 
     /// <summary>
     /// 展示デモ(BoothDemoController)の走行は履歴・中断スナップショットへ保存しない。
@@ -224,6 +248,7 @@ public class RunSessionController : MonoBehaviour
         _uiHoldActive = false;
         _paceSamples.Clear();
         _nextPaceSampleTime = 0f;
+        _route.Reset();
         ExternalDistanceMeters = -1;
         SuppressPersistence = false;
         // Swift主導フラグも解除(次がUnity単体走行ならスプリット供給を復帰させる。
@@ -273,12 +298,14 @@ public class RunSessionController : MonoBehaviour
 
         RunSessionRecord record = BuildSessionRecord();
         _lastRecord = record;
+        LastSaveSucceeded = false;
         if (SuppressPersistence)
         {
             Debug.Log($"[SESSION] Demo run finished — not saved to history (rank {record.rankLabel}).");
             return;
         }
         string savedPath = SessionDataStore.SaveSession(record);
+        LastSaveSucceeded = savedPath != null;
 
         // 通常終了したので、背面移行のたびに書いていた中断スナップショットは不要。
         // ただし保存に失敗したときは残す — 次回起動時に履歴へ復元される
@@ -318,6 +345,7 @@ public class RunSessionController : MonoBehaviour
             record.safetyEvents.AddRange(safetyLogger.Events);
 
         record.paceTimeline.AddRange(_paceSamples);
+        record.route.AddRange(_route.Points);
 
         record.avatarComment = GenerateAvatarComment(record);
         return record;

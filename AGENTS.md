@@ -21,13 +21,17 @@ Unityプロジェクト(本リポジトリのルート)+ SwiftUIホスト(`ios/`
 - アバター位置・接地・カルマンフィルタ・同期率に触れる → §4
 - GPSロスト/FSM(`GameStateController` / `GpsSignalMonitor`)に触れる → §5
 - Swift⇄Unity のメッセージを追加・変更する → [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md)
-- グラス表示・画角・頭部姿勢 → [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
+- グラス表示・画角・頭部姿勢・HUDの見た目 → [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
+  (HUD は加算表示なので黒は透ける。見た目を変えたら `HudPreviewRunner` で画像に書き出して確かめる — §3-4)
 - 屋外路面の分類(ARCore) → [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
 - 差し替えアバター(VRM) → [Docs/VRM_AVATARS.md](Docs/VRM_AVATARS.md)
-- 実地テストの計画・実機での初回確認 → [Docs/FIELD_TEST_PLAN.md](Docs/FIELD_TEST_PLAN.md)(実機で一度も見ていない項目は §0-A)
+- 実地テストの計画・実機での初回確認 → [Docs/FIELD_TEST_PLAN.md](Docs/FIELD_TEST_PLAN.md)(実機で一度も見ていない項目は §0-A)。
+  結果は [Docs/field-tests/](Docs/field-tests/README.md) に1セッション1フォルダで残す
 - 展示ブースの体験モード(Kobe Calling・立ったまま/数歩あるく) → [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
 - 走行ログCSVを解析する(T2 の M2P p95・記録レート・GPS途絶) → [tools/analyze-run-log](tools/analyze-run-log/README.md)
-- iOSビルド(Mac) → [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) ② / [Docs/BUILD_ON_BORROWED_MAC.md](Docs/BUILD_ON_BORROWED_MAC.md)
+- iOSビルド(Mac) → [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) ② / [Docs/BUILD_ON_BORROWED_MAC.md](Docs/BUILD_ON_BORROWED_MAC.md)。
+  Unity エクスポートの公開は `tools/publish-unity-export.sh`、Mac での取得は `tools/fetch-unity-export.sh`。TestFlight 配布の計画は [Docs/TESTFLIGHT.md](Docs/TESTFLIGHT.md)
+- Android のテストAPK(第1期のスコープ外) → [Docs/ANDROID_BUILD.md](Docs/ANDROID_BUILD.md)
 - 過去の経緯(なぜそうなっているか) → [CHANGELOG.md](CHANGELOG.md) を検索する(全文は長いので読み通さない)
 
 ---
@@ -178,12 +182,23 @@ stateDiagram-v2
 | 1 | C#コンパイル | `dotnet build tools/compile-check` | Unityを開かずに `Assets/_Project/Scripts` を検証。要: Unity 6000.3.17f1 と一度生成済みの `Library/` |
 | 2 | ユニットテスト | `dotnet test Tests/UnitTests` | Unity非依存・数秒。PRでもCIが自動実行する |
 | 3 | Swift構文 | `swiftc -parse <file>` | 構文のみ。型検査はMacのXcodeでのみ可能 |
-| 4 | E2E回帰 | Unity を `-batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` | 2〜10分。**Unityエディタでプロジェクトを開いていると即失敗する**。失敗時は `e2e.log` の `[E2E] FAIL` 行を読む |
+| 3b | Swiftロジックテスト | `swift test --package-path ios` | **macOSでのみ**(WindowsのSwiftはリンクに Visual Studio が要る)。CI は `swift-logic-tests.yml` |
+| 4 | E2E回帰 | Unity を `-batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` | 2〜10分。**Unityエディタでプロジェクトを開いていると失敗する**(verify.sh は最初に検知して止まる)。失敗時は `e2e.log` の `[E2E] FAIL` 行を読む |
 
 - Unityやswiftcが既定の場所に無い場合は `UNITY_PATH=...` / `SWIFTC=...` を付けて `tools/verify.sh` を実行する。
 - E2Eのシナリオ追加は `Assets/_Project/Scripts/E2EScenarioBehaviour.cs`。アニメーションする値は1フレームで測らない(歩幅の位相で合否が変わる)。
 - 純ロジックは `PaceMath` のような依存ゼロの静的クラスへ書き、MonoBehaviour は委譲する — そうすれば `Tests/UnitTests` でテストできる
   (テスト対象ファイルは `ARVision.UnitTests.csproj` の `<Compile Include>` に足す)。
+- Swift も同じ: UI に依存しない判断は `ios/AR_Runner_UI/AR_Runner_UI/AppLogic/`(Foundation のみ・`nonisolated`)へ書き、
+  画面はそれを呼ぶだけにする。テストは `ios/AppLogicTests`(アプリ本体は同じファイルを Xcode がそのままコンパイルする)。
+  画面は `Features/<機能>/`、共通部品は `Core/`(hsuyaminmyat625/AR_project と同じ構成)。
+- **走者が見る文言は `Core/Localization/AppStrings.swift` のキーで書き、日本語・英語を `Resources/Localizable.xcstrings` に足す**。
+  カタログに無いキーは画面にそのまま出る(CI の `LocalizationCatalogTests` が対応を確かめる)。
+  体験モードのスタッフ画面・開発者モード・Unity から届く文言は日本語のみ。
+  表示言語はスマホ設定で選ぶ(`AppLanguage`・**既定は日本語** — iPhone が英語でも日本語)。文言を String で作るときは
+  `AppStrings.resolve` を使う(`String(localized:)` は iPhone の言語で引くため、選んだ言語にならない)。
+  許可ダイアログの文言(`INFOPLIST_KEY_*UsageDescription`)の英語は `Resources/InfoPlist.xcstrings` — 日本語を変えたらカタログも揃える
+  (CI の `InfoPlistCatalogTests`)。許可ダイアログは iPhone の言語で出る
 
 ### コミットの規約
 - コミット前に [CHANGELOG.md](CHANGELOG.md) の先頭へ**5行以内**のエントリを足す(変更・理由・検証結果)。
@@ -207,7 +222,7 @@ stateDiagram-v2
 - アバターの色は発光で出すので、アバターのmaterialは **Emission 対応**にする
 - アバターの透過率・発光は `AvatarMaterialSet`(モデル配下の全レンダラーの全マテリアル)で操作する。
   `renderer.material` は1枚目だけ — Y Bot は2メッシュなので半身しか変わらない
-- GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う。既定値(`true`)は仕様どおりに保つ。
+- GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う(iPhoneでは開発者モードの「屋内テスト」スイッチ)。既定値(`true`)は仕様どおりに保つ。
   屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)
 - 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する
 - IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、エディタ=カメラ差分近似)。`SetImuAcceleration` はC#専用で、Swiftからは呼べない
@@ -219,6 +234,8 @@ stateDiagram-v2
   BLEは近く(-70dBm以上)の1台にだけ繋ぐ — トラックでは他の走者のストラップも同じサービスを広告している
 - `SessionDataStore.SaveSession` は失敗しても例外を投げず null を返す。走行終了処理(Swiftへの `SessionEnded`)を止めないため
 - **展示デモの走行(`ARSessionManagerBridge.IsPresentationSession`)は何も残さない**: 履歴・CSV・`SessionEnded`(=HealthKit保存)を止めている。走行の記録や送信を新しく足すときはこのフラグを見る
+- **アバターの身長は `AvatarEngine.ApplyHeightCm` / `SetHeightLimitCm` だけで変える**(モデルの `localScale` を直接書かない)。
+  適用されるのは要求身長と上限の小さい方(`EffectiveHeightCm`)— グラス出力中の上限が §7-1 の決定を実現している
 - **展示デモではアバターを一度も消さない**(GPSロスト判定OFF)。向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView`)— §4.1 Gaze Lock の**唯一の例外**で、走行には持ち込まない
 - `tools/prepare-free-signing.sh` の実行結果(Bundle ID・署名設定の一時改変)はコミットしない。CIが検知して落とす
 
@@ -230,8 +247,10 @@ Swift⇄ブリッジ境界は km/h、Unity内部は 分/km(変換: 分/km = 60 �
 
 ## 7. 未決事項(チーム判断待ち — エージェントは独断で解決しない)
 
-1. **3.0m前方と画角の両立(F-03 × グラス)**: 身長1.75mのアバターは3.0mで垂直31.1°を占め、グラスの垂直25.7°に全身が入らない
-   (全身には3.7m必要)。§7.2のオーラ(足元)も視野外。距離か見え方か、どちらを譲るかはチームが決める
+1. ~~**3.0m前方と画角の両立(F-03 × グラス)**~~ → **決定(2026-10-13 チーム判断)**: 3.0m前方は保ち、**大きさを譲る**。
+   ARグラスへ出力している間は `GlassViewRig` が「その画角で頭から足元まで収まる身長」を `AvatarEngine.SetHeightLimitCm` で
+   上限にする(XREAL One で約144cm。画角の広い One Pro では高い)。iPhone画面では要求どおり(175cm)。
+   展示デモは固定の145cm(`BoothDemoScript.AvatarHeightCm`)。経緯: 175cmは3.0mで垂直31.1°を占め、垂直25.7°に収まらなかった
 2. **`SafetyAndSystemController`(TTC警告・低バッテリー退避)は休眠中**: 実行時に生成されない。有効化には
    (a)障害物検知ソースの接続 (b)非検出時にTTCを `ttcScanRange` で計算する誤りの修正が要る —
    そのまま配線すると19.2km/h超で誤警報が出る。詳細は HANDOVER.md §5

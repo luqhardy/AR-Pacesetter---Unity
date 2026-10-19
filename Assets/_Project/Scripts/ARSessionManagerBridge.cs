@@ -328,6 +328,10 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (gpsMonitor != null && cmd.gpsAccuracy > 0f)
             gpsMonitor.ReportGpsUpdate(cmd.gpsLatitude, cmd.gpsLongitude, cmd.gpsAccuracy);
 
+        // 走った経路(履歴の地図用)。Swift が採用した測位だけ — 精度の悪い fix は RouteRecorder が捨てる
+        if (sessionController != null && freshLocationSample && cmd.gpsAccuracy > 0f)
+            sessionController.ReportRoutePoint(cmd.gpsLatitude, cmd.gpsLongitude, cmd.gpsAccuracy);
+
         // 実測ペース(F-07 現在ペース表示用)。0以下は無効サンプルとして無視する
         if (freshLocationSample && validSpeedSample)
         {
@@ -398,7 +402,8 @@ public class ARSessionManagerBridge : MonoBehaviour
             return;
         }
 
-        SwiftMessageSender.SendSessionResult(record);
+        SwiftMessageSender.SendSessionResult(record,
+            saved: sessionController != null && sessionController.LastSaveSucceeded);
         _sessionResultSent = record != null;
         if (_sessionResultSent) SessionResultSendCount++;
         Debug.Log("[SWIFT BRIDGE] EndSession — result sent to Swift.");

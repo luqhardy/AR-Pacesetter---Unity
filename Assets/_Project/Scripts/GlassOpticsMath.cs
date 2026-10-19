@@ -158,4 +158,24 @@ public static class GlassOpticsMath
         if (lowestDownAngle <= 0.0) return double.PositiveInfinity;
         return eyeHeightMeters / Math.Tan(lowestDownAngle * Deg2Rad);
     }
+
+    /// <summary>
+    /// 指定距離で、足元から頭頂までが視野に収まる最大の身長(m)。
+    /// 俯角は「足元が視野の下端に乗る」最小の角度にとり(上端をできるだけ高く残す)、
+    /// それが <paramref name="maxDownPitchDegrees"/> を超えるなら足元すら入らないので 0 を返す。
+    /// <see cref="CenteringDownPitchDegrees"/> でこの身長を中央に据えると同じ俯角になる。
+    /// </summary>
+    public static double MaxFullBodyHeightMeters(double eyeHeightMeters, double distanceMeters,
+                                                 double verticalFovDegrees, double maxDownPitchDegrees)
+    {
+        if (eyeHeightMeters <= 0.0 || distanceMeters <= 0.0 || verticalFovDegrees <= 0.0) return 0.0;
+
+        double half = verticalFovDegrees * 0.5;
+        double feetDown = Math.Atan(eyeHeightMeters / distanceMeters) * Rad2Deg; // 下向きを正
+        double pitch = Math.Max(0.0, feetDown - half);
+        if (pitch > maxDownPitchDegrees + 1e-9) return 0.0;
+
+        double topElevation = half - pitch; // 視野の上端の仰角(上が正)
+        return eyeHeightMeters + distanceMeters * Math.Tan(topElevation * Deg2Rad);
+    }
 }

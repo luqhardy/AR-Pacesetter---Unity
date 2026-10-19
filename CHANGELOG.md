@@ -4,11 +4,100 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
-### 2026-10-19 — 設定ペース自走と頭部姿勢計測プローブを保存
+### 2026-10-19 — 設定ペース自走・頭部姿勢計測プローブと最新 master の統合
 
-通常走行を設定速度で自走する方式へ変更し、走行中の速度変更・前方10m待機/7m再開を追加。開発者画面へAirPods+iPhoneの相対ヨー計測とCSV記録プローブを追加。
-検証: `tools/verify.sh` 全通過(C# compile、dotnet test 426/426、Swift 28、E2E 284/284)。頭部姿勢の実機座標・バックグラウンド継続は要実機確認。
+通常走行を設定速度で自走する方式へ変更し、走行中の速度変更・前方10m待機/7m再開を追加。開発者画面へAirPods+iPhoneの相対ヨー計測とCSV記録プローブを追加し、最新 master の画面再構成・結果初期化と統合。
+検証: `tools/verify.sh` 全通過(C# compile、dotnet test 451/451、Swift構文59ファイル・ロジック82/82、E2E 300/300)。頭部姿勢の実機座標・バックグラウンド継続は要実機確認。
 
+### 2026-10-16 (4) — グラスの HUD を刷新 / F-10 の警告が描かれていなかった不具合
+
+HUD を加算表示(黒は透ける)向けに作り直した(`PeripheralHudSkin`): Inter・数字だけ等幅・ライムのラベルと角の線・数値の淡い発光・ペースの状態(ON PACE / BEHIND)と**ペースゲージ**(±30秒/km、`PaceHudDisplay.GaugePosition`)。F-07 の配置はそのまま。新しい書き出しツール(`HudPreviewRunner`)で画像にして確かめたところ、**F-10 の警告が ARテンプレートの別キャンバスに載り、同梱フォントに日本語が無く1文字も描かれていなかった** → HUD のキャンバスへ移し、端末の日本語フォント(iOS はヒラギノ)で描く(無ければ英語)。E2E に「実際に描かれた文字数」と「HUD のキャンバス」の検査、開発者モードに `hud.jaFont`。
+検証: tools/verify.sh 全通過(dotnet test 429/429、Swift 56ファイル構文OK、E2E 284/284 — 警告は HUD のキャンバスで23文字描かれる)。見た目は書き出した画像(維持・遅れ・スプリット・GPS喪失)で確認。グラス実機での見え方は未確認
+
+### 2026-10-16 (3) — 実機の初回確認に PR #5〜#9 の項目を追加 / 許可ダイアログの英語
+
+2026-10-13〜16 の変更(経路・電池の書き出し・位置情報の案内・ロック画面・英語・言語設定 など)はどれも実機で一度も見ていない。PR ごとに散っていた確認項目を FIELD_TEST_PLAN §0-A の 5〜12 と記入欄にまとめ、次の Mac・iPhone の回で通せるようにした。許可ダイアログ(位置情報・カメラ等7件)は iOS が iPhone の言語で出すが日本語しか無かった → `Resources/InfoPlist.xcstrings` に英語を追加し、日本語がビルド設定と揃っているかを `InfoPlistCatalogTests` で検査。
+検証: dotnet test 421/421、Swift 56ファイル構文OK。Unity 側は無変更のため E2E は master と同じ 282/282。許可文言7件の日本語がビルド設定と一致することを Python で確認 — InfoPlistCatalogTests は CI(macOS)で実行
+
+### 2026-10-16 (2) — アプリ内の言語設定(既定は日本語)
+
+相手側の 466dd48「force app language to Japanese」は全画面を常に日本語にし、10/14 に入れた英語を誰も使えなくしていた(英語の iPhone で英語が出たため、と推測)。目的(英語の iPhone でも日本語で出す)は採り、スマホ設定に**日本語 / English / 端末に合わせる**を置いた(`AppLanguage`・既定は日本語・選ぶとその場で全画面が切り替わる)。相手側の `String(localized:locale:)` は数値の書式にしか効かず英語の iPhone では英語のままだったため、String の文言は `AppStrings.resolve`(`LocalizedStringResource` に言語を渡す)で引く。日付も選んだ言語。相手側のコミットは履歴のみ取り込み。
+検証: tools/verify.sh 全通過(dotnet test 421/421、Swift 55ファイル構文OK、E2E 282/282)。キーとカタログの対応は Python で同じ検査をして 154キー OK。追加の Swift テスト6件は CI(macOS)で実行。言語がその場で切り替わるかは実機で要確認
+
+### 2026-10-16 (1) — 実地テストの書き出し(電池・発熱つき)/ 位置情報の案内を3種類に / verify.sh がエディタを検知 / 使われていない画面の削除
+
+開発者モードに「レポートをコピー」: 端末・グラス・M2P・アバター非表示の履歴・Unity の状態に、走行の開始・終了の電池と最大の発熱(新規 `PowerMonitor`)を加えて TEMPLATE.md に貼れる Markdown にする — §10「連続稼働60分・電池30%以上」を T10 として記録(60分未満は同じ減り方での見込み)。位置情報の案内を拒否・制限(設定を開くを出さない)・位置情報サービスのオフで分けた(タスク表)。`verify.sh` と `publish-unity-export.sh` は Unity エディタが開いていれば最初に止まる(`tools/lib/unity-editor-lock.sh`)。使われていない4画面(ConnectView・CourseSetupView・TabBarView・StatBadge)を削除。PR テンプレート(AGENTS.md の約束)を追加。
+検証: tools/verify.sh 全通過(dotnet test 421/421、Swift 53ファイル構文OK、E2E 282/282)。エディタの検知は Windows で「ロック無し・残っただけのロック・エディタ相当の排他ロック」の3通りを確認。追加の Swift テスト20件と文言カタログ(153キー)は CI(macOS)で実行
+
+### 2026-10-14 (3) — hsuyaminmyat625/AR_project との3回目の合体(英語対応・設定画面・ロック画面)
+
+相手側の8コミット(10/06〜10/14)を精査して移植(フォルダ構成は (2)。最後の1件 = ホームの「前回の記録」の下向き矢印を外す、は署名設定の変更を除いて別コミット)。**英語対応**: 相手側の `AppStrings`(キー)+ `Localizable.xcstrings` を移植し、走者が見る全画面(新しい画面の文言を含む148キー)を日本語・英語に。日付も表示言語に合わせる。スタッフ画面・開発者モード・Unity の文言は日本語のみ。**AR設定・スマホ設定**は実際に効く項目だけ(グラスの状態・アバター / 言語・位置情報)— 明るさ・自動再接続・通知・単位のスイッチは iOS から効かないので置かない。**ロック画面**: 相手側の「スワイプで終了確認」は採らず、スワイプで走行画面へ戻る(ランは継続)・停止ボタンは外した(タスク表 S6)。オンボーディングの保持は既存、`#Preview` の置き換えと pbxproj の衝突マーカーは移植しない。
+検証: tools/verify.sh 全通過(dotnet test 421/421、Swift 45ファイル構文OK、E2E 282/282)。キーとカタログの対応(148キー・ja/en・差し込み値の数)は Python で同じ検査をして確認 — Swift の `LocalizationCatalogTests` 等は CI(macOS)で実行
+
+### 2026-10-14 (2) — フォルダ構成を hsuyaminmyat625/AR_project に合わせる(ファイルの移動のみ)
+
+iOS の Swift ファイル25本とアセットを相手側の `App/` `Core/` `Features/` `Resources/` へ移動(中身は無変更・`AppLogic/` は据え置き)。Xcode は同期フォルダなのでプロジェクトファイルの変更は不要。相手側がこのリポジトリで作業するときに同じ構成になるように — 3回目の合体 (3) の前段。ドキュメントのファイルへのリンクを新しい場所へ。
+検証: dotnet test 421/421、Swift 40ファイル構文OK。Unity 側(Assets・ProjectSettings・Packages)は無変更のため E2E は master と同じ 282/282
+
+### 2026-10-14 (1) — Mac のエクスポート取得を1コマンドに / ランニング設定を再起動後も保持 / 保存失敗を結果画面で知らせる
+
+`tools/fetch-unity-export.sh`: 今のチェックアウトに含まれる最新の `unity-export-*` を選び、既存フォルダを消してから展開・実行権限を修復(CI と同じ手順)。Unity 側がエクスポート後に変わっていれば警告、`ios/` の Finder 重複コピーも警告 — 手作業の4手順で起きていた duplicate symbol・PhaseScriptExecution failed の対策。S5 の確定値を端末に保存(`RunTargetSettings`・範囲外/NaN は補正)。Unity が `SessionEnded` に `saved` を載せ、履歴への保存に失敗したら結果画面に警告(タスク表 S7)。
+検証: tools/verify.sh 全通過(dotnet test 421/421、Swift 40ファイル構文OK — 追加の Swift テストは CI(macOS)で実行、E2E 282/282)。取得スクリプトは Windows で実際に取得・展開・再実行(入れ済み)・古いタグ(鮮度の警告)・存在しないタグを確認
+
+### 2026-10-13 (8) — 作り物の表示を廃止(履歴・ラン結果・ホームの地図)/ 過去ルート / ランニング設定の入力
+
+チームのタスク表との突き合わせで発覚: 記録が無いと履歴画面が作り物の4件、結果が届かないと結果画面が作り物の数字(前回の結果が残っていればそれ)、ホームの地図が現在地の周りの作った「提案ループ」を出していた → 無ければ「-」/空の案内に。Unity が走った経路を間引いて記録(`RouteRecorder`・約10m間隔・最大240点)し `HistoryData` で送る → ホームの前回ルート・ルート選択の過去ルートカード(目標距離に近い順・選ぶと地図に表示)が実データに。履歴は端末にも保存(Unity 起動前でも出る)。S5: 全角の数字も読む・＋/− は境界で押せない・前回確定した値から始まる。
+検証: tools/verify.sh 全通過(dotnet test 421/421、Swift 38ファイル構文OK — AppLogic のテスト追加分(22件)は CI(macOS)で実行、E2E 279/279)
+
+### 2026-10-13 (7) — 実地テストの記録先 / TestFlight 配布の計画
+
+`Docs/field-tests/`(README・TEMPLATE)を用意 — T1〜T9 はまだ一度も記録が無かった。1セッション1フォルダに CSV・解析結果・記入済みテンプレートを置く。テンプレートにグラスでの見え方とアバター非表示の履歴を追加。`Docs/TESTFLIGHT.md`: 借りた Mac 無しで実機配布するための計画(有料アカウント・Bundle ID・API キーはチーム判断のため未導入)。
+検証: ドキュメントのみ
+
+### 2026-10-13 (6) — Unity エクスポートの自動化 / E2E を PR で / Android ビルドの常設化
+
+`IOSBuildExporter` がビルドで空になった `preloadedAssets` を自分で戻す(手作業の `git checkout -- ProjectSettings` が不要に)。`tools/publish-unity-export.sh` がエクスポート→梱包→Release 公開を1コマンドで(CI・Mac が同じものを使う)。`relink-unity-export.sh` に実行権限。`e2e.yml` を PR でも実行(`UNITY_LICENSE` 未設定の間は失敗でなくスキップ)。`AndroidBuildExporter`(AGP 9 の namespace 回避込み)と `Docs/ANDROID_BUILD.md`、Android のパッケージ名を `com.arvision.pacesetter` に。
+検証: Windows でエクスポートし `ProjectSettings.asset` が無変更(preloadedAssets 0→3件へ自動復元)を確認。Android は `AndroidBuildExporter.BuildTestApk` でビルド成功(約6分・AGP回避フラグ適用)を確認
+
+### 2026-10-13 (5) — アバター非表示の履歴 / iOS の純ロジックを切り出して `swift test`
+
+走行中に消えた理由(紫のバナー)を本人は読めない → 開発者モードに「アバター非表示の履歴」(時刻・秒数・理由・再起動後も保持)。体験モードの進行・ARグラスの状態・屋内テストの読み取りを `ios/.../AppLogic`(Foundation のみ)へ切り出し、`ios/AppLogicTests` で検証(前回の終了の再送・中断直後の開始の競合・猶予中の不要な Stop 等)。`swift-logic-tests.yml`(macOS)と verify.sh(macOS のみ)で実行。
+検証: Swift 32ファイル構文OK。Windows の Swift はリンク・型検査に Visual Studio が要るため、テストの実行は CI で確認する
+
+### 2026-10-13 (4) — グラス出力中はアバターを全身が収まる身長へ(§7-1 決定)
+
+チーム判断: 3.0m前方(F-03)は保ち大きさを譲る。グラス接続時に `GlassViewRig` が `GlassOpticsMath.MaxFullBodyHeightMeters`(−余白3cm)を `AvatarEngine.SetHeightLimitCm` で上限にする — XREAL One で約144cm・地面は2.96m先から見え足元のオーラも視野内。iPhone 画面では175cm のまま。E2E の「175cmは収まらない」を「収まる・足元が見える・切断で戻る」へ置き換え。
+検証: tools/verify.sh 全通過(dotnet test 414/414、Swift 32(構文のみ)、E2E 276/276)
+
+### 2026-10-13 (3) — Android ビルドが通るように: ARKit の using を iOS 限定に
+
+Android のテストAPKで `EnvironmentSceneScanner.cs` の `using UnityEngine.XR.ARKit;` が CS0234 で止まった(ARKit のアセンブリは iOS ビルドにしか無い)。ARKit を使うのは同ファイルの `#if UNITY_IOS && !UNITY_EDITOR` のブロックだけなので、using も同じ条件で囲んだ。iOS の挙動は変わらない。
+参考: テストAPKはこの修正で生成できた(arm64・ARCore必須)。ただし Unity 6000.3 の AGP 9.0 が ARCore 6.4.2 同梱の arcore_client と unityandroidpermissions の namespace 重複をエラーにするため `android.uniquePackageNames=false` が要る(テスト用スクリプト内でのみ適用・コミットしていない)。Android は第1期のスコープ外(§2)。
+検証: tools/verify.sh 全通過(dotnet test 406/406、Swift 25(構文のみ)、E2E 273/273)
+
+### 2026-10-13 (2) — 準備画面の偽の「接続済み」を廃止 / 屋内テスト用のGPSロスト判定スイッチ / iOSビルドCIをPRでも / 体験モードのチェックリスト
+
+準備画面のARグラス行はタップから1.5秒後に実接続が無くても「接続済み」になり、ミラーリングを隠していた → 実際の状態(接続済み/ミラーリング中/手動(未検出))を出す。手動の `ConnectXREAL` は予備手段として残す。
+開発者モードに「屋内テスト」— GPSロスト判定(F-09/F-10)のスイッチ。表示は Unity の `gps.autoLostHandling` から作り画面側で状態を持たない。既定ONのまま。iOSビルドCIを pull_request でも実行(master への push だけでは DevModeView のコンパイルエラーに数週間気づけなかった)。`Docs/KOBE_CALLING_CHECKLIST.md`(リハーサル・予備手段・電源/発熱・当日)。体験モードは 2026-10-13 に実機でチームが確認。
+検証: tools/verify.sh 全通過(dotnet test 406/406、Swift 25(構文のみ)、E2E 273/273 — 旧間欠失敗の「GPS復帰時に後退しない」は 0.00m)
+
+### 2026-10-13 — E2E「GPS復帰時に後退しない」の間欠失敗はテスト側の時間の扱い(エンジンは無変更)
+
+原因: Step 4d が走者の1歩を50msで頭打ちにしていたため、ロスト中にフレームが伸びると走者だけが減速(108msで3.6→1.67m/s)。アバターはF-09どおり直前速度で進んで数m先行し、復帰の同期(§5)で正しく戻ったのを「後退」と判定していた。疑った「リセット直後のJitter Guard予測」は否定(復帰直後に長→短フレームを強制しても0.00m)。
+修正: 走者をゲーム時間で等速に動かし、フレーム時間を `Time.captureDeltaTime` で固定(ロスト前33ms・ロスト中108ms・復帰直後は長→短)= 失敗条件を毎回再現する回帰試験に。修正前は毎回2.40m後退で失敗、修正後0.00m。
+検証: 2026-10-05 に別セッションで修正(当時 tools/verify.sh 全通過・E2E 270/270)。master へ取り込み時に再検証 — 2026-10-13 (2) の検証結果を参照
+
+### 2026-10-09 — 体験モード: 体の向きへの追従を速く / アバターを145cmにして全身をグラスへ
+
+実機「体を傾けてもすぐ反応しない」: 正面追従が不感帯12°・走行と同じ45°/s(90°に約2.5秒)だった → 体験モードだけ 4°・180°/s・位置平滑を速める。加えてグラスの視点(`GlassViewRig`)は走行用の追跡方位のままでアバターだけが回り込んでいた → 体験モードはアバターと同じ向き。合成GPS座標も送らない(揺れただけで追跡方位が「北」へ結び付く)。
+グラスの垂直画角(約25.8°)では3.0m先の足元が27°下で175cmは収まらない → 体験モードのアバターを145cm(`BoothDemoScript.AvatarHeightCm`)。俯角は実際に置いている距離で決める(9m先で頭が切れない)。走行本番の距離・身長は変えない(§7-1)。
+検証: tools/verify.sh 全通過(dotnet test 406/406、Swift 25(構文のみ)、E2E 273/273 — 90°向きを変えて1秒以内に正面1°以内・グラスの視点も1°以内・俯角 14.6°→5.2°(9m先)・全1024フレームで可視)
+
+### 2026-10-07 (2) — Macでのビルド修正(5c68a2b)の検証とドキュメント反映
+
+Mac側の修正: エクスポータが出力先を毎回作り直し、Unityキャッシュの Finder 衝突コピー(`… 2.cpp`)を除去 — duplicate symbol の原因。iOSがアクティブでないと停止(ARKitのネイティブプラグインが入らないため)。エクスポート後処理が `Data` を UnityFramework へ自動で付け替え(`relink-unity-export.sh` は古いエクスポート用に残す)。`DevModeView` は `HomeView` の private な `Color(hex:)` と Combine 未importでコンパイルできていなかった。
+ドキュメント: エクスポートのコマンドへ `-buildTarget iOS` を追加、BUILD_ON_BORROWED_MAC の手順3とよくある失敗(duplicate symbol)を更新。
+検証: tools/verify.sh 全通過(dotnet test 404/404、Swift 25(構文のみ)、E2E 268/268)。Windowsで `-buildTarget iOS` のエクスポートを実行し、成功・ARKitネイティブプラグイン同梱・`Data` が UnityFramework のResourcesにあり Unity-iPhone から外れていることを確認
 ### 2026-10-07 — 体験モードでアバターを消さない / グラスがミラーリングになる件
 
 実機: 体験モードがグラスを検出せず、グラスにはiPhone画面のミラーリング。外部ディスプレイのシーン定義を Info.plist の `UIApplicationSceneManifest` へ静的に記述し自動生成をNOに(AppDelegateの動的構成だけでは iOS 26 で作られなかった)。`ExternalDisplayManager.isMirroring` で「未接続」と区別し体験モード画面に表示。準備画面のARグラス行はタップで偽の「接続済み」になるため気づけなかった。

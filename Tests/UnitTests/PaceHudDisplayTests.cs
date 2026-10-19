@@ -126,4 +126,41 @@ public class PaceHudDisplayTests
         Assert.AreEqual("--'--\"/km", PaceHudDisplay.Format(float.NaN));
         Assert.AreEqual("--'--\"/km", PaceHudDisplay.Format(150f));
     }
+
+    // ── ペースゲージ(グラスの HUD 右上)──────────────────────────────
+    [Test]
+    public void 目標どおりならゲージは中央()
+    {
+        Assert.AreEqual(0f, PaceHudDisplay.GaugePosition(5.0f, 5.0f), 1e-5f);
+    }
+
+    [Test]
+    public void 目標より速いと右_遅いと左()
+    {
+        // 目標 5'00" に対して 4'45"(15秒速い)→ +0.5 / 5'15"(15秒遅い)→ -0.5
+        Assert.AreEqual(0.5f, PaceHudDisplay.GaugePosition(4.75f, 5.0f), 1e-4f);
+        Assert.AreEqual(-0.5f, PaceHudDisplay.GaugePosition(5.25f, 5.0f), 1e-4f);
+    }
+
+    [Test]
+    public void 振れ幅を超えると端で止まる()
+    {
+        Assert.AreEqual(1f, PaceHudDisplay.GaugePosition(3.0f, 5.0f));
+        Assert.AreEqual(-1f, PaceHudDisplay.GaugePosition(9.0f, 5.0f));
+    }
+
+    [TestCase(float.PositiveInfinity)]
+    [TestCase(float.NaN)]
+    [TestCase(0f)]
+    [TestCase(150f)]
+    public void ペースが分からないときは針を出さない(float current)
+    {
+        Assert.IsTrue(float.IsNaN(PaceHudDisplay.GaugePosition(current, 5.0f)));
+    }
+
+    [Test]
+    public void 目標が無いときも針を出さない()
+    {
+        Assert.IsTrue(float.IsNaN(PaceHudDisplay.GaugePosition(5.0f, 0f)));
+    }
 }
