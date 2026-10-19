@@ -17,10 +17,32 @@ struct RunningSettingsView: View {
         self.onNext = onNext
         self.onBack = onBack
         let confirmed = RunSettings.shared
-        _timeSeconds = State(initialValue: confirmed.timeSeconds)
-        _distanceKm = State(initialValue: confirmed.distanceKm)
-        _paceKmh = State(initialValue: confirmed.paceKmH)
+        // 3値は相互依存(タスク表 S5)。保存値のつじつまが合っていなければ、距離とペース(目標)を保って時間を揃える
+        let linked = RunTargetLink.keepingPace(distanceKm: confirmed.distanceKm, paceKmH: confirmed.paceKmH)
+        _timeSeconds = State(initialValue: linked.timeSeconds)
+        _distanceKm = State(initialValue: linked.distanceKm)
+        _paceKmh = State(initialValue: linked.paceKmH)
     }
+
+    /// 今の3値(相互依存の判断に渡す)
+    private var current: RunTargetSettings {
+        RunTargetSettings(paceKmH: paceKmh, distanceKm: distanceKm, timeSeconds: timeSeconds)
+    }
+
+    private func apply(_ linked: RunTargetSettings) {
+        timeSeconds = linked.timeSeconds
+        distanceKm = linked.distanceKm
+        paceKmh = linked.paceKmH
+    }
+
+    // 3値の相互依存(RunTargetLink): 距離は自動では変えない。
+    // 距離・ペースを動かしたら時間を、時間を動かしたらペースを合わせる
+    private func setTime(_ seconds: Int) { apply(RunTargetLink.keepingTime(distanceKm: distanceKm, timeSeconds: seconds)) }
+    private func setDistance(_ km: Double) { apply(RunTargetLink.keepingPace(distanceKm: km, paceKmH: paceKmh)) }
+    private func setPace(_ kmh: Double) { apply(RunTargetLink.keepingPace(distanceKm: distanceKm, paceKmH: kmh)) }
+
+    /// 「次へ」の最終チェックで引っかかった理由(タスク表 S5)。nil なら出さない
+    @State private var targetIssue: RunTargetIssue?
 
     private let timeRange = RunSettingRanges.timeSeconds
     private let distanceRange = RunSettingRanges.distanceKm
@@ -39,7 +61,7 @@ struct RunningSettingsView: View {
     private var paceWheelBinding: Binding<Double> {
         Binding(
             get: { min(16.0, max(4.0, (paceKmh * 2).rounded() / 2)) },
-            set: { paceKmh = $0 }
+            set: { setPace($0) }
         )
     }
 
@@ -102,10 +124,10 @@ struct RunningSettingsView: View {
                         inputText: $timeInput,
                         isEditing: $editingTime,
                         isFocused: focusedField == .time,
-                        canMinus: timeRange.canDecrement(Double(timeSeconds)),
-                        canPlus: timeRange.canIncrement(Double(timeSeconds)),
-                        onMinus: { timeSeconds = Int(timeRange.decremented(Double(timeSeconds))) },
-                        onPlus: { timeSeconds = Int(timeRange.incremented(Double(timeSeconds))) },
+                        canMinus: RunTargetLink.canDecreaseTime(current),
+                        canPlus: RunTargetLink.canIncreaseTime(current),
+                        onMinus: { setTime(Int(timeRange.decremented(Double(timeSeconds)))) },
+                        onPlus: { setTime(Int(timeRange.incremented(Double(timeSeconds)))) },
                         onTapValue: {
                             timeInput = timeDisplay
                             editingTime = true
@@ -128,10 +150,10 @@ struct RunningSettingsView: View {
                         inputText: $distanceInput,
                         isEditing: $editingDistance,
                         isFocused: focusedField == .distance,
-                        canMinus: distanceRange.canDecrement(distanceKm),
-                        canPlus: distanceRange.canIncrement(distanceKm),
-                        onMinus: { distanceKm = distanceRange.decremented(distanceKm) },
-                        onPlus: { distanceKm = distanceRange.incremented(distanceKm) },
+                        canMinus: RunTargetLink.canDecreaseDistance(current),
+                        canPlus: RunTargetLink.canIncreaseDistance(current),
+                        onMinus: { setDistance(distanceRange.decremented(distanceKm)) },
+                        onPlus: { setDistance(distanceRange.incremented(distanceKm)) },
                         onTapValue: {
                             distanceInput = String(format: "%.2f", distanceKm)
                             editingDistance = true
@@ -154,10 +176,10 @@ struct RunningSettingsView: View {
                         inputText: $paceInput,
                         isEditing: $editingPace,
                         isFocused: focusedField == .pace,
-                        canMinus: paceRange.canDecrement(paceKmh),
-                        canPlus: paceRange.canIncrement(paceKmh),
-                        onMinus: { paceKmh = paceRange.decremented(paceKmh) },
-                        onPlus: { paceKmh = paceRange.incremented(paceKmh) },
+                        canMinus: RunTargetLink.canDecreasePace(current),
+                        canPlus: RunTargetLink.canIncreasePace(current),
+                        onMinus: { setPace(paceRange.decremented(paceKmh)) },
+                        onPlus: { setPace(paceRange.incremented(paceKmh)) },
                         onTapValue: {
                             paceInput = String(format: "%.1f", paceKmh)
                             editingPace = true
@@ -205,6 +227,12 @@ struct RunningSettingsView: View {
                     // 打ち込んだ数値が捨てられていた(hsu/main 由来の修正)
                     finishEditing()
 
+                    // 最終チェック(タスク表 S5): 走れない値ではルート選択へ進まず、理由をダイアログで出す
+                    if let issue = RunTargetIssue.check(current) {
+                        targetIssue = issue
+                        return
+                    }
+
                     // 確定後の値を共有ストアへ反映（RunningViewがUnityへ引き渡す・端末にも保存）。
                     // 順序が逆だと確定前の古い値がUnityへ流れる
                     RunSettings.shared.confirm(paceKmH: paceKmh, distanceKm: distanceKm,
@@ -235,6 +263,26 @@ struct RunningSettingsView: View {
         // 既定では何もしない（UnityLauncher.prewarmEnabled = false）。
         // 有効化の判断材料と確認事項は UnityLauncher.prewarmEnabled のコメントに記載
         .onAppear { UnityLauncher.shared.prewarm() }
+        .alert(targetIssueTitle, isPresented: Binding(
+            get: { targetIssue != nil },
+            set: { if !$0 { targetIssue = nil } }
+        )) {
+            Button(AppStrings.Common.close, role: .cancel) {}
+        } message: {
+            Text(targetIssueMessage)
+        }
+    }
+
+    private var targetIssueTitle: LocalizedStringKey {
+        targetIssue == .paceTooFast ? AppStrings.Settings.tooLargeTitle : AppStrings.Settings.tooSmallTitle
+    }
+
+    private var targetIssueMessage: LocalizedStringKey {
+        switch targetIssue {
+        case .paceTooSlow: return AppStrings.Settings.paceTooSlow
+        case .paceTooFast: return AppStrings.Settings.paceTooFast
+        case .inconsistent, nil: return AppStrings.Settings.inconsistent
+        }
     }
 
     private func finishEditing() {
@@ -260,19 +308,19 @@ struct RunningSettingsView: View {
 
     private func applyTimeInput() {
         if let seconds = NumericInput.parseDuration(timeInput) {
-            timeSeconds = Int(timeRange.clamped(Double(seconds)))
+            setTime(Int(timeRange.clamped(Double(seconds))))
         }
     }
 
     private func applyDistanceInput() {
         if let value = NumericInput.parseDecimal(distanceInput) {
-            distanceKm = distanceRange.clamped(value)
+            setDistance(distanceRange.clamped(value))
         }
     }
 
     private func applyPaceInput() {
         if let value = NumericInput.parseDecimal(paceInput) {
-            paceKmh = paceRange.clamped(value)
+            setPace(paceRange.clamped(value))
         }
     }
 }

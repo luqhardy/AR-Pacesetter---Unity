@@ -223,6 +223,25 @@ public class RunSessionController : MonoBehaviour
         Debug.Log($"[SESSION] Run started — sleep disabled (externalUi={_externalUiMode}).");
     }
 
+    /// <summary>
+    /// 履歴への保存をやり直す(タスク表 S7「保存に失敗しました」→ 再試行)。
+    /// 成功すれば中断スナップショット(次回起動時に履歴へ復元するための控え)を消す。
+    /// 失敗しても控えは残るので、次に Unity が起動したときに復元を試みる
+    /// </summary>
+    public bool RetrySave()
+    {
+        if (_lastRecord == null || SuppressPersistence) return false;
+        if (LastSaveSucceeded) return true;
+
+        string savedPath = SessionDataStore.SaveSession(_lastRecord);
+        LastSaveSucceeded = savedPath != null;
+        if (LastSaveSucceeded) SessionDataStore.ClearInterruptedSnapshot();
+        Debug.Log(LastSaveSucceeded
+            ? "[SESSION] 保存の再試行に成功しました。"
+            : "[SESSION] 保存の再試行も失敗しました(控えは次回起動時に復元します)。");
+        return LastSaveSucceeded;
+    }
+
     /// <summary>Swiftブリッジ用の終了API。集計済みレコードを返す。</summary>
     public RunSessionRecord FinishRunExternal()
     {

@@ -363,6 +363,26 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(Mathf.Abs(avatarHeight - 1.75f) < 0.15f,
                 $"scale: avatar renders at real-world height for 175cm (measured {avatarHeight:F2}m)");
 
+        // サイズの異常系(タスク表 ARグラス): 桁外れの身長指定でも豆粒・巨人にしない。
+        // 範囲外は端へ寄せて異常として残し、正常な指定で元へ戻ること
+        if (avatarHeight > 0.01f)
+        {
+            engine.ApplyHeightCm(9999f);
+            Check(Mathf.Approximately(engine.RequestedHeightCm, AvatarScale.MaxRequestedHeightCm)
+                  && Mathf.Abs(engine.MeasuredAvatarHeightMeters * 100f - engine.EffectiveHeightCm) < 5f,
+                $"size: a 9999cm request is clamped to {AvatarScale.MaxRequestedHeightCm:F0}cm " +
+                $"(measured {engine.MeasuredAvatarHeightMeters:F2}m)");
+            Check(!string.IsNullOrEmpty(engine.HeightAnomaly), "size: the out-of-range request is reported");
+
+            engine.ApplyHeightCm(float.NaN);
+            Check(Mathf.Approximately(engine.RequestedHeightCm, AvatarScale.BaselineHeightCm),
+                $"size: a NaN request falls back to {AvatarScale.BaselineHeightCm:F0}cm");
+
+            engine.ApplyHeightCm(175f);
+            Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - 1.75f) < 0.15f && string.IsNullOrEmpty(engine.HeightAnomaly),
+                $"size: a normal request restores 175cm and clears the anomaly ({engine.MeasuredAvatarHeightMeters:F2}m)");
+        }
+
         // ── 差し替えアバター(VRM): 判定と入れ替え経路 ──────────────────────
         // 一番壊れやすいのはVRMのパースではなく「差し替えた後の再配線」なので、
         // UniVRM が無い環境でも、拒否経路と既定アバターの無事を常時縛る
@@ -448,6 +468,37 @@ public class E2EScenarioBehaviour : MonoBehaviour
         if (countdown != null)
             Check(countdown.HasCompleted, "countdown: full 3-2-1-START sequence completed");
         yield return null; // allow telemetry/VFX listeners to observe the transition
+
+        // サイズの異常系: START直後のスケールイン(0.15→1.0倍)の途中でアバターごと非アクティブになる
+        // (GPSロスト・グラス切断のスタンバイ)と、復帰後も途中の大きさのまま走っていた
+        {
+            var vfx = engine.GetComponent<AvatarVFXController>();
+            float fullScale = vfx != null ? vfx.FullScale.y : 1f;
+            if (vfx != null)
+            {
+                // timeScale=3 ではスケールインが数フレームで終わるので、時間を止め気味にして途中を確実に踏む
+                float savedTimeScale = Time.timeScale;
+                Time.timeScale = 0.01f;
+                vfx.RestartSpawnForVerification();
+                yield return null;
+                yield return null;
+                float midSpawn = engine.transform.localScale.y;
+                Check(midSpawn < fullScale * 0.9f, $"size: the spawn scale-in is in progress ({midSpawn:F2})");
+                engine.gameObject.SetActive(false);
+                yield return null;
+                engine.gameObject.SetActive(true);
+                yield return null;
+                Time.timeScale = savedTimeScale;
+                Check(Mathf.Abs(engine.transform.localScale.y - fullScale) < 0.02f,
+                    $"size: a spawn interrupted by standby resumes at full size ({midSpawn:F2} -> {engine.transform.localScale.y:F2})");
+            }
+
+            // 演出の外で倍率がずれたら戻す(原因を問わない見張り)
+            engine.transform.localScale = Vector3.one * 0.4f;
+            yield return null;
+            Check(vfx == null || Mathf.Abs(engine.transform.localScale.y - fullScale) < 0.02f,
+                $"size: a drifted root scale is restored during the run ({engine.transform.localScale.y:F2})");
+        }
 
         var fakeShadow = FindFirstObjectByType<FakeShadowRenderer>(FindObjectsInactive.Include);
         Check(fakeShadow != null && fakeShadow.IsVisible,
@@ -651,6 +702,20 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 if (hud != null)
                     Check(Mathf.Abs(hud.EdgeInsetFraction - 0.90f) < 0.001f,
                         $"glass: HUD pulled into the glass safe area (got {hud.EdgeInsetFraction:F2})");
+
+                // 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」): AirPods の頭の向きを
+                // 進行方向との差にして描画の向きへ足す。最初のサンプルを「まっすぐ前」とみなす
+                deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
+                yield return null;
+                Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
+                    $"head: the first AirPods sample is taken as looking straight ahead ({glassRig.AppliedHeadYawDegrees:F1}°)");
+                deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+                yield return null;
+                Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees - 30f) < 2f,
+                    $"head: turning the head 30° right turns the glass view with it ({glassRig.AppliedHeadYawDegrees:F1}°)");
+                yield return WaitScaled(HeadPoseMath.DefaultHeadYawMaxAgeSeconds + 0.2f);
+                Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
+                    "head: the view falls back to the travel heading when AirPods stop sending");
 
                 // 将来のグラス実姿勢供給。来れば採用し、途切れれば進行方向ヨーへ自動で戻る
                 deviceBridge.OnSwiftCommand(
@@ -916,6 +981,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 "result: SessionEnded tells Swift the run was saved");
             Check(SwiftMessageSender.BuildSessionResultJson(record, false).EndsWith(",\"saved\":false}"),
                 "result: a failed save reaches Swift as saved:false");
+            // 結果画面(S7)の「詳細」に出す疲労度(§4.3)
+            Check(SwiftMessageSender.BuildSessionResultJson(record, true).Contains("\"fatigue\":"),
+                "result: SessionEnded carries the fatigue index for the details sheet");
+            // 保存済みの走行で「再試行」が来ても二重に保存しない(成功扱いで何もしない)
+            int savedFilesBefore = SessionDataStore.LoadAllSessions().Count;
+            Check(session.RetrySave() && SessionDataStore.LoadAllSessions().Count == savedFilesBefore,
+                "result: retrying the save of an already-saved run does not write it twice");
         }
 
         // ── Step 3: ゴースト再走(保存した記録と競走) ──────────────────────
@@ -1495,6 +1567,10 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(hud.CurrentHudVisibility > 0.9f, "hud: restored after gaze settles");
         }
 
+        // ── Step 6b: グラスへ出している走行の終わり(タスク表 ARグラス「ランニング終了」) ──
+        // 挨拶 → 消滅 → 結果カード → グラスの表示 OFF(詳しい結果は iPhone の結果画面で)
+        yield return StartCoroutine(RunGlassFinishTest(bridge, hud));
+
         // ── Step 7: 展示ブースの体験モード (Kobe Calling) ─────────────────────
         yield return StartCoroutine(RunBoothDemoTest(bridge, engine, stateController, hud));
 
@@ -1504,6 +1580,44 @@ public class E2EScenarioBehaviour : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     // 展示ブースの体験モード: 台本の見せ場が本番の経路で起き、何も保存されないこと
     // ════════════════════════════════════════════════════════════════════════
+    private IEnumerator RunGlassFinishTest(ARSessionManagerBridge bridge, PeripheralHUDManager hud)
+    {
+        var card = FindFirstObjectByType<GlassRunSummaryCard>(FindObjectsInactive.Include);
+        var device = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
+        Check(card != null, "glass-finish: GlassRunSummaryCard auto-created by bootstrap");
+        if (card == null || device == null) yield break;
+
+        // 走行中のものがあれば閉じてから、グラスへ出した新しい走行を始めて終える
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":10.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0}");
+        yield return WaitScaled(0.3f);
+        Check(!card.IsCardVisible && !card.IsGlassDisplayOff, "glass-finish: no card while running");
+        device.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+        yield return null;
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return null;
+        Check(!card.IsCardVisible, "glass-finish: the card waits for the avatar's farewell");
+
+        yield return WaitScaled(GlassRunSummaryCard.FarewellSeconds + 0.6f);
+        Check(card.IsCardVisible,
+              $"glass-finish: a summary card appears after the farewell ({card.LastRankText} / {card.LastBodyText.Replace('\n', ' ')})");
+        Check(card.LastBodyText.Contains("%") && card.LastBodyText.Contains("km") && card.LastRankText.Length > 0,
+              "glass-finish: the card shows the rank, sync, distance and time");
+
+        yield return WaitScaled(GlassRunSummaryCard.CardSeconds + 0.5f);
+        Check(!card.IsCardVisible && card.IsGlassDisplayOff && (hud == null || !hud.IsHudVisible),
+              "glass-finish: the card and the HUD turn off afterwards (details on the iPhone)");
+
+        device.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
+        yield return null;
+        // 切断はスタンバイへ遷移させるため、後続シナリオのために通常へ戻す
+        var fsm = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
+        if (fsm != null) fsm.TransitionToState(GameStateController.ARVisionState.Normal);
+        yield return null;
+    }
+
     private IEnumerator RunBoothDemoTest(ARSessionManagerBridge bridge, AvatarEngine engine,
                                          GameStateController fsm, PeripheralHUDManager hud)
     {
@@ -1595,6 +1709,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(visuals == null || visuals.PaceColorState == "Behind",
               $"booth: falling behind turns the avatar red ({(visuals != null ? visuals.PaceColorState : "-")})");
         Check(aura == null || aura.IsAuraActive, "booth: falling behind raises the aura (§7.2)");
+        {
+            // タスク表 ARグラス「ペース遅延時: アバターが離れ、色が変わって手招き」
+            var lagGestures = FindFirstObjectByType<ProceduralGestureDriver>(FindObjectsInactive.Include);
+            Check(lagGestures == null || aura == null || !aura.IsAuraActive || lagGestures.ActiveGesture == "Beckon",
+                  $"booth: falling behind makes the avatar beckon ({(lagGestures != null ? lagGestures.ActiveGesture : "-")})");
+        }
         Check(engine.GetTargetSpeed() < engine.GetBaseTargetSpeed() * 0.9f,
               "booth: the elastic band slows the avatar while the runner is behind");
         Check(!engine.IsWaitingForUser, "booth: falling behind stays short of the 10m wait-for-user");

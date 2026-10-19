@@ -71,7 +71,17 @@ struct HomeView: View {
     private let cardColor = Color(hex: "#1C1C1E")
     private let secondaryText = Color.white.opacity(0.5)
 
-    private var lastRun: LastRunSummary { LastRunSummary.from(history: bridge.history) }
+    @ObservedObject private var session = ARSessionManager.shared
+
+    /// 前回の走行が記録の途中で終わった(クラッシュ・電池切れ)か。そのときの履歴の先頭は
+    /// 1つ前の走行なので出さない(タスク表 S3 異常系「不完全なデータとして『-』と表示」)
+    private var lastRunInterrupted: Bool {
+        RunInterruption.wasInterrupted(in: .standard, sessionActive: session.isSessionActive)
+    }
+
+    private var lastRun: LastRunSummary {
+        lastRunInterrupted ? .empty : LastRunSummary.from(history: bridge.history)
+    }
 
     var body: some View {
         ScrollView {
@@ -180,6 +190,16 @@ struct HomeView: View {
 
                 statsRow
                     .padding(16)
+
+                if lastRunInterrupted {
+                    Text(AppStrings.Home.interrupted)
+                        .font(.system(size: 12))
+                        .foregroundStyle(secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 14)
+                }
             }
         }
         .buttonStyle(.plain)

@@ -178,6 +178,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | `ARSessionManager` | `StartSession` | `targetPaceKmH`, `distanceKm`, `avatarHeightCm`, `forwardOffsetM`, `mode`(任意: "ghost"), `ghostDateIso`(任意) | ペース換算(60/kmh→分/km)・先行距離・身長スケール適用 → 走行をarmed状態にする。`3-2-1-START`完了後に時計・距離・同期・CSV・アバター走行を開始。`mode:"ghost"`なら過去セッションの速度プロファイルでアバターを駆動(ゴースト競走)。UnityのセットアップUIは非表示 |
 | `ARSessionManager` | `UpdateMetrics` | `paceKmH`, `heartRate`, `distanceKm`, `gpsLatitude`, `gpsLongitude`, `gpsAccuracy`, `locationSampleFresh`, `speedSampleValid` | 心拍→発光/HUD/バイタル警告、距離→1km/5kmスプリット判定。測位は`RunnerTrackingState`のGPS+ARKit方位融合、`GpsSignalMonitor`のロスト判定、F-11 CSVへ供給。`locationSampleFresh=true`はCoreLocationの**新しく、かつ精度ゲート(20m以下)を通ったfixだけ**、`speedSampleValid=true`は同じ採用fixで`CLLocation.speed >= 0`のときだけ設定する。精度不良の生fixは`gpsAccuracy`としてロスト判定には届くが、距離/速度の鮮度は更新しない。これによりキャッシュ再送や不良fixを実測扱いせず、有効な速度0(静止)と未計測を区別する。`distanceKm`は実測のみで、設定ペースを実測値として送らない |
 | `ARSessionManager` | `EndSession` | — | 走行終了・セッション保存 → `SessionEnded` イベント返信 |
+| `ARSessionManager` | `RetrySaveSession` | — | 結果画面(S7)の「保存に失敗しました」→ 再試行。直前の走行の履歴保存をやり直し、`SessionSaveRetried` で返す。成功すれば中断スナップショットを消す(失敗しても控えは残り、次に Unity が起動したときに復元)。保存済みなら何もせず成功を返す(二重に保存しない)。走行後の Unity は止めてあるので、Swift は応答まで(最大5秒)だけ動かす |
 | `ARSessionManager` | `RequestHistory` | — | 保存済みセッション(新しい順・最大20件)を `HistoryData` で返信 |
 | `ARSessionManager` | `ResumeSession` | — | §8.3: グラス再接続後、**準備画面からの再スタート操作**でスタンバイ中の表示のみ復帰(新規セッションは開始せず記録は継続) |
 | `ARSessionManager` | `SetGpsLostHandling` | `enabled` (bool) | F-09/F-10の自動判定を実行時に切替。**既定はON**(基本設計書どおり)。屋内デモで「掴んだ後に消えないでほしい」場面用の明示的スイッチで、定数を書き換える運用(戻し忘れる)を無くすために用意した。iPhoneでは**開発者モードの「屋内テスト」スイッチ**から送る(表示は Unity の `Diagnostics` の `gps.autoLostHandling` から作り、画面側では状態を持たない)。なお**良好な初回測位まではロスト判定しない**のはUnity側の既定動作なので、屋内で走り出す前に消えることはこの設定に関わらず起きない |
@@ -189,6 +190,7 @@ F-11のCSVは**実機のアプリコンテナ内**に出力されるため、実
 | `ARSessionManager` | `StopBoothDemo` | — | 体験モードを中断する(スタッフ操作)。GPSロスト演出の途中でも、アバターは見える状態に戻る |
 | `DeviceManager` | `ConnectXREAL` | `model`(任意), `pixelWidth`(任意), `pixelHeight`(任意), `refreshHz`(任意) | ReadyチェックのARグラスをConnectedへ。併せて**グラスの画角で描く出力リグ**(`GlassViewRig`)を起動する — iPhoneカメラの内部パラメータのまま出すと3.0m前方のアバターが実寸の角度で見えないため。画角はグラスから取得できないので解像度・リフレッシュレートから機種を推定し、1920×1080(One/One Pro/Air2で共通)は **XREAL One** を既定とする。`model`があればそれが優先。詳細は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) |
 | `DeviceManager` | `DisconnectXREAL` | — | §8.3: スタンバイ移行でアバターを消去。**走行セッションは終了させない**ためF-11のCSVログはBG継続。再接続だけではアバターを復帰させない(安全のため`ResumeSession`が必要) |
+| `DeviceManager` | `UpdateHeadYaw` | `yaw` | AirPods(Pro・第3世代以降・Max)の頭のヨー(度・**基準は任意**・右が正)。Unity が進行方向ヨーとの差を首振りとしてグラスの描画の向きへ足す(`HeadYawBaseline`: 差の長周期平均 = 時定数30秒を「まっすぐ前」とし、AirPods の基準のずれ・ドリフトを消す)。最初のサンプルをまっすぐ前とみなす。±90°で打ち切り、0.5秒途切れれば進行方向だけに戻る。Anchor モードでは足さない(二重補正)。**準備画面(S4)の AirPods 行で「接続」を押したときだけ**約30Hzで送る(既定では使わない)。タスク表 ARグラス「首を振り向けた時に想定する場所を走る」 |
 | `DeviceManager` | `UpdateGlassPose` | `yaw`, `pitch`, `roll`, `timestamp` | グラス実機の頭部姿勢(度)。**現状iOSに供給元は無い**(XREAL SDKはAndroid専用・USB-HIDはiOSから触れない)ため将来用の受け口。0.25秒途切れれば自動で §4.1 の移動平均済み進行方向へ戻る。グラスの画面モードが Anchor のときはグラス自身が頭回転を打ち消すためUnity側は採用しない(二重補正の回避) |
 
 `StartSession`は前セッションが終了済みの場合、全コンポーネント(エンジン・集計・HUD・
@@ -200,7 +202,7 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 
 | event | フィールド | 送信タイミング |
 |---|---|---|
-| `UnityReady` | — | 起動後、受信ブリッジ(`ARSessionManager`/`DeviceManager`)が揃った時点で1回。**Swiftはこれを受けるまでコマンドを溜め、受信後に順に送る**(Unity起動前の `StartSession`・`ConnectXREAL` が消えないように)。`UpdateMetrics`/`UpdateGlassPose` は溜めずに捨て、グラスの接続/切断は最新1件のみ。届かない古いエクスポートでも起動3秒後に送り出す |
+| `UnityReady` | — | 起動後、受信ブリッジ(`ARSessionManager`/`DeviceManager`)が揃った時点で1回。**Swiftはこれを受けるまでコマンドを溜め、受信後に順に送る**(Unity起動前の `StartSession`・`ConnectXREAL` が消えないように)。`UpdateMetrics`/`UpdateGlassPose`/`UpdateHeadYaw` は溜めずに捨て、グラスの接続/切断は最新1件のみ。届かない古いエクスポートでも起動3秒後に送り出す |
 | `SyncRateUpdated` | `value` (int 0-100) | 走行中 1Hz |
 | `AvatarStateChanged` | `state` = Idle/Run/Slow/Fast/Goal/Lost | 状態変化時 |
 | `GPSLost` / `GPSRecovered` | — | GPS FSM遷移時(慣性移動・フェード・GPS起因のスタンバイ)。グラス切断のスタンバイでは送らない |
@@ -209,7 +211,8 @@ CoreLocationはカウント中にも測位を安定させるが、その間の�
 | `Diagnostics` | `rows`: `{key, value}` の配列(表示順を保つ) | 開発者モードの要求時のみ |
 | `LogFiles` | `directory`, `files`: `{name, path, bytes, modifiedIso}` の配列 | 開発者モードの要求時のみ |
 | `LatencyReport` | `ms` (double), `maxMs`・`overBudgetRatio`・`sampleCount`(実測サンプルがある時のみ) | 走行中 1Hz。**F-11のCSV `latency_m2p` と同じ `SensorTimingBridge` の実測値**(ARKitフレームのセンサー時刻と `CADisplayLink.targetTimestamp` の差)。`ms = -1` は未計測で、合成値は一切入らない。`maxMs`/`overBudgetRatio` は1Hzの瞬時値では拾えない超過を捉えるための区間統計 |
-| `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories`, `saved` | EndSession応答(目標距離の自動終了を含む)。`saved=false` は履歴への保存に失敗(容量不足等)— 結果画面が知らせる。省略時(古いエクスポート)は true 扱い。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
+| `SessionEnded` | `grade`, `rank`, `averageSync`, `distanceKm`, `elapsedSeconds`, `calories`, `fatigue`, `saved` | EndSession応答(目標距離の自動終了を含む)。`saved=false` は履歴への保存に失敗(容量不足等)— 結果画面がダイアログ(再試行 / あとで)で知らせる。省略時(古いエクスポート)は true 扱い。`fatigue` は §4.3 の疲労度(累積指数・結果画面の「詳細」に出す。2026-10-19 追加 — 無ければ「-」)。**1走行につき1回** — 送信済みの後のEndSessionは無視する(SwiftがHealthKitへ二重保存しないため) |
+| `SessionSaveRetried` | `saved` | `RetrySaveSession` の応答。`saved=true` なら結果画面の「保存に失敗しました」が消える |
 | `HistoryData` | `sessions`: [{`dateIso`, `distanceKm`, `elapsedSeconds`, `averageSync`, `grade`, `route`}] | RequestHistory応答。`route` は走った経路 `[[緯度,経度],...]`(古い順・約10m間隔に間引き・最大240点、2026-10-13 より前の記録は空)。Swift は最後に受け取った履歴を端末(Caches)にも保存し、Unity 起動前のホーム・履歴画面で使う |
 | `BoothDemoProgress` | `mode`, `beat`(OnPace/FallingBehind/CatchingUp/Overtaking/Settling/FinalStretch。歩行は Walking), `elapsedSeconds`, `totalSeconds` | 体験モードの区間が変わるたび(スタッフ画面の進行表示用) |
 | `BoothDemoEnded` | `mode`, `completed`(最後まで進んだか), `reason`(中断・開始失敗の理由) | 体験モードの終了時。**`SessionEnded` の代わりに送る** — Swiftはこれを受けてもHealthKitへ保存しない。受け側はスタッフ画面 `BoothDemoView` |

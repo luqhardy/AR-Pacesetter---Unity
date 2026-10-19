@@ -84,6 +84,52 @@ public static class HeadPoseMath
     public static bool IsDoubleCompensationRisk(GlassScreenMode screenMode, HeadOrientationSource source)
         => screenMode == GlassScreenMode.Anchor && source == HeadOrientationSource.ExternalGlassPose;
 
+    // ── 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」2026-10-19) ──
+    // グラスは Follow(固定) なので、首を振ると画面ごと顔に付いて回り、アバターも視線の先へ付いてくる。
+    // グラスの姿勢は iOS から取れないが、AirPods(Pro・第3世代以降・Max)の頭の向きは取れる。
+    // Swift が AirPods の頭のヨー(基準は任意・右が正)を送り、進行方向ヨーとの差から首振りを作って
+    // 描画の向きへ足す — 右を向けばアバターは画面の左へ流れ、進行方向の3m先に留まって見える。
+
+    /// <summary>頭の向きの供給を「新しい」とみなす上限(秒)。Swift は約30Hzで送る</summary>
+    public const float DefaultHeadYawMaxAgeSeconds = 0.5f;
+
+    /// <summary>首振りとして足す最大角(度)。それ以上は振り返り・センサーの外れ値として打ち切る</summary>
+    public const float MaxHeadYawOffsetDegrees = 90f;
+
+    /// <summary>
+    /// 「まっすぐ前を向いている」基準を追う時定数(秒)。AirPods の向きは基準が任意で、時間とともにずれる
+    /// (ドリフト)。数秒の首振りはほぼそのまま残り、横を向いたままの差は数十秒かけて0へ戻る
+    /// </summary>
+    public const float DefaultHeadYawBaselineSeconds = 30f;
+
+    /// <summary>
+    /// 首振りを足すか。Anchor ではグラスが自前で頭回転を打ち消すので足すと二重補正になる。
+    /// </summary>
+    public static bool ShouldApplyHeadYaw(GlassScreenMode screenMode, bool headYawFresh)
+        => headYawFresh && screenMode != GlassScreenMode.Anchor;
+
+    /// <summary>
+    /// 進行方向ヨーに首振り(右向きが正・度)を足した描画カメラのヨー(度)。
+    /// 足さない場合・数でない値は進行方向ヨーのまま。首振りは ±<see cref="MaxHeadYawOffsetDegrees"/> に収める。
+    /// </summary>
+    public static float ResolveViewYawDegrees(float travelYawDegrees, float headYawOffsetDegrees, bool applyOffset)
+    {
+        if (!applyOffset || float.IsNaN(headYawOffsetDegrees) || float.IsInfinity(headYawOffsetDegrees))
+            return travelYawDegrees;
+        float clamped = Math.Max(-MaxHeadYawOffsetDegrees, Math.Min(MaxHeadYawOffsetDegrees, headYawOffsetDegrees));
+        return travelYawDegrees + clamped;
+    }
+
+    /// <summary>角度差を -180〜180° へ折り返す</summary>
+    public static float WrapDegrees(float degrees)
+    {
+        if (float.IsNaN(degrees) || float.IsInfinity(degrees)) return 0f;
+        float d = degrees % 360f;
+        if (d > 180f) d -= 360f;
+        if (d <= -180f) d += 360f;
+        return d;
+    }
+
     /// <summary>外部姿勢が新鮮か(供給が途切れたら自動で進行方向ヨーへ落ちる)。</summary>
     public static bool IsExternalPoseFresh(float nowSeconds, float sampleSeconds, float maxAgeSeconds)
     {
@@ -111,5 +157,50 @@ public static class HeadPoseMath
         double centering = GlassOpticsMath.CenteringDownPitchDegrees(eyeHeightMeters, avatarHeightMeters, distanceMeters);
         if (double.IsNaN(centering)) return 0.0;
         return Math.Max(0.0, Math.Min(centering, maxDownPitchDegrees));
+    }
+}
+
+/// <summary>
+/// AirPods の頭のヨー(基準は任意)と進行方向ヨーから首振り(度・右が正)を作る。
+/// 差の長周期の平均を「まっすぐ前」の基準として追い続けるので、AirPods と進行方向の基準のずれや
+/// ドリフトは消え、数秒の首振りだけが残る。カーブでは頭も進行方向も一緒に回るので差は変わらない。
+/// 依存ゼロ(Tests/UnitTests でテストする)。
+/// </summary>
+public struct HeadYawBaseline
+{
+    private float _baselineDegrees;
+    private bool _initialized;
+
+    /// <summary>基準が決まっているか(最初のサンプルで「まっすぐ前」とみなす)</summary>
+    public bool IsInitialized => _initialized;
+
+    /// <summary>
+    /// 1フレーム進めて首振り(度・右が正)を返す。最初のサンプルは0(開始時はまっすぐ前を向いている前提)。
+    /// </summary>
+    public float Update(float headYawDegrees, float travelYawDegrees, float deltaSeconds,
+                        float baselineSeconds = HeadPoseMath.DefaultHeadYawBaselineSeconds)
+    {
+        float diff = HeadPoseMath.WrapDegrees(headYawDegrees - travelYawDegrees);
+        if (!_initialized)
+        {
+            _baselineDegrees = diff;
+            _initialized = true;
+            return 0f;
+        }
+
+        if (deltaSeconds > 0f && baselineSeconds > 0f)
+        {
+            float alpha = 1f - (float)Math.Exp(-deltaSeconds / baselineSeconds);
+            _baselineDegrees = HeadPoseMath.WrapDegrees(
+                _baselineDegrees + alpha * HeadPoseMath.WrapDegrees(diff - _baselineDegrees));
+        }
+        return HeadPoseMath.WrapDegrees(diff - _baselineDegrees);
+    }
+
+    /// <summary>供給が途切れたら基準を捨てる(AirPods を付け直すと向きの基準が変わる)</summary>
+    public void Reset()
+    {
+        _initialized = false;
+        _baselineDegrees = 0f;
     }
 }

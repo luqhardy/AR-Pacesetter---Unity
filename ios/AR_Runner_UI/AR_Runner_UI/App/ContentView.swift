@@ -14,6 +14,9 @@ struct ContentView: View {
     /// 履歴画面の戻り先。ホームから来たか結果画面から来たかで変わる
     @State private var historyOrigin: AppScreen = .home
 
+    /// 走行中にグラスが切れて準備画面へ戻ったか(§8.3)。準備画面がつなぎ直しを案内する
+    @State private var glassLostDuringRun = false
+
     init() {
         // @AppStorage の値を待って onAppear で切り替えると、2回目以降の起動でも
         // オンボーディングが一瞬見えてしまう。初期値の時点で行き先を決める
@@ -79,8 +82,15 @@ struct ContentView: View {
             // 2. Connect AR glasses + Apple Watch + AirPods
             case .deviceConnect:
                 DeviceConnectView(
-                    onNext: { screen = .runningSettings },
-                    onBack: { screen = .home }
+                    onNext: {
+                        glassLostDuringRun = false
+                        screen = .runningSettings
+                    },
+                    onBack: {
+                        glassLostDuringRun = false
+                        screen = .home
+                    },
+                    returnedFromRun: glassLostDuringRun
                 )
 
             // 3. Set time, distance, pace
@@ -105,7 +115,10 @@ struct ContentView: View {
                     onEnd: { screen = .stats },
                     // §8.3: グラス切断は準備画面へ戻す(走行記録・CSVログは継続し、
                     // 再接続後の再スタート操作でアバターが復帰する)
-                    onGlassDisconnected: { screen = .deviceConnect }
+                    onGlassDisconnected: {
+                        glassLostDuringRun = true
+                        screen = .deviceConnect
+                    }
                 )
 
             // 6. Stats — 「終了」でホームへ戻る(課題 #9)

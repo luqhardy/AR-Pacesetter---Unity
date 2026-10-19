@@ -237,6 +237,10 @@ stateDiagram-v2
 - **アバターの身長は `AvatarEngine.ApplyHeightCm` / `SetHeightLimitCm` だけで変える**(モデルの `localScale` を直接書かない)。
   適用されるのは要求身長と上限の小さい方(`EffectiveHeightCm`)— グラス出力中の上限が §7-1 の決定を実現している
 - **展示デモではアバターを一度も消さない**(GPSロスト判定OFF)。向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView`)— §4.1 Gaze Lock の**唯一の例外**で、走行には持ち込まない
+- **AirPods の頭の向き(`HeadphoneHeadTracker` → `UpdateHeadYaw`)は準備画面(S4)で「接続」を押したときだけ使う**(既定OFF・走行の終了で止める)。
+  グラスは Follow(固定)なので、首振りは Unity が進行方向ヨーへ足して打ち消す(`HeadYawBaseline`)。Anchor モードでは足さない
+- 準備画面(S4)では **ARグラスが必須**(未接続・ミラーリングでは「次へ」を押せない — `DeviceGate`)。
+  iPhone 画面だけで試すときは開発者モード「ARグラスなしで走行を始める」を使い、走者に渡す前に OFF へ戻す
 - `tools/prepare-free-signing.sh` の実行結果(Bundle ID・署名設定の一時改変)はコミットしない。CIが検知して落とす
 
 ### ペース単位の規約

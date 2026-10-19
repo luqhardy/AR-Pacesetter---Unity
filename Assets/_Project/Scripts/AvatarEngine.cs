@@ -878,13 +878,33 @@ public class AvatarEngine : MonoBehaviour
         ReapplyHeight();
     }
 
+    /// <summary>
+    /// 直近の身長適用で起きた異常(日本語・開発者モードの診断に出す)。異常が無ければ空。
+    /// タスク表 ARグラス「サイズの異常系」: 範囲外の要求・素の高さが測れない・倍率の上下限に当たった
+    /// </summary>
+    public string HeightAnomaly { get; private set; } = "";
+
+    /// <summary>直近の要求身長を補正したときの説明(次の要求まで残す)</summary>
+    private string _requestedHeightNote = "";
+
     public bool ApplyHeightCm(float heightCm)
     {
-        if (heightCm > 0f) RequestedHeightCm = heightCm;
+        // 0 以下は「指定なし」(前回の要求のまま)。それ以外は等身大の範囲へ寄せる —
+        // 1cm や 9999cm、NaN をそのまま通すと豆粒や巨人になり、走者からは消えたように見える
+        if (heightCm > 0f || float.IsNaN(heightCm) || float.IsInfinity(heightCm))
+        {
+            RequestedHeightCm = AvatarScale.SanitizeRequestedHeightCm(heightCm, out bool corrected);
+            _requestedHeightNote = corrected
+                ? $"要求身長 {heightCm}cm は範囲外のため {RequestedHeightCm:F0}cm に補正"
+                : "";
+            if (corrected) Debug.LogWarning($"[AVATAR SCALE] {_requestedHeightNote}");
+        }
+        HeightAnomaly = _requestedHeightNote;
 
         Transform model = ResolveModelRoot();
         if (model == null)
         {
+            HeightAnomaly = "モデルを解決できず身長を適用できない";
             Debug.LogWarning("[AVATAR SCALE] モデルのTransformを解決できず身長を適用できません。");
             return false;
         }
@@ -893,6 +913,8 @@ public class AvatarEngine : MonoBehaviour
         float unitHeight = MeasureUnitHeight(model);
         if (!AvatarScale.TryComputeScale(unitHeight, 1f, EffectiveHeightCm, out float scale))
         {
+            // 測れないときは倍率を変えない(前回の適用値のまま)。素のモデルの大きさは保証が無いので知らせる
+            HeightAnomaly = $"素の身長を計測できず適用を見送り(unitHeight={unitHeight:F3}m)";
             Debug.LogWarning($"[AVATAR SCALE] 素の身長を計測できず適用を見送りました " +
                              $"(unitHeight={unitHeight:F3}m)");
             return false;
@@ -900,6 +922,13 @@ public class AvatarEngine : MonoBehaviour
 
         float before = unitHeight * model.localScale.y;
         model.localScale = Vector3.one * scale;
+
+        if (!AvatarScale.IsAppliedHeightAcceptable(unitHeight, scale, EffectiveHeightCm))
+        {
+            // 倍率の上下限に当たった = モデルの素の大きさが桁外れ(単位の取り違え等)。表示は上下限のまま
+            HeightAnomaly = $"素の身長 {unitHeight:G3}m が桁外れのため {EffectiveHeightCm:F0}cm にできない(scale {scale:G3})";
+            Debug.LogWarning($"[AVATAR SCALE] {HeightAnomaly}");
+        }
 
         Debug.Log($"[AVATAR SCALE] 身長 {EffectiveHeightCm:F0}cm へ調整" +
                   (EffectiveHeightCm < RequestedHeightCm ? $"(要求 {RequestedHeightCm:F0}cm・グラスの画角に合わせた上限)" : "") + ": " +

@@ -32,6 +32,18 @@ public class AvatarVFXController : MonoBehaviour
     private Vector3 _fullScale = Vector3.one;
     private Vector3 _lastKnownFullScale = Vector3.one;
     private Coroutine _activeSequence;
+    /// <summary>実行中の演出が起動のスケールインか(中断されたときに戻す大きさが変わる)</summary>
+    private bool _spawnSequenceActive;
+
+    /// <summary>等身大のときのルートの倍率(起動のスケールインの到達値)。E2E検証用</summary>
+    public Vector3 FullScale => _fullScale;
+
+    /// <summary>E2E検証用: 起動のスケールインをやり直す(途中で止まる経路を確かめるため)</summary>
+    public void RestartSpawnForVerification()
+    {
+        if (_activeSequence != null) StopCoroutine(_activeSequence);
+        _activeSequence = StartCoroutine(PlaySpawnSequence());
+    }
 
     // 接地パルス用リングプール
     private const int RingPoolSize = 4;
@@ -84,6 +96,29 @@ public class AvatarVFXController : MonoBehaviour
 
         _prevStarted = started;
         _prevEnded = ended;
+
+        // サイズの異常系(タスク表 ARグラス): 演出の外で走行中にルートの倍率がずれていたら戻す。
+        // スケールインの途中で止まった・外から書き換えられた等、原因を問わず等身大へ復帰させる
+        if (started && !ended && _activeSequence == null
+            && AvatarScale.IsRootScaleDeviated(transform.localScale.y, _fullScale.y))
+        {
+            Debug.LogWarning($"[AVATAR VFX] 走行中にアバターの倍率が {transform.localScale.y:F3} にずれていたため " +
+                             $"{_fullScale.y:F3} へ戻しました。");
+            transform.localScale = _fullScale;
+        }
+    }
+
+    /// <summary>
+    /// スタンバイ(GPSロスト・グラス切断)でアバターごと非アクティブになるとコルーチンが止まる。
+    /// スケールインの途中(0.15倍〜)で止まると、復帰後もその大きさのまま走っていた — 等身大へ戻しておく。
+    /// 消滅の途中で止まったら消滅しきった扱い(0)にする — 途中の大きさを次の走行が「等身大」と取り違えないように
+    /// </summary>
+    void OnDisable()
+    {
+        if (_activeSequence != null)
+            transform.localScale = _spawnSequenceActive ? _fullScale : Vector3.zero;
+        _activeSequence = null;
+        _spawnSequenceActive = false;
     }
 
     /// <summary>
@@ -106,6 +141,7 @@ public class AvatarVFXController : MonoBehaviour
             ? transform.localScale
             : _lastKnownFullScale;
         _lastKnownFullScale = _fullScale;
+        _spawnSequenceActive = true;
 
         _convergePs.transform.position = transform.position + Vector3.up * 0.9f;
         _convergePs.Play();
@@ -122,12 +158,14 @@ public class AvatarVFXController : MonoBehaviour
 
         transform.localScale = _fullScale;
         _activeSequence = null;
+        _spawnSequenceActive = false;
     }
 
     // ── 終了: 挨拶 → 粒子拡散 + 消滅 ────────────────────────────────────────
 
     private IEnumerator PlayFarewellSequence()
     {
+        _spawnSequenceActive = false;
         _fullScale = transform.localScale;
         if (_fullScale.sqrMagnitude > 0.0001f)
             _lastKnownFullScale = _fullScale;

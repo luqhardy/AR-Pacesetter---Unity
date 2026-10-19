@@ -86,6 +86,9 @@ public static class DevDiagnostics
             Add(rows, "glass.profile", glass.ActiveProfile != null ? glass.ActiveProfile.ToString() : "");
             Add(rows, "glass.orientation", glass.OrientationSource.ToString());
             Add(rows, "glass.downPitchDeg", Num(glass.AppliedDownPitchDegrees));
+            Add(rows, "glass.headYawDeg", glass.HasFreshHeadYaw
+                ? Num(glass.AppliedHeadYawDegrees)
+                : "供給なし(AirPods の頭の向きが届いていない)");
             Add(rows, "glass.viewportAspect", Num(glass.ViewportAspect));
             Add(rows, "glass.fillsScreen", glass.IsGlassOutputActive
                 ? (glass.ViewportMatchesGlass ? "一致(画面を埋めている)" : "不一致(帯が出る)")
@@ -137,6 +140,13 @@ public static class DevDiagnostics
                 Add(rows, "avatar.footPlanting", planting.UsesMeshSolePoints
                     ? $"メッシュ {planting.SolePointCount}点 / 持ち上げ {Num(planting.CurrentLiftMeters)}m"
                     : "骨からの概算(メッシュを読めない — FBXのRead/Writeを確認)");
+
+            // 身長(要求・上限・実際)とサイズの異常。実機で「大きい/小さい」と言われたときの確認用
+            Add(rows, "avatar.height",
+                $"要求 {Num(engine.RequestedHeightCm)}cm / 上限 {(engine.HeightLimitCm > 0f ? Num(engine.HeightLimitCm) + "cm" : "なし")}" +
+                $" / 表示 {Num(engine.MeasuredAvatarHeightMeters * 100f)}cm");
+            if (!string.IsNullOrEmpty(engine.HeightAnomaly))
+                Add(rows, "avatar.heightAnomaly", engine.HeightAnomaly);
         }
         Add(rows, "app.persistentDataPath", Application.persistentDataPath);
 

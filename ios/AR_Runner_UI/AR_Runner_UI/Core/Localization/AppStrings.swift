@@ -53,6 +53,7 @@ enum AppStrings {
         static let glassesConnected: LocalizedStringKey = "home.glasses.connected"
         static let glassesNotConnected: LocalizedStringKey = "home.glasses.notConnected"
         static let getStarted: LocalizedStringKey = "home.getStarted"
+        static let interrupted: LocalizedStringKey = "home.interrupted"
     }
 
     /// 位置情報の案内
@@ -111,6 +112,25 @@ enum AppStrings {
         static let mirroring: LocalizedStringKey = "devices.mirroring"
         static let manual: LocalizedStringKey = "devices.manual"
         static let connectManually: LocalizedStringKey = "devices.connectManually"
+        static let connect: LocalizedStringKey = "devices.connect"
+        static let reconnect: LocalizedStringKey = "devices.reconnect"
+        // ARグラスの異常系(タスク表 S4)
+        static let errorNotDetectedTitle: LocalizedStringKey = "devices.error.notDetected.title"
+        static let errorNotDetectedBody: LocalizedStringKey = "devices.error.notDetected.body"
+        static let errorIncompleteTitle: LocalizedStringKey = "devices.error.incomplete.title"
+        static let errorIncompleteBody: LocalizedStringKey = "devices.error.incomplete.body"
+        static let errorDroppedTitle: LocalizedStringKey = "devices.error.dropped.title"
+        static let errorDroppedBody: LocalizedStringKey = "devices.error.dropped.body"
+        static let errorLostDuringRunTitle: LocalizedStringKey = "devices.error.lostDuringRun.title"
+        static let errorLostDuringRunBody: LocalizedStringKey = "devices.error.lostDuringRun.body"
+        static let devBypass: LocalizedStringKey = "devices.devBypass"
+        // AirPods(頭の向き・任意)
+        static let airpodsSubtitle: LocalizedStringKey = "devices.airpods.subtitle"
+        static let airpodsSearching: LocalizedStringKey = "devices.airpods.searching"
+        static let airpodsActive: LocalizedStringKey = "devices.airpods.active"
+        static let airpodsNotFound: LocalizedStringKey = "devices.airpods.notFound"
+        static let airpodsUnsupported: LocalizedStringKey = "devices.airpods.unsupported"
+        static let airpodsDenied: LocalizedStringKey = "devices.airpods.denied"
     }
 
     /// ランニング設定(S5)
@@ -122,6 +142,12 @@ enum AppStrings {
         static let pace: LocalizedStringKey = "settings.pace"
         static let wheel: LocalizedStringKey = "settings.wheel"
         static let wheelLabel: LocalizedStringKey = "settings.wheelLabel"
+        // ルート選択へ進む前の最終チェック(タスク表 S5)
+        static let tooSmallTitle: LocalizedStringKey = "settings.invalid.tooSmall"
+        static let tooLargeTitle: LocalizedStringKey = "settings.invalid.tooLarge"
+        static let paceTooSlow: LocalizedStringKey = "settings.invalid.paceTooSlow"
+        static let paceTooFast: LocalizedStringKey = "settings.invalid.paceTooFast"
+        static let inconsistent: LocalizedStringKey = "settings.invalid.inconsistent"
     }
 
     /// ルート選択(S8)
@@ -132,6 +158,14 @@ enum AppStrings {
         static let pastRoutes: LocalizedStringKey = "route.pastRoutes"
         static let noRoutedRecords: LocalizedStringKey = "route.noRoutedRecords"
         static let start: LocalizedStringKey = "route.start"
+        static let details: LocalizedStringKey = "route.details"
+        static let detailsTitle: LocalizedStringKey = "route.details.title"
+        static let distance: LocalizedStringKey = "route.distance"
+        static let estimatedTime: LocalizedStringKey = "route.estimatedTime"
+        static let pace: LocalizedStringKey = "route.pace"
+        static var generatedTitle: String { resolve("route.generated.title") }
+        static let generatedNote: LocalizedStringKey = "route.generated.note"
+        static let generatedNoLocation: LocalizedStringKey = "route.generated.noLocation"
     }
 
     /// 走行中(S6)・ロック画面
@@ -151,6 +185,11 @@ enum AppStrings {
         static let gpsLost: LocalizedStringKey = "running.gpsLost"
         static func avatarHidden(_ reason: String) -> LocalizedStringKey { "running.avatarHidden \(reason)" }
         static let lockTitle: LocalizedStringKey = "running.lock.title"
+        // 計測は止めずに知らせる警告(タスク表 S6 異常系)
+        static func lowBatteryWarning(_ percent: String) -> LocalizedStringKey { "running.warning.lowBattery \(percent)" }
+        static let lowPowerModeWarning: LocalizedStringKey = "running.warning.lowPowerMode"
+        static let headTrackingLost: LocalizedStringKey = "running.warning.headTrackingLost"
+        static let gpsLostOnLock: LocalizedStringKey = "running.lock.gpsLost"
     }
 
     /// ラン結果(S7)
@@ -169,6 +208,15 @@ enum AppStrings {
         static let averagePace: LocalizedStringKey = "history.averagePace"
         static let calories: LocalizedStringKey = "history.calories"
         static let viewHistory: LocalizedStringKey = "history.viewHistory"
+        static let title: LocalizedStringKey = "results.title"
+        static let achievement: LocalizedStringKey = "results.achievement"
+        static let details: LocalizedStringKey = "results.details"
+        static let detailsTitle: LocalizedStringKey = "results.details.title"
+        static let fatigue: LocalizedStringKey = "results.fatigue"
+        static let fatigueNote: LocalizedStringKey = "results.fatigueNote"
+        static let grade: LocalizedStringKey = "results.grade"
+        static let retry: LocalizedStringKey = "results.retry"
+        static let saveLater: LocalizedStringKey = "results.saveLater"
     }
 
     /// ランニング履歴(S10)

@@ -528,6 +528,108 @@
         }
       }
     },
+    "devices.airpods.active" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Using your head direction"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頭の向きを使っています"
+          }
+        }
+      }
+    },
+    "devices.airpods.denied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Motion access is off. Allow it in Settings. You can run without it"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モーションの許可がありません。設定アプリで許可してください。なくても走れます"
+          }
+        }
+      }
+    },
+    "devices.airpods.notFound" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not found. Check that Bluetooth is on, Airplane Mode is off, and you're wearing AirPods (Pro, 3rd gen or later, or Max). You can run without them"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "見つかりません。Bluetoothがオン・機内モードがオフで、AirPods(Pro・第3世代以降・Max)を耳に着けているか確認してください。なくても走れます"
+          }
+        }
+      }
+    },
+    "devices.airpods.searching" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Looking for AirPods…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPodsを探しています…"
+          }
+        }
+      }
+    },
+    "devices.airpods.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional — keeps the avatar ahead when you turn your head"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任意 — 首を振ってもアバターを進行方向に保ちます"
+          }
+        }
+      }
+    },
+    "devices.airpods.unsupported" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This iPhone can't read your head direction. You can run without it"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このiPhoneでは頭の向きを読み取れません。なくても走れます"
+          }
+        }
+      }
+    },
     "devices.arGlasses" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -541,6 +643,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ARグラス"
+          }
+        }
+      }
+    },
+    "devices.connect" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続"
           }
         }
       }
@@ -575,6 +694,159 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "接続済み"
+          }
+        }
+      }
+    },
+    "devices.devBypass" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A developer setting lets you continue without AR glasses"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開発者モードの設定により、ARグラスなしで進めます"
+          }
+        }
+      }
+    },
+    "devices.error.dropped.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Make sure the cable is firmly plugged in, then plug it in again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ケーブルがしっかり挿さっているか確認して、挿し直してください"
+          }
+        }
+      }
+    },
+    "devices.error.dropped.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The AR glasses disconnected"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ARグラスとの接続が切れました"
+          }
+        }
+      }
+    },
+    "devices.error.incomplete.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "They're mirroring the iPhone screen. Unplug the cable, plug it in again, then tap Reconnect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhoneの画面がそのまま映っています(ミラーリング)。ケーブルを抜いて挿し直し、「再接続」を押してください"
+          }
+        }
+      }
+    },
+    "devices.error.incomplete.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The glasses aren't showing the running view"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グラスに走行用の画面を出せていません"
+          }
+        }
+      }
+    },
+    "devices.error.lostDuringRun.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your run is still being recorded. Reconnect the glasses, then tap Next to resume"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記録は続いています。グラスをつなぎ直してから「次へ」で再開してください"
+          }
+        }
+      }
+    },
+    "devices.error.lostDuringRun.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The AR glasses disconnected during your run"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "走行中にARグラスとの接続が切れました"
+          }
+        }
+      }
+    },
+    "devices.error.notDetected.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect them to your iPhone with a USB-C cable. AR glasses are required to run"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "USB-CケーブルでiPhoneとつないでください。走行にはARグラスが必要です"
+          }
+        }
+      }
+    },
+    "devices.error.notDetected.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AR glasses not connected"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ARグラスが接続されていません"
           }
         }
       }
@@ -694,6 +966,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "第1期のスコープ外"
+          }
+        }
+      }
+    },
+    "devices.reconnect" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再接続"
           }
         }
       }
@@ -1136,6 +1425,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "履歴"
+          }
+        }
+      }
+    },
+    "home.interrupted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your last run ended before it was saved. What was recorded will be restored to your history when you start your next run"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の走行は記録の途中で終了しました。途中までの記録は、次に走り始めたときに履歴へ復元します"
           }
         }
       }
@@ -1803,6 +2109,108 @@
         }
       }
     },
+    "results.achievement" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goal achievement"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目標達成率"
+          }
+        }
+      }
+    },
+    "results.details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細"
+          }
+        }
+      }
+    },
+    "results.details.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run details"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "走行の詳細"
+          }
+        }
+      }
+    },
+    "results.fatigue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fatigue"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "疲労度"
+          }
+        }
+      }
+    },
+    "results.fatigueNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fatigue is an index built up from the time you spent off your target pace and the temperature. Higher means a heavier load on your body"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "疲労度は、目標ペースから外れていた時間と気温から積み上げた指数です。大きいほど体への負荷が高かったことを示します"
+          }
+        }
+      }
+    },
+    "results.grade" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grade"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "評価"
+          }
+        }
+      }
+    },
     "results.gradeBadge %@ %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1833,6 +2241,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "結果なし"
+          }
+        }
+      }
+    },
+    "results.retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再試行"
           }
         }
       }
@@ -1871,6 +2296,40 @@
         }
       }
     },
+    "results.saveLater" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あとで"
+          }
+        }
+      }
+    },
+    "results.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run results"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ランニング結果"
+          }
+        }
+      }
+    },
     "results.unavailable" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1905,6 +2364,74 @@
         }
       }
     },
+    "route.details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View details"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細を見る"
+          }
+        }
+      }
+    },
+    "route.details.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Route details"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ルートの詳細"
+          }
+        }
+      }
+    },
+    "route.distance" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Distance"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "距離"
+          }
+        }
+      }
+    },
+    "route.estimatedTime" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimated time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推定時間"
+          }
+        }
+      }
+    },
     "route.eyebrow" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1922,6 +2449,57 @@
         }
       }
     },
+    "route.generated.noLocation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No past routes yet and your location isn't available, so there's no line on the map. You'll run to the target distance"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去のルートがまだ無く、現在地も取れていないため、地図に線は引けません。目標距離だけで走ります"
+          }
+        }
+      }
+    },
+    "route.generated.note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No past routes yet, so this is an out-and-back route heading north from where you are"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去のルートがまだ無いため、現在地から北へ進んで戻る往復ルートを作りました"
+          }
+        }
+      }
+    },
+    "route.generated.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested (out and back)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "おまかせ(往復)"
+          }
+        }
+      }
+    },
     "route.noRoutedRecords" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1935,6 +2513,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "経路つきの記録はまだありません(次の走行から記録されます)"
+          }
+        }
+      }
+    },
+    "route.pace" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pace"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ペース"
           }
         }
       }
@@ -2126,6 +2721,23 @@
         }
       }
     },
+    "running.lock.gpsLost" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searching for GPS — your run continues"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GPS信号を探しています — 走行は続いています"
+          }
+        }
+      }
+    },
     "running.lock.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2258,6 +2870,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "シンクロ率"
+          }
+        }
+      }
+    },
+    "running.warning.headTrackingLost" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPods head tracking lost — head-turn correction is paused"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPodsの頭の向きが届いていません — 首振りの補正を止めています"
+          }
+        }
+      }
+    },
+    "running.warning.lowBattery %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Battery is low (%@) — still recording"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電池残量が少なくなっています(%@)— 計測は続けています"
+          }
+        }
+      }
+    },
+    "running.warning.lowPowerMode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low Power Mode is on — still recording"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低電力モードがオンです — 計測は続けています"
           }
         }
       }
@@ -2530,6 +3193,91 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SETTINGS"
+          }
+        }
+      }
+    },
+    "settings.invalid.inconsistent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The time, distance and pace don't match. Please enter them again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間・距離・ペースの組み合わせが合っていません。もう一度入力してください"
+          }
+        }
+      }
+    },
+    "settings.invalid.paceTooFast" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The pace is too fast. Make it slower than 2:24 per km (25 km/h)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ペースが速すぎます。1kmあたり2分24秒(25km/h)より遅くしてください"
+          }
+        }
+      }
+    },
+    "settings.invalid.paceTooSlow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The pace is too slow. Make it faster than 20 minutes per km (3 km/h)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ペースが遅すぎます。1kmあたり20分(3km/h)より速くしてください"
+          }
+        }
+      }
+    },
+    "settings.invalid.tooLarge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The setting is too high"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定値が大きすぎます"
+          }
+        }
+      }
+    },
+    "settings.invalid.tooSmall" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The setting is too low"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定値が小さすぎます"
           }
         }
       }

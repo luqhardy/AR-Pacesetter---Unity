@@ -9,6 +9,7 @@ using UnityEngine;
 ///   StartSession  { targetPaceKmH, distanceKm, avatarHeightCm, forwardOffsetM }
 ///   UpdateMetrics { paceKmH, heartRate, distanceKm }
 ///   EndSession    {}
+///   RetrySaveSession {} — 履歴への保存をやり直す(結果は SessionSaveRetried {saved})
 ///
 /// また、走行中は 1Hz で SyncRate / AvatarState / GPS / Latency をSwiftへ送信する。
 /// </summary>
@@ -162,6 +163,10 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "StartSession": HandleStartSession(cmd); break;
             case "UpdateMetrics": HandleUpdateMetrics(cmd); break;
             case "EndSession": HandleEndSession(); break;
+            case "RetrySaveSession":
+                // 結果画面(S7)の「保存に失敗しました」→ 再試行
+                SwiftMessageSender.SendSessionSaveRetried(sessionController != null && sessionController.RetrySave());
+                break;
             case "RequestHistory": HandleRequestHistory(); break;
             case "ResumeSession": HandleResumeSession(); break;
             case "SetGpsLostHandling": HandleSetGpsLostHandling(cmd); break;

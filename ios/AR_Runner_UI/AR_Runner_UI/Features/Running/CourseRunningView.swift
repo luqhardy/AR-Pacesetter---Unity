@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit
 
 // MARK: - 4. Running Screen
 struct RunningView: View {
@@ -12,6 +13,7 @@ struct RunningView: View {
     @ObservedObject private var unity = UnityLauncher.shared
     @ObservedObject private var heartMonitor = HeartRateMonitor.shared
     @ObservedObject private var external = ExternalDisplayManager.shared
+    @ObservedObject private var headTracker = HeadphoneHeadTracker.shared
 
     /// HealthKit(Watch)実測のみ。未取得は0=不明として "--" を表示する(H2)
     @State private var bpm = 0
@@ -22,6 +24,9 @@ struct RunningView: View {
     /// 別画面へ遷移すると UnityContainerView がヒエラルキーから外れ、ARビューの
     /// 貼り直しが起きる。走行はそのまま続けたいので、上から覆うだけにする
     @State private var isLocked = false
+
+    /// 電池の警告(タスク表 S6: 低電力モード・残量低下でも計測は止めず、知らせるだけ)
+    @State private var powerWarning: RunPowerWarning?
 
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -44,6 +49,18 @@ struct RunningView: View {
     /// 走行中は腕・ポケットの端末を読めないので、統計を並べるより
     /// 大きく押せる終了操作を置くほうが役に立つ。
     private var isControlSurface: Bool { external.isGlassesConnected && hasUnityView }
+
+    /// AirPods の頭の向きを使っていたのに届かなくなった(外した・接続が切れた)。走行は続ける
+    private var headTrackingLost: Bool { headTracker.isRequested && headTracker.status == .notFound }
+
+    /// 計測は止めずに知らせる警告(電池・AirPods)。ロック画面にも同じものを出す
+    private var runWarning: LocalizedStringKey? {
+        switch powerWarning {
+        case .lowBattery(let percent): return AppStrings.Running.lowBatteryWarning("\(percent)%")
+        case .lowPowerMode: return AppStrings.Running.lowPowerModeWarning
+        case nil: return headTrackingLost ? AppStrings.Running.headTrackingLost : nil
+        }
+    }
 
     var body: some View {
         ARScreen {
@@ -317,12 +334,36 @@ struct RunningView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
+                // 計測は止めずに知らせる警告(電池・AirPods の頭の向き。タスク表 S6 異常系)
+                if let warning = runWarning {
+                    VStack {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: powerWarning != nil ? "battery.25percent" : "airpodspro")
+                                .font(.system(size: 13))
+                            Text(warning)
+                                .font(.system(size: 12, weight: .semibold))
+                                .multilineTextAlignment(.leading)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(Color.orange.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal, 24)
+                        .padding(.top, 252)
+                        Spacer()
+                    }
+                    .transition(.opacity)
+                }
+
                 // 画面ロック — 最前面。走行・Unityの描画は裏で続いており、
                 // 上へスワイプすると元の走行画面へそのまま戻る
                 if isLocked {
                     // 終了はロックを解除してから(タスク表 S6: 誤操作でランが終わらないように)。
                     // ロック画面にあった停止ボタン(hsu/main 由来)は 2026-10-14 に外した
-                    LockScreenView(onUnlock: { isLocked = false })
+                    // GPS の途絶・電池などの警告はロック中も小さく出す(走行は続いていることを伝える)
+                    LockScreenView(onUnlock: { isLocked = false },
+                                   gpsLost: bridge.gpsStatus == .lost,
+                                   warning: runWarning)
                         .transition(.opacity)
                 }
             }
@@ -330,6 +371,11 @@ struct RunningView: View {
             .animation(.easeInOut(duration: 0.25), value: bridge.gpsStatus == .lost)
             .ignoresSafeArea()
             .onAppear {
+                // 走行中は自動スリープを無効にする(タスク表 S6)。Unity も走行中は無効にするが、
+                // この画面を離れたら必ず戻す — 有効のまま他の画面・他アプリへ持ち越さない
+                UIApplication.shared.isIdleTimerDisabled = true
+                powerWarning = RunPowerWarning.resolve(PowerMonitor.shared.sample())
+
                 // Unityランタイム起動 → 走行セッション開始（設定値をUnityへ引き渡す）
                 //
                 // prepare() を使う理由: Unityの初期化は同期でメインスレッドを塞ぐため、
@@ -360,10 +406,13 @@ struct RunningView: View {
             .onDisappear {
                 // ゴースト指定は1走行限り
                 RunSettings.shared.ghostDateIso = nil
+                // 自動スリープの無効化はこの画面の間だけ(タスク表 S6「画面破棄時に解除」)
+                UIApplication.shared.isIdleTimerDisabled = false
             }
             .onReceive(timer) { _ in
                 // 心拍はHealthKit実測のみ。Watch未装着なら "--" のまま
                 bpm = heartMonitor.latestBpm
+                powerWarning = RunPowerWarning.resolve(PowerMonitor.shared.sample())
             }
             .onChange(of: bridge.avatarState) { _, newState in
                 // Unity側の自動ゴール（目標距離到達）→ ローカル停止 → 統計画面へ
@@ -371,18 +420,35 @@ struct RunningView: View {
                 session.endLocally()
                 withAnimation(.easeIn(duration: 0.3)) { showGoalOverlay = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    UnityLauncher.shared.pause()
+                    pauseUnityAfterRun()
                     onEnd()
                 }
             }
             .alert(AppStrings.Common.endRunTitle, isPresented: $showEndAlert) {
                 Button(AppStrings.Common.end, role: .destructive) {
                     session.end()               // Unityへ EndSession → SessionEnded が返る
-                    UnityLauncher.shared.pause()
+                    pauseUnityAfterRun()
                     onEnd()
                 }
                 Button(AppStrings.Common.continueRun, role: .cancel) {}
             }
+        }
+    }
+
+    /// グラスへ出していた走行は、Unity がグラスで「挨拶 → 粒子で消滅 → 結果カード → 表示 OFF」を
+    /// 終えるまで止めない(タスク表 ARグラス「ランニング終了」。Unity GlassRunSummaryCard.TotalSeconds = 6.75秒
+    /// に少し余裕を足す)。iPhone 画面の走行はすぐ止める(結果画面が覆う)
+    private static let glassFarewellSeconds: TimeInterval = 7.5
+
+    private func pauseUnityAfterRun() {
+        guard external.isGlassesConnected else {
+            UnityLauncher.shared.pause()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.glassFarewellSeconds) {
+            // その間に次の走行が始まっていたら止めない
+            guard !ARSessionManager.shared.isSessionActive else { return }
+            UnityLauncher.shared.pause()
         }
     }
 

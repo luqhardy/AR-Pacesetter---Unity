@@ -90,4 +90,73 @@ public class AvatarScaleTests
         Assert.IsFalse(AvatarScale.TryComputeScale(1.75f, 1f, 0f, out _));
         Assert.IsFalse(AvatarScale.TryComputeScale(1.75f, 1f, -175f, out _));
     }
+    // ── サイズの異常系(タスク表 ARグラス「サイズの異常系」) ─────────────────
+
+    [Test]
+    public void 範囲内の要求身長はそのまま使う()
+    {
+        Assert.AreEqual(160f, AvatarScale.SanitizeRequestedHeightCm(160f, out bool corrected));
+        Assert.IsFalse(corrected);
+    }
+
+    [Test]
+    public void 範囲外の要求身長は端へ寄せる()
+    {
+        Assert.AreEqual(AvatarScale.MinRequestedHeightCm, AvatarScale.SanitizeRequestedHeightCm(1f, out bool low));
+        Assert.IsTrue(low);
+        Assert.AreEqual(AvatarScale.MaxRequestedHeightCm, AvatarScale.SanitizeRequestedHeightCm(9999f, out bool high));
+        Assert.IsTrue(high);
+    }
+
+    [Test]
+    public void 数でない要求身長は既定の175cm()
+    {
+        Assert.AreEqual(AvatarScale.BaselineHeightCm, AvatarScale.SanitizeRequestedHeightCm(float.NaN, out bool nan));
+        Assert.IsTrue(nan);
+        Assert.AreEqual(AvatarScale.BaselineHeightCm, AvatarScale.SanitizeRequestedHeightCm(float.PositiveInfinity, out _));
+        Assert.AreEqual(AvatarScale.BaselineHeightCm, AvatarScale.SanitizeRequestedHeightCm(-170f, out _));
+    }
+
+    [Test]
+    public void グラスの身長上限は全身が収まる高さから余白を引く()
+    {
+        Assert.AreEqual(144f, AvatarScale.ResolveHeightLimitCm(1.47, 0.03), 0.01f);
+    }
+
+    [Test]
+    public void グラスの身長上限は人形の大きさまで下げない()
+    {
+        // 前方1mなど、全身を収めると数十cmになる構成
+        Assert.AreEqual(AvatarScale.MinHeightLimitCm, AvatarScale.ResolveHeightLimitCm(0.45, 0.03));
+    }
+
+    [Test]
+    public void 足元が入らない構成は上限なし()
+    {
+        Assert.AreEqual(0f, AvatarScale.ResolveHeightLimitCm(0.0, 0.03));
+        Assert.AreEqual(0f, AvatarScale.ResolveHeightLimitCm(double.NaN, 0.03));
+    }
+
+    [Test]
+    public void 倍率の上下限に当たったら目標の身長にならない()
+    {
+        // 素の高さ 1.75m なら 1.0 倍で 175cm
+        Assert.IsTrue(AvatarScale.IsAppliedHeightAcceptable(1.75f, 1f, 175f));
+        // 素の高さ 10km(単位の取り違え)は MinScale 0.001 まで縮めても 10m 残る
+        Assert.IsTrue(AvatarScale.TryComputeScale(10000f, 1f, 175f, out float s));
+        Assert.AreEqual(AvatarScale.MinScale, s);
+        Assert.IsFalse(AvatarScale.IsAppliedHeightAcceptable(10000f, s, 175f));
+    }
+
+    [Test]
+    public void 演出の外で倍率がずれていたら異常()
+    {
+        Assert.IsFalse(AvatarScale.IsRootScaleDeviated(1f, 1f));
+        Assert.IsFalse(AvatarScale.IsRootScaleDeviated(1.005f, 1f));
+        // スケールインの途中(0.15〜1.0)で止まった大きさ
+        Assert.IsTrue(AvatarScale.IsRootScaleDeviated(0.4f, 1f));
+        Assert.IsTrue(AvatarScale.IsRootScaleDeviated(float.NaN, 1f));
+        // 基準が不明なら判定しない
+        Assert.IsFalse(AvatarScale.IsRootScaleDeviated(0.4f, 0f));
+    }
 }

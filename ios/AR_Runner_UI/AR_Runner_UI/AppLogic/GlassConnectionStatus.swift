@@ -25,6 +25,46 @@ nonisolated enum GlassRowStatus: Equatable {
     var canConnectManually: Bool { self == .notDetected || self == .mirroring }
 }
 
+// MARK: - 準備画面(S4)の「次へ」とエラー表示
+
+/// ARグラスの接続で起きていること(タスク表 S4 異常系)。問題が無ければ nil
+nonisolated enum GlassConnectionProblem: Equatable {
+    /// 挿さっていない
+    case notDetected
+    /// 挿さっているが、iOS がアプリ専用の画面を作らずミラーリングしている(不完全な接続)
+    case incomplete
+    /// この画面でつながった直後に切れた
+    case droppedAfterConnect
+    /// 走行中に切れて準備画面へ戻ってきた(§8.3。記録は続いている)
+    case lostDuringRun
+
+    /// 実接続・手動の接続なら問題なし。それ以外は、走行中に切れた > この画面で切れた > ミラーリング > 未検出 の順に出す
+    static func resolve(status: GlassRowStatus, droppedHere: Bool, returnedFromRun: Bool) -> GlassConnectionProblem? {
+        switch status {
+        case .connected, .manual:
+            return nil
+        case .mirroring, .notDetected:
+            if returnedFromRun { return .lostDuringRun }
+            if droppedHere { return .droppedAfterConnect }
+            return status == .mirroring ? .incomplete : .notDetected
+        }
+    }
+}
+
+/// 準備画面の「次へ」を押せるか。**ARグラスは必須**(タスク表 S4)— 未接続・ミラーリングでは進めない。
+/// Apple Watch・AirPods は任意なので、失敗していても進める(ここでは見ない)
+nonisolated enum DeviceGate {
+    /// 開発者モード「ARグラスなしで走行を始める」(既定 OFF)。屋内・iPhone 画面だけで動作を確かめるとき用
+    static let allowRunWithoutGlassesKey = "devAllowRunWithoutGlasses"
+
+    static func canProceed(glass: GlassRowStatus, allowRunWithoutGlasses: Bool) -> Bool {
+        switch glass {
+        case .connected, .manual: return true
+        case .mirroring, .notDetected: return allowRunWithoutGlasses
+        }
+    }
+}
+
 // MARK: - 開発者モード「屋内テスト」
 
 /// Unity の Diagnostics の `gps.autoLostHandling` の値("ON(仕様どおり)" / "OFF(手動で無効化中)")を読む。

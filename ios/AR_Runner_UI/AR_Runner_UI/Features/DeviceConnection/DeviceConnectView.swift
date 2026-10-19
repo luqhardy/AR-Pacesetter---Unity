@@ -1,15 +1,26 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Device Connect Screen (All devices on one screen)
 struct DeviceConnectView: View {
     let onNext: () -> Void
     let onBack: () -> Void
+    /// 走行中にグラスが切れて戻ってきたか(§8.3)。記録は続いているので、つなぎ直して再開するよう案内する
+    var returnedFromRun: Bool = false
 
     /// 手動の「接続」を押したか。実接続の検出とは別物として扱う
     @State private var manualConnect = false
+    /// この画面でつながった後に切れたか(つながった直後の切断。タスク表 S4 AR異常系)
+    @State private var droppedHere = false
 
     // 実グラス接続(USB-C外部ディスプレイ)を検知したら表示に反映
     @ObservedObject private var external = ExternalDisplayManager.shared
+    /// AirPods の頭の向き(任意。首を振ってもアバターを進行方向に保つ)
+    @ObservedObject private var headTracker = HeadphoneHeadTracker.shared
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
+    /// 開発者モード「ARグラスなしで走行を始める」(既定 OFF)
+    @AppStorage(DeviceGate.allowRunWithoutGlassesKey) private var allowRunWithoutGlasses = false
 
     /// ARグラス行の表示。**実際の状態だけを出す**。
     /// 以前はタップから1.5秒後に、何も挿さっていなくても「接続済み」になった。そのため
@@ -20,15 +31,25 @@ struct DeviceConnectView: View {
                  manualConnect: manualConnect)
     }
 
-    /// 走行に必要なのはARグラスだけ。Watch/AirPodsは第1期のスコープ外(基本設計書 §1.2)
+    /// 走行に必要なのはARグラスだけ。Watch/AirPodsは任意(基本設計書 §1.2 では第1期のスコープ外)
     var allConnected: Bool { glassStatus == .connected }
+
+    /// ARグラスで起きている問題(エラー表示)。問題が無ければ nil
+    private var glassProblem: GlassConnectionProblem? {
+        .resolve(status: glassStatus, droppedHere: droppedHere, returnedFromRun: returnedFromRun)
+    }
+
+    /// 「次へ」を押せるか。ARグラスは必須(タスク表 S4)— 未接続・ミラーリング中は進めない
+    private var canProceed: Bool {
+        DeviceGate.canProceed(glass: glassStatus, allowRunWithoutGlasses: allowRunWithoutGlasses)
+    }
 
     var body: some View {
         ARScreen {
             VStack(spacing: 0) {
                 // Nav bar
                 HStack {
-                    ARBackButton(action: onBack)
+                    ARBackButton(action: goBack)
                     Spacer()
                 }
                 .padding(.horizontal, 20)
@@ -65,7 +86,7 @@ struct DeviceConnectView: View {
                             UnityBridge.shared.connect()
                         }
                     )
-                    // Watch / AirPods は第1期のスコープ外(基本設計書 §1.2 —
+                    // Apple Watch は第1期のスコープ外(基本設計書 §1.2 —
                     // 通信ボトルネックを排除しM2P 20msを死守するため、iPhone+グラスの
                     // 2デバイスに特化する)。以前はタップから1秒後に「接続済み」と
                     // 表示するだけの**見せかけ**だったので、実態どおりの表示に改めた
@@ -74,46 +95,93 @@ struct DeviceConnectView: View {
                         name: "Apple Watch",
                         note: AppStrings.Devices.outOfScope
                     )
-                    DeviceUnavailableRow(
-                        icon: "airpodspro",
-                        name: "AirPods",
-                        note: AppStrings.Devices.outOfScope
+                    // AirPods は任意。頭の向きだけを使う(首を振ってもアバターを進行方向の3m先に保つ —
+                    // タスク表 ARグラス「首を振り向けた時に想定する場所を走る」)。失敗しても先へ進める
+                    HeadTrackingRow(
+                        status: headTracker.status,
+                        onConnect: { headTracker.start() },
+                        onRetry: { headTracker.retry() },
+                        onOpenSettings: openAppSettings
                     )
                 }
                 .padding(.horizontal, 24)
 
                 Spacer()
 
-                // Status hint
-                Text(statusHint)
-                    .font(.system(size: 13))
-                    .foregroundColor(glassStatus.color)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, 16)
+                // ARグラスのエラー(タスク表 S4 異常系)。問題が無ければ従来どおりの1行の案内
+                if let problem = glassProblem {
+                    GlassProblemCard(
+                        problem: problem,
+                        canReconnect: problem != .notDetected,
+                        onReconnect: reconnectGlasses
+                    )
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
+                    if allowRunWithoutGlasses {
+                        Text(AppStrings.Devices.devBypass)
+                            .font(.system(size: 12))
+                            .foregroundColor(.orange)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                            .padding(.bottom, 12)
+                    }
+                } else {
+                    Text(statusHint)
+                        .font(.system(size: 13))
+                        .foregroundColor(glassStatus.color)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                        .padding(.bottom, 16)
+                }
 
-                // Next button — always available (user can skip devices)
+                // 次へ — ARグラスがつながるまで押せない(タスク表 S4: ARグラスは必須)
                 Button(action: onNext) {
                     ZStack {
                         Circle()
-                            .fill(Color.arYellow)
+                            .fill(canProceed ? Color.arYellow : Color.arBorder)
                             .frame(width: 64, height: 64)
-                            .shadow(color: Color.arYellow.opacity(allConnected ? 0.55 : 0.25), radius: 20)
+                            .shadow(color: Color.arYellow.opacity(allConnected ? 0.55 : (canProceed ? 0.25 : 0)), radius: 20)
                         Image(systemName: "arrow.right")
                             .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(.black)
+                            .foregroundColor(canProceed ? .black : .arGrayText)
                     }
                 }
+                .disabled(!canProceed)
                 .padding(.bottom, 52)
             }
             .onAppear {
                 external.refreshMirroring()
             }
-            .onChange(of: external.isGlassesConnected) { _, _ in
+            .onChange(of: external.isGlassesConnected) { wasConnected, isConnected in
                 // 実グラスを挿したら手動扱いは不要。抜いたら手動扱いも解く(実態に合わせる)
                 manualConnect = false
+                // つながった直後に切れた(電池切れ・ケーブルの接触)。つながり直せば消える
+                droppedHere = wasConnected && !isConnected
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // 電話・他アプリから戻ったら、その間に変わった接続状態を取り直す(タスク表 S4)
+                guard phase == .active else { return }
+                external.refreshMirroring()
+                headTracker.refreshAfterForeground()
             }
         }
+    }
+
+    /// 「戻る」。AirPods を探している途中でも止めてから離れる(タスク表 S4「接続処理中の戻る」)
+    private func goBack() {
+        headTracker.stop()
+        onBack()
+    }
+
+    /// 「再接続」: ミラーリング・切断の状態を取り直す。グラスを挿し直した後に押してもらう
+    private func reconnectGlasses() {
+        droppedHere = false
+        external.refreshMirroring()
+    }
+
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 
     private var statusHint: LocalizedStringKey {
@@ -283,5 +351,160 @@ struct DeviceUnavailableRow: View {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(Color.arBorder.opacity(0.6), lineWidth: 1)
         )
+    }
+}
+
+// MARK: - ARグラスのエラー表示(タスク表 S4 異常系)
+
+private struct GlassProblemCard: View {
+    let problem: GlassConnectionProblem
+    let canReconnect: Bool
+    let onReconnect: () -> Void
+
+    private var title: LocalizedStringKey {
+        switch problem {
+        case .notDetected: return AppStrings.Devices.errorNotDetectedTitle
+        case .incomplete: return AppStrings.Devices.errorIncompleteTitle
+        case .droppedAfterConnect: return AppStrings.Devices.errorDroppedTitle
+        case .lostDuringRun: return AppStrings.Devices.errorLostDuringRunTitle
+        }
+    }
+
+    private var message: LocalizedStringKey {
+        switch problem {
+        case .notDetected: return AppStrings.Devices.errorNotDetectedBody
+        case .incomplete: return AppStrings.Devices.errorIncompleteBody
+        case .droppedAfterConnect: return AppStrings.Devices.errorDroppedBody
+        case .lostDuringRun: return AppStrings.Devices.errorLostDuringRunBody
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 15))
+                .foregroundColor(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundColor(.arGrayText)
+                    .fixedSize(horizontal: false, vertical: true)
+                if canReconnect {
+                    SettingsActionButton(title: AppStrings.Devices.reconnect, action: onReconnect)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color.orange.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.orange.opacity(0.45), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - AirPods(頭の向き)行
+
+/// 任意の機器。押すと AirPods の頭の向きを使い始める。見つからない・対応していない・許可が無いときは
+/// 理由を出すが、走行は止めない(タスク表 S4「Apple Watch・AirPods の失敗は、エラー表示はするが進める」)
+private struct HeadTrackingRow: View {
+    let status: HeadTrackingStatus
+    let onConnect: () -> Void
+    let onRetry: () -> Void
+    let onOpenSettings: () -> Void
+
+    private var tint: Color {
+        switch status {
+        case .active: return .arYellow
+        case .searching: return .white
+        case .notFound, .unsupported, .denied: return .orange
+        case .off: return .arGrayText
+        }
+    }
+
+    private var detail: LocalizedStringKey {
+        switch status {
+        case .off: return AppStrings.Devices.airpodsSubtitle
+        case .searching: return AppStrings.Devices.airpodsSearching
+        case .active: return AppStrings.Devices.airpodsActive
+        case .notFound: return AppStrings.Devices.airpodsNotFound
+        case .unsupported: return AppStrings.Devices.airpodsUnsupported
+        case .denied: return AppStrings.Devices.airpodsDenied
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.arBG)
+                    .frame(width: 56, height: 56)
+                    .overlay(Circle().stroke(status == .off ? Color.arBorder : tint.opacity(0.6), lineWidth: 1))
+                Image(systemName: "airpodspro")
+                    .font(.system(size: 24))
+                    .foregroundColor(status == .off ? .arGrayText : tint)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: "AirPods")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundColor(status == .off ? .arGrayText : tint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            switch status {
+            case .off:
+                pill(AppStrings.Devices.connect, action: onConnect)
+            case .searching:
+                // 探している間は押せない(連打で二重に始めない)
+                ProgressView().tint(.white)
+            case .active:
+                Image(systemName: "checkmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.black)
+                    .frame(width: 28, height: 28)
+                    .background(Color.arYellow)
+                    .clipShape(Circle())
+            case .notFound:
+                pill(AppStrings.Devices.reconnect, action: onRetry)
+            case .denied:
+                pill(AppStrings.Common.openSettings, action: onOpenSettings)
+            case .unsupported:
+                EmptyView()
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .background(Color.arCard)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(status == .off ? Color.arBorder : tint.opacity(0.35), lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.2), value: status)
+    }
+
+    private func pill(_ title: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.arYellow)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.arYellow.opacity(0.12))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.arYellow.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }
