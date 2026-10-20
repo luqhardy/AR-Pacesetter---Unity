@@ -80,6 +80,8 @@
   - 画面は体験モード中ずっと自動ロックしない(消えるとグラスへの出力も止まる)
   - 送るのは `StartBoothDemo {"mode":"standing"|"walking"}` / `StopBoothDemo`、受けるのは `BoothDemoProgress` / `BoothDemoEnded`
     (契約は [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION.md))。走行用の CoreLocation / HealthKit は起動しない
+- **Mac+グラス+ブラウザ(Unity も iPhone も無しで見せる最後の予備)**: [tools/booth-fallback/glasses-fallback.html](../tools/booth-fallback/glasses-fallback.html)。
+  立ったままの台本・色(§7.1)・オーラ(§7.2)・HUD の配置を同じ値で再生するだけで、来場者の動きは追わない。手順は[チェックリスト](KOBE_CALLING_CHECKLIST.md) B0
 - **Windowsノート+グラス(Macが無いときの予備・立ったままのみ)**: XREAL One をノートにUSB-Cで挿し、
   Unityエディタで `Tools → AR Pacesetter → Booth Demo → Start Standing`。Game ビューをグラス側の画面へ
   出して最大化する。黒はグラスでは透明になる。来場者の動きは追えない(ARKitが無い)ので歩行モードは使えない。
