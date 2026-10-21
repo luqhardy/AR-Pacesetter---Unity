@@ -215,6 +215,9 @@ stateDiagram-v2
   (平滑化した速さの立ち上がりの偏りが数mの一定の遅れとして残る)
 - **Animator取得は `AvatarRigLocator.FindBestAnimator`** — コンテナに無効化された旧Animatorが残っており、素の `GetComponentInChildren<Animator>` はそれを拾う
 - **AnimatorControllerはジェネレータ管理**(`AvatarAnimatorControllerGenerator`)。手編集せず再生成する(同一パスならGUID維持でシーン参照は無傷)。閾値は km/h 基準を m/s に換算した値(Walk 0.0278 / Run 1.3889 / Sprint 4.1667)
+- **Unity が自前で作る全画面ウインドウは SwiftUI のウインドウの後ろへ下げる**(`UnityLauncher.sendUnityWindowBehindApp`)。
+  描画ビューは SwiftUI へ移しているので、そのウインドウは中身が空のまま最前面に残り、**全てのボタンのタップを吸い込む**。
+  `showUnityWindow()` は呼ばない(空のウインドウを前へ出し直す)
 - **UnitySendMessage対象のGameObject名は固定**: "ARSessionManager" / "DeviceManager"(Bootstrapが自動生成)。
   Swiftは `UnityReady` を受けるまでコマンドを溜める — Unity起動前に送ると受け手が無く消える
 - 追従を止めていた後の再開(GPS復帰・離隔待機)は `ResyncAfterPause`、位置を外部が飛ばした後は `ResyncPacingAnchor`。

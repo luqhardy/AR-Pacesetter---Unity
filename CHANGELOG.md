@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-21 — Unity 起動後に SwiftUI のボタンが効かない: Unity の空のウインドウがタップを吸い込んでいた
+
+`runEmbedded` の中で Unity 6 はアプリのシーンに全画面の UIWindow を作って最前面に出す(`initUnityWithScene` → `createUI` の `makeKeyAndVisible`。再走行の `showUnityWindow()`・端末の回転でも出し直す)。描画ビューは SwiftUI へ移しているので、そのウインドウは透明・空のまま上に被さり、全てのタップを取っていた → Unity 起動後と再走行でウインドウの段を通常より下げ・タッチを切り・SwiftUI をキーへ戻す。`showUnityWindow()` は呼ばない。
+検証: tools/verify.sh 全通過(dotnet test 477/477・Swift 75ファイル構文OK・E2E 332/332)。Unity をリンクした型検査は CI の iOS build、**タップは実機で要確認**(コンソールの `[UnityLauncher] ウインドウ:`)
+
 ### 2026-10-20 (2) — 予備の再生ページを MP4 に書き出す
 
 `tools/booth-fallback/render-video.mjs`: ページを `?render=1` で開き、時間を1フレームずつ進めて(乱数も固定)PNG を ffmpeg へ流す。実時間で録画しないのでコマ落ちしない。npm のパッケージは使わない(Node 22+ の WebSocket で Chrome を操作)。動画は git に入れず、必要なときに書き出す。
