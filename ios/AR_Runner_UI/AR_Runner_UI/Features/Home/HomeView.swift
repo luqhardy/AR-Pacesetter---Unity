@@ -84,19 +84,26 @@ struct HomeView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                lastRunCard
-                if let problem = locationManager.locationProblem {
-                    LocationPermissionMessage(problem: problem)
-                        .frame(maxWidth: .infinity)
+        // ヘッダー(メニュー)はスクロールせず上に固定する(hsuyaminmyat625/AR_project 2026-10-21)
+        VStack(spacing: 16) {
+            header
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    lastRunCard
+                    if let problem = locationManager.locationProblem {
+                        LocationPermissionMessage(problem: problem)
+                            .frame(maxWidth: .infinity)
+                    }
+                    bottomStartCard
                 }
-                bottomStartCard
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 20)
+            .scrollBounceBehavior(.basedOnSize)
         }
         .background(Color.black.ignoresSafeArea())
         .onAppear {

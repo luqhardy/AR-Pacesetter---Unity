@@ -22,7 +22,15 @@ struct ContentView: View {
         // オンボーディングが一瞬見えてしまう。初期値の時点で行き先を決める
         let seen     = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
         let accepted = UserDefaults.standard.bool(forKey: "hasAcceptedDisclaimer")
-        _screen = State(initialValue: (seen && accepted) ? .home : .onboarding)
+        // 身体情報(S9-2)は免責の後に1度だけ。この画面ができる前に使い始めた人にも次の起動で1度出す
+        let initial: AppScreen = !(seen && accepted) ? .onboarding
+            : BodyInfoStore.shared.hasCompletedInitialSetup ? .home : .bodyInfo
+        _screen = State(initialValue: initial)
+    }
+
+    /// 初回の流れの最後(免責に同意した後)。身体情報をまだ通っていなければそこへ
+    private var afterFirstRun: AppScreen {
+        BodyInfoStore.shared.hasCompletedInitialSetup ? .home : .bodyInfo
     }
 
     var body: some View {
@@ -71,7 +79,7 @@ struct ContentView: View {
                     onAgree: {
                         hasAcceptedDisclaimer = true
                         isReviewing = false
-                        screen = .home
+                        screen = afterFirstRun
                     },
                     onClose: {
                         isReviewing = false
@@ -148,7 +156,20 @@ struct ContentView: View {
             case .glassSettings:
                 ARSettingsView(onBack: { screen = .home })
             case .phoneSettings:
-                PhoneSettingsView(onBack: { screen = .home })
+                PhoneSettingsView(
+                    onBack: { screen = .home },
+                    onEditBodyInfo: { screen = .bodyInfoEdit }
+                )
+
+            // 11. 身体情報(S9-2)— hsuyaminmyat625/AR_project から移植。すべて任意で、今は保存するだけ
+            case .bodyInfo:
+                BodyInfoView(isInitialSetup: true, onNext: { screen = .home }, onBack: { })
+            case .bodyInfoEdit:
+                BodyInfoView(
+                    isInitialSetup: false,
+                    onNext: { screen = .phoneSettings },
+                    onBack: { screen = .phoneSettings }
+                )
             }
         }
         .animation(.easeInOut(duration: 0.3), value: screen)
