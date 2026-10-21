@@ -7,6 +7,10 @@ import SwiftUI
 // 以前ここにあった停止ボタン(hsu/main 由来)は 2026-10-14 に外した。
 struct LockScreenView: View {
     let onUnlock: () -> Void
+    /// GPS が途絶えている(走行は続いている — タスク表 S6)
+    var gpsLost: Bool = false
+    /// 計測は止めずに知らせる警告(電池・AirPods)
+    var warning: LocalizedStringKey? = nil
 
     @State private var dragOffset: CGFloat = 0
     @State private var unlocking = false
@@ -20,6 +24,18 @@ struct LockScreenView: View {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // 警告はロック中も小さく出す。ロックを外さなくても「走行は続いている」と分かるように
+                VStack(spacing: 8) {
+                    if gpsLost {
+                        lockNotice(icon: "location.slash.fill", text: AppStrings.Running.gpsLostOnLock, color: .arYellow)
+                    }
+                    if let warning {
+                        lockNotice(icon: "exclamationmark.triangle.fill", text: warning, color: .orange)
+                    }
+                }
+                .padding(.top, 64)
+                .padding(.horizontal, 32)
+
                 Spacer()
 
                 // Lock icon + label
@@ -110,6 +126,17 @@ struct LockScreenView: View {
                 }
         )
         .statusBarHidden(true)
+    }
+
+    private func lockNotice(icon: String, text: LocalizedStringKey, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+                .multilineTextAlignment(.leading)
+        }
+        .foregroundColor(color.opacity(0.8))
     }
 
     // 0.0 → 1.0 progress toward unlock threshold

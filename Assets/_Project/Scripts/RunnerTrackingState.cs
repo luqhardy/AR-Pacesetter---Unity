@@ -104,6 +104,28 @@ public sealed class RunnerTrackingState : MonoBehaviour
     public bool HasValidSpeedMeasurement => _hasExternalSpeedSample
         && Time.time - _lastSpeedSampleTime <= gpsFreshSeconds;
     public bool HasFreshGpsHeading => _hasGpsHeading && Time.time - _lastGpsFixTime <= gpsFreshSeconds;
+
+    /// <summary>
+    /// 直近に受け付けた(精度20m以内の)測位の時刻(Time.time)。まだ無ければ負。
+    /// ルートからの逸脱判定が、新しい測位ごとに1回だけ数えるために使う(SilentRouteRecoverer)
+    /// </summary>
+    public float LastAcceptedGpsFixTime => _lastGpsFixTime;
+
+    /// <summary>
+    /// 地理の向き(東・北 m)を AR の世界の向きへ回す。GPS と AR のヨーの対応は走り出してから決まるので、
+    /// まだ無ければ false(ルートへ案内する向きに使う — 距離の判定には使わない)
+    /// </summary>
+    public bool TryGeographicToWorldDirection(double eastMeters, double northMeters, out Vector3 worldDirection)
+    {
+        worldDirection = Vector3.zero;
+        if (!_hasWorldAlignment) return false;
+        var geographic = new Vector3((float)eastMeters, 0f, (float)northMeters);
+        if (geographic.sqrMagnitude < 1e-6f) return false;
+        worldDirection = Quaternion.Euler(0f, _worldFromGpsYawDegrees, 0f) * geographic.normalized;
+        worldDirection.y = 0f;
+        worldDirection.Normalize();
+        return true;
+    }
     public float CurrentSpeedKmH => HasValidSpeedMeasurement
         ? ExternalSpeedKmH
         : _smoothedLocalSpeedMps * 3.6f;

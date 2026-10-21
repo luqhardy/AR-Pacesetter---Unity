@@ -79,7 +79,10 @@ final class UnityLauncher: ObservableObject {
             // 再走行: 前回終了時に pause(true) しているため必ず再開させる
             // (これが無いと2本目のARビューが停止画のまま固まる)
             ufw.pause(false)
-            ufw.showUnityWindow()
+            // 以前はここで ufw.showUnityWindow() を呼んでいた — Unity の空のウインドウを
+            // SwiftUI の前へ出し直し、2本目以降もボタンが効かなくなっていた。
+            // Unity の描画ビューは UnityContainerView / グラスのウインドウにあるので、出し直す必要は無い
+            sendUnityWindowBehindApp()
             return
         }
 
@@ -114,6 +117,7 @@ final class UnityLauncher: ObservableObject {
 
         ufw = framework
         isRunning = true
+        sendUnityWindowBehindApp()
 
         // 通常はUnityが最初のシーンを読み込んだ時点で UnityReady を送り、UnityBridge が
         // 起動待ちのコマンドを流す。届かない場合(古いエクスポート)の保険
@@ -135,6 +139,41 @@ final class UnityLauncher: ObservableObject {
         prepare { [weak self] in
             self?.pause()
         }
+    }
+
+    /// Unity が自前で作る全画面のウインドウを、SwiftUI のウインドウの後ろへ下げてタップを取らせない。
+    ///
+    /// **SwiftUI のボタンが効かなくなっていた原因**: `runEmbedded` の中で Unity は
+    /// アプリのシーンに全画面の UIWindow を作り `makeKeyAndVisible` で最前面に出す
+    /// (Unity 6 の UnityAppController `initUnityWithScene` → `createUI`。端末の回転でも出し直す)。
+    /// 描画ビュー(rootView)は UnityContainerView へ移しているので、そのウインドウは
+    /// **中身が空のまま SwiftUI の上に被さり、画面のどこを押してもタップを吸い込む**。
+    /// 見た目は透明なので、画面は出ているのにボタンだけが効かない。
+    ///
+    /// ウインドウの段を通常より下げれば、Unity が `makeKeyAndVisible` し直しても同じ段の中で
+    /// 前に出るだけで SwiftUI の上には来ない。念のため触れても取らないようにし、
+    /// キー(文字入力の行き先)も SwiftUI のウインドウへ戻す。
+    private func sendUnityWindowBehindApp() {
+        // UnityAppController の window は UIApplicationDelegate の任意プロパティでもあるため、
+        // 取り込み方によって二重の Optional になる。`?? nil` でどちらでも1段にする
+        guard let unityWindow = ufw?.appController()?.window ?? nil else { return }
+        unityWindow.windowLevel = UIWindow.Level(rawValue: UIWindow.Level.normal.rawValue - 1)
+        unityWindow.isUserInteractionEnabled = false
+
+        let appWindow = unityWindow.windowScene?.windows.first {
+            $0 !== unityWindow && !$0.isHidden && $0.rootViewController != nil
+                && $0.windowLevel == .normal
+        }
+        appWindow?.makeKeyAndVisible()
+
+        // 実機で確かめるための一覧(上から順。* = キー)。Unity のウインドウが SwiftUI より下なら正しい
+        let stack = (unityWindow.windowScene?.windows ?? [])
+            .sorted { $0.windowLevel.rawValue > $1.windowLevel.rawValue }
+            .map { w -> String in
+                let name = w === unityWindow ? "Unity" : String(describing: type(of: w))
+                return "\(w.isKeyWindow ? "*" : "")\(name)(level \(Int(w.windowLevel.rawValue)), touch \(w.isUserInteractionEnabled))"
+            }
+        print("[UnityLauncher] ウインドウ: " + stack.joined(separator: " > "))
     }
 
     /// Unityの描画ビュー。UnityContainerView から参照される。

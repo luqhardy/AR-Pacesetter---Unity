@@ -17,6 +17,10 @@ final class RunSettings: ObservableObject {
     /// 設定されていると次の走行はゴーストモードで開始される(1回で自動クリア)。端末には保存しない
     @Published var ghostDateIso: String? = nil
 
+    /// S8 で選んだルート(「ルートを外れたら案内する」が ON・過去の走行の経路のときだけ)。
+    /// Unity の StartSession の routeLatLon([緯度, 経度, ...])。次の1走行だけ — 端末には保存しない
+    @Published var guidanceRoute: [Double]? = nil
+
     private init() {
         let saved = RunTargetSettings.load(from: .standard)
         paceKmH = saved.paceKmH

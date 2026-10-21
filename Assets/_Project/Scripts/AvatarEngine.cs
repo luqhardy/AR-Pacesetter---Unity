@@ -218,6 +218,9 @@ public class AvatarEngine : MonoBehaviour
         // Always update speed maintenance to ensure multipliers are fresh
         UpdateSpeedMaintenance();
 
+        // 自走モード(既定OFF): 目標ペースの距離を毎フレーム進め、走った距離との差だけ前後へずらす
+        UpdateSelfPacedLead();
+
         // フレーム時間の基準は毎フレーム更新する(停止・慣性中のフレームも基準に含める)
         bool jitterFrame = _jitterGuard.ShouldPredict(Time.deltaTime);
 
@@ -878,13 +881,33 @@ public class AvatarEngine : MonoBehaviour
         ReapplyHeight();
     }
 
+    /// <summary>
+    /// 直近の身長適用で起きた異常(日本語・開発者モードの診断に出す)。異常が無ければ空。
+    /// タスク表 ARグラス「サイズの異常系」: 範囲外の要求・素の高さが測れない・倍率の上下限に当たった
+    /// </summary>
+    public string HeightAnomaly { get; private set; } = "";
+
+    /// <summary>直近の要求身長を補正したときの説明(次の要求まで残す)</summary>
+    private string _requestedHeightNote = "";
+
     public bool ApplyHeightCm(float heightCm)
     {
-        if (heightCm > 0f) RequestedHeightCm = heightCm;
+        // 0 以下は「指定なし」(前回の要求のまま)。それ以外は等身大の範囲へ寄せる —
+        // 1cm や 9999cm、NaN をそのまま通すと豆粒や巨人になり、走者からは消えたように見える
+        if (heightCm > 0f || float.IsNaN(heightCm) || float.IsInfinity(heightCm))
+        {
+            RequestedHeightCm = AvatarScale.SanitizeRequestedHeightCm(heightCm, out bool corrected);
+            _requestedHeightNote = corrected
+                ? $"要求身長 {heightCm}cm は範囲外のため {RequestedHeightCm:F0}cm に補正"
+                : "";
+            if (corrected) Debug.LogWarning($"[AVATAR SCALE] {_requestedHeightNote}");
+        }
+        HeightAnomaly = _requestedHeightNote;
 
         Transform model = ResolveModelRoot();
         if (model == null)
         {
+            HeightAnomaly = "モデルを解決できず身長を適用できない";
             Debug.LogWarning("[AVATAR SCALE] モデルのTransformを解決できず身長を適用できません。");
             return false;
         }
@@ -893,6 +916,8 @@ public class AvatarEngine : MonoBehaviour
         float unitHeight = MeasureUnitHeight(model);
         if (!AvatarScale.TryComputeScale(unitHeight, 1f, EffectiveHeightCm, out float scale))
         {
+            // 測れないときは倍率を変えない(前回の適用値のまま)。素のモデルの大きさは保証が無いので知らせる
+            HeightAnomaly = $"素の身長を計測できず適用を見送り(unitHeight={unitHeight:F3}m)";
             Debug.LogWarning($"[AVATAR SCALE] 素の身長を計測できず適用を見送りました " +
                              $"(unitHeight={unitHeight:F3}m)");
             return false;
@@ -900,6 +925,13 @@ public class AvatarEngine : MonoBehaviour
 
         float before = unitHeight * model.localScale.y;
         model.localScale = Vector3.one * scale;
+
+        if (!AvatarScale.IsAppliedHeightAcceptable(unitHeight, scale, EffectiveHeightCm))
+        {
+            // 倍率の上下限に当たった = モデルの素の大きさが桁外れ(単位の取り違え等)。表示は上下限のまま
+            HeightAnomaly = $"素の身長 {unitHeight:G3}m が桁外れのため {EffectiveHeightCm:F0}cm にできない(scale {scale:G3})";
+            Debug.LogWarning($"[AVATAR SCALE] {HeightAnomaly}");
+        }
 
         Debug.Log($"[AVATAR SCALE] 身長 {EffectiveHeightCm:F0}cm へ調整" +
                   (EffectiveHeightCm < RequestedHeightCm ? $"(要求 {RequestedHeightCm:F0}cm・グラスの画角に合わせた上限)" : "") + ": " +
@@ -989,10 +1021,60 @@ public class AvatarEngine : MonoBehaviour
         _presentationLeadOffsetMeters = displayed - leadDistanceMeters;
     }
 
-    private float DisplayedLeadMeters => leadDistanceMeters + _presentationLeadOffsetMeters;
+    private float DisplayedLeadMeters => leadDistanceMeters + _presentationLeadOffsetMeters + _selfPacedLeadOffsetMeters;
+
+    // ── 自走モード(タスク表「指定した速さで走る」・既定OFF — SelfPacedLead)──────────────
+    // 既定は「走者+3m」に付いていく(§6)。自走モードでは目標ペースで走ったときの位置へずらす:
+    // 遅れた分だけ前へ離れ、速ければ近づく(0.8〜9.5m)。遅れ = START から走った距離(RunSessionController の
+    // 正規の距離)− 目標ペースで進んだ距離(HUD のタイムで積算 — SelfPacedTarget)
+    private float _selfPacedLeadOffsetMeters;
+    private readonly SelfPacedTarget _selfPacedTarget = new SelfPacedTarget();
+    private RunSessionController _runSession;
+    private System.DateTime _selfPacedLastUtc = System.DateTime.MinValue;
+
+    /// <summary>自走モードか(StartSession の selfPaced。走行ごとに決め直す)</summary>
+    public bool IsSelfPaced { get; private set; }
+
+    /// <summary>自走モードの切り替え。ずらしは0から始める</summary>
+    public void SetSelfPaced(bool selfPaced)
+    {
+        IsSelfPaced = selfPaced;
+        _selfPacedLeadOffsetMeters = 0f;
+        _selfPacedTarget.Reset();
+        _selfPacedLastUtc = System.DateTime.MinValue;
+    }
+
+    /// <summary>自走モードの遅れ(m・遅れは負)。診断・E2E 用</summary>
+    public float SelfPacedDeviationMeters { get; private set; }
 
     /// <summary>
-    /// 実際にアバターを置いている前方距離(m)= 目標リード + 展示デモのずらし。本番走行では目標リードと同じ。
+    /// START 後〜終了前の毎フレーム、目標ペースの距離を進め、走った距離との差からずらしを取り直す。
+    /// 慣性移動・ルート案内・停止の間も目標は進む(アバターは目標ペースで走り続けている扱い)
+    /// </summary>
+    private void UpdateSelfPacedLead()
+    {
+        if (!IsSelfPaced || !_hasStarted || !_runMotionActive || IsSessionEnded)
+        {
+            _selfPacedLastUtc = System.DateTime.MinValue;
+            return;
+        }
+        if (_runSession == null) _runSession = FindFirstObjectByType<RunSessionController>(FindObjectsInactive.Include);
+        if (_runSession == null) return;
+
+        System.DateTime now = System.DateTime.UtcNow;
+        double seconds = Time.deltaTime;
+        if (_selfPacedLastUtc != System.DateTime.MinValue)
+            seconds += SelfPacedTarget.MissedSeconds((now - _selfPacedLastUtc).TotalSeconds, Time.deltaTime, Time.timeScale);
+        _selfPacedLastUtc = now;
+
+        _selfPacedTarget.Add(seconds, PaceSynchronicityMath.PaceToMetersPerSecond(TargetPaceMinutesPerKm));
+        SelfPacedDeviationMeters = _selfPacedTarget.DeviationMeters(_runSession.AuthoritativeDistanceMeters);
+        _selfPacedLeadOffsetMeters = SelfPacedLead.LeadOffset(leadDistanceMeters, SelfPacedDeviationMeters);
+    }
+
+    /// <summary>
+    /// 実際にアバターを置いている前方距離(m)= 目標リード + 展示デモのずらし + 自走モードのずらし。
+    /// 既定の本番走行では目標リードと同じ。
     /// グラスの俯角はこの距離で決める(9m先へ離れたとき頭が視野の上へ切れないように)。
     /// </summary>
     public float DisplayedLeadDistanceMeters => DisplayedLeadMeters;
@@ -1110,6 +1192,8 @@ public class AvatarEngine : MonoBehaviour
         _sprintTimer = 0f;
         _sidestepOffset = Vector3.zero;
         _presentationLeadOffsetMeters = 0f;
+        _selfPacedLeadOffsetMeters = 0f;
+        _selfPacedTarget.Reset();
         _presentationFollowsView = false;
         _presentationTurning = false;
         _effectiveSpeedMultiplier = 1.0f;

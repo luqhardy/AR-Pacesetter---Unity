@@ -12,6 +12,7 @@ using UnityEngine;
 ///   {"event":"SyncRateUpdated","value":87}
 ///   {"event":"AvatarStateChanged","state":"Run"}   // Idle/Run/Slow/Fast/Goal/Lost
 ///   {"event":"GPSLost"} / {"event":"GPSRecovered"}
+///   {"event":"GPSLost","awaitingFix":true}        // START からGPSを待っている(HUDのみで開始)
 ///   {"event":"LatencyReport","ms":16.4}
 /// </summary>
 public static class SwiftMessageSender
@@ -44,8 +45,9 @@ public static class SwiftMessageSender
     public static void SendUnityReady()
         => SendRaw("{\"event\":\"UnityReady\"}");
 
-    public static void SendGpsLost()
-        => SendRaw("{\"event\":\"GPSLost\"}");
+    /// <param name="awaitingFirstFix">START の時点でGPSが無く、HUDだけで始めた(アバターはまだ一度も出ていない)</param>
+    public static void SendGpsLost(bool awaitingFirstFix = false)
+        => SendRaw(awaitingFirstFix ? "{\"event\":\"GPSLost\",\"awaitingFix\":true}" : "{\"event\":\"GPSLost\"}");
 
     public static void SendGpsRecovered()
         => SendRaw("{\"event\":\"GPSRecovered\"}");
@@ -189,12 +191,17 @@ public static class SwiftMessageSender
         SendRaw(BuildSessionResultJson(record, saved));
     }
 
+    /// <remarks>fatigue は §4.3 の疲労度(累積指数)。結果画面(S7)の「詳細」に出す — 2026-10-19 追加</remarks>
     public static string BuildSessionResultJson(RunSessionRecord record, bool saved)
         => string.Format(CultureInfo.InvariantCulture,
             "{{\"event\":\"SessionEnded\",\"grade\":\"{0}\",\"rank\":\"{1}\"," +
             "\"averageSync\":{2:F1},\"distanceKm\":{3:F3},\"elapsedSeconds\":{4:F0},\"calories\":{5:F0}," +
-            "\"saved\":{6}}}",
+            "\"fatigue\":{7:F1},\"saved\":{6}}}",
             Escape(record.grade), Escape(record.rankLabel), record.averageSyncRate,
             record.distanceMeters / 1000f, record.elapsedSeconds, record.calories,
-            saved ? "true" : "false");
+            saved ? "true" : "false", record.fatigueIndex);
+
+    /// <summary>保存の再試行(RetrySaveSession)の結果。結果画面(S7)が「保存に失敗しました」を消すかを決める</summary>
+    public static void SendSessionSaveRetried(bool saved)
+        => SendRaw("{\"event\":\"SessionSaveRetried\",\"saved\":" + (saved ? "true" : "false") + "}");
 }

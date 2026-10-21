@@ -1,3 +1,4 @@
+using System;
 using NUnit.Framework;
 
 /// <summary>
@@ -170,5 +171,101 @@ public class GlassPoseAndProfileTests
         double vFov = GlassDisplayProfile.XrealOne.VerticalFovDegrees;
         // アバターが極端に高い(=中心が水平より上)ケースでは負の俯角にせず0へ丸める
         Assert.AreEqual(0.0, HeadPoseMath.ResolveDownPitchDegrees(1.55, 6.0, 3.0, vFov, 15.0), 1e-9);
+    }
+    // ── 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」) ──────
+
+    [Test]
+    public void 首振りは進行方向ヨーに足す()
+    {
+        // 進行方向 90°(東)で右へ30°向いたら、描画は120°を向く = アバターは画面の左へ流れる
+        Assert.AreEqual(120f, HeadPoseMath.ResolveViewYawDegrees(90f, 30f, applyOffset: true), 1e-4f);
+        Assert.AreEqual(60f, HeadPoseMath.ResolveViewYawDegrees(90f, -30f, applyOffset: true), 1e-4f);
+    }
+
+    [Test]
+    public void 首振りは90度で打ち切る()
+    {
+        Assert.AreEqual(90f + HeadPoseMath.MaxHeadYawOffsetDegrees,
+            HeadPoseMath.ResolveViewYawDegrees(90f, 170f, applyOffset: true), 1e-4f);
+    }
+
+    [Test]
+    public void 古い首振りや数でない値は足さない()
+    {
+        Assert.AreEqual(90f, HeadPoseMath.ResolveViewYawDegrees(90f, 30f, applyOffset: false), 1e-4f);
+        Assert.AreEqual(90f, HeadPoseMath.ResolveViewYawDegrees(90f, float.NaN, applyOffset: true), 1e-4f);
+    }
+
+    [Test]
+    public void Anchorでは首振りを足さない_二重補正になる()
+    {
+        Assert.IsTrue(HeadPoseMath.ShouldApplyHeadYaw(GlassScreenMode.FollowLocked, headYawFresh: true));
+        Assert.IsFalse(HeadPoseMath.ShouldApplyHeadYaw(GlassScreenMode.Anchor, headYawFresh: true));
+        Assert.IsFalse(HeadPoseMath.ShouldApplyHeadYaw(GlassScreenMode.FollowLocked, headYawFresh: false));
+    }
+    [Test]
+    public void 角度差は前後180度へ折り返す()
+    {
+        Assert.AreEqual(-170f, HeadPoseMath.WrapDegrees(190f), 1e-4f);
+        Assert.AreEqual(170f, HeadPoseMath.WrapDegrees(-190f), 1e-4f);
+        Assert.AreEqual(0f, HeadPoseMath.WrapDegrees(720f), 1e-4f);
+        Assert.AreEqual(0f, HeadPoseMath.WrapDegrees(float.NaN), 1e-4f);
+    }
+
+    [Test]
+    public void 最初の頭の向きをまっすぐ前とみなす()
+    {
+        // AirPods の向きの基準は任意(ここでは進行方向から 137° ずれている)
+        var b = new HeadYawBaseline();
+        Assert.AreEqual(0f, b.Update(headYawDegrees: 227f, travelYawDegrees: 90f, deltaSeconds: 0.016f), 1e-4f);
+        Assert.IsTrue(b.IsInitialized);
+    }
+
+    [Test]
+    public void 数秒の首振りはほぼそのまま残る()
+    {
+        var b = new HeadYawBaseline();
+        b.Update(227f, 90f, 0.016f);
+        // 2秒かけて右へ40°向いた
+        float offset = 0f;
+        for (int i = 1; i <= 120; i++)
+            offset = b.Update(227f + 40f * i / 120f, 90f, 1f / 60f);
+        Assert.AreEqual(40f, offset, 2f);
+    }
+
+    [Test]
+    public void カーブでは頭と進行方向が一緒に回るので首振りにならない()
+    {
+        var b = new HeadYawBaseline();
+        b.Update(10f, 0f, 0.016f);
+        float offset = 0f;
+        // 10秒で180°のコーナー(頭も体と一緒に回る)
+        for (int i = 1; i <= 600; i++)
+        {
+            float turn = 180f * i / 600f;
+            offset = b.Update(10f + turn, turn, 1f / 60f);
+        }
+        Assert.AreEqual(0f, offset, 0.01f);
+    }
+
+    [Test]
+    public void ずっと横を向いたままの差やドリフトはゆっくり0へ戻る()
+    {
+        var b = new HeadYawBaseline();
+        b.Update(0f, 0f, 0.016f);
+        float offset = 0f;
+        for (int i = 0; i < 60 * 120; i++) // 2分
+            offset = b.Update(30f, 0f, 1f / 60f);
+        Assert.Less(Math.Abs(offset), 1f);
+    }
+
+    [Test]
+    public void リセットすると次のサンプルを基準に取り直す()
+    {
+        var b = new HeadYawBaseline();
+        b.Update(0f, 0f, 0.016f);
+        Assert.AreEqual(30f, b.Update(30f, 0f, 0.016f), 0.1f);
+        b.Reset();
+        Assert.AreEqual(0f, b.Update(30f, 0f, 0.016f), 1e-4f);
     }
 }

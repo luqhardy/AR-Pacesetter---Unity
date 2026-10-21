@@ -1,3 +1,5 @@
+using System;
+
 /// <summary>
 /// アバターを実寸へ合わせるスケール計算 (企画書 §4.1 身長スケール)。Unity非依存の純ロジック。
 ///
@@ -55,6 +57,77 @@ public static class AvatarScale
 
         scale = computed < MinScale ? MinScale : (computed > MaxScale ? MaxScale : computed);
         return true;
+    }
+
+    // ── サイズの異常系(タスク表 ARグラス「サイズの異常系」2026-10-19) ─────────────
+
+    /// <summary>
+    /// 要求身長として受け付ける範囲(cm)。等身大のペーサーとして成り立つ大きさに限る。
+    /// Swift の StartSession やデモ設定から 1cm・9999cm・NaN が来ても、豆粒や巨人にしない
+    /// </summary>
+    public const float MinRequestedHeightCm = 100f;
+    public const float MaxRequestedHeightCm = 230f;
+
+    /// <summary>
+    /// グラスの画角に合わせた身長の上限の下限(cm)。前方距離が極端に短い構成で上限を素直に求めると
+    /// 数十cmの人形になる — そこまで縮めるより頭か足元が少し欠けるほうがペーサーとして読める
+    /// </summary>
+    public const float MinHeightLimitCm = 100f;
+
+    /// <summary>適用後の身長が目標からこの割合以上ずれたら異常(倍率の上下限に当たった等)</summary>
+    public const float AppliedHeightTolerance = 0.05f;
+
+    /// <summary>
+    /// 要求身長を受け付ける範囲へ寄せる。数でない・0以下は既定(175cm)、範囲外は端へ寄せる。
+    /// </summary>
+    /// <param name="corrected">入力をそのまま使えなかったか(ログ・診断用)</param>
+    public static float SanitizeRequestedHeightCm(float heightCm, out bool corrected)
+    {
+        if (!IsUsable(heightCm) || heightCm <= 0f)
+        {
+            corrected = true;
+            return BaselineHeightCm;
+        }
+        float clamped = heightCm < MinRequestedHeightCm ? MinRequestedHeightCm
+                      : (heightCm > MaxRequestedHeightCm ? MaxRequestedHeightCm : heightCm);
+        corrected = clamped != heightCm;
+        return clamped;
+    }
+
+    /// <summary>
+    /// グラスの画角で全身が収まる最大身長(m)から、アバターへ設定する上限(cm)を決める。
+    /// 0 は上限なし(計算できない構成)。下限 <see cref="MinHeightLimitCm"/> を割らない。
+    /// </summary>
+    public static float ResolveHeightLimitCm(double fitHeightMeters, double marginMeters)
+    {
+        double limited = fitHeightMeters - marginMeters;
+        if (double.IsNaN(limited) || double.IsInfinity(limited) || limited <= 0.0) return 0f;
+        return (float)Math.Max(limited * 100.0, MinHeightLimitCm);
+    }
+
+    /// <summary>
+    /// 適用した倍率で実際にその身長になったか。倍率が <see cref="MinScale"/>/<see cref="MaxScale"/> に
+    /// 当たった(モデルの素の大きさが桁外れ)ときは false — 呼び出し側は異常として知らせる
+    /// </summary>
+    public static bool IsAppliedHeightAcceptable(float unitHeightMeters, float scale, float targetHeightCm)
+    {
+        if (!IsUsable(unitHeightMeters) || !IsUsable(scale) || !IsUsable(targetHeightCm) || targetHeightCm <= 0f)
+            return false;
+        float achievedCm = unitHeightMeters * scale * 100f;
+        return Math.Abs(achievedCm - targetHeightCm) <= targetHeightCm * AppliedHeightTolerance;
+    }
+
+    /// <summary>
+    /// 演出(起動のスケールイン)の外でルートの倍率が本来の値からずれているか。
+    /// スケールインの途中でアバターごと非アクティブになる(GPSロストのスタンバイ等)とコルーチンが止まり、
+    /// 0.15倍などの途中の大きさのまま走り続けていた — これを検知して戻す
+    /// </summary>
+    public static bool IsRootScaleDeviated(float currentUniformScale, float expectedUniformScale,
+                                           float relativeTolerance = 0.01f)
+    {
+        if (!IsUsable(expectedUniformScale) || expectedUniformScale <= 0f) return false;
+        if (!IsUsable(currentUniformScale)) return true;
+        return Math.Abs(currentUniformScale - expectedUniformScale) > expectedUniformScale * relativeTolerance;
     }
 
     private static bool IsUsable(float v) => !float.IsNaN(v) && !float.IsInfinity(v);

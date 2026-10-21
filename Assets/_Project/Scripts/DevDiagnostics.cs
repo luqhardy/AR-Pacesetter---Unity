@@ -77,6 +77,10 @@ public static class DevDiagnostics
             Add(rows, "gps.hasHadGoodFix", gps.HasHadGoodFix ? "取得済み" : "未取得(屋内など)");
             Add(rows, "gps.signalLost", gps.IsSignalLost ? "ロスト中" : "正常");
         }
+        var sessionBridge = UnityEngine.Object.FindFirstObjectByType<ARSessionManagerBridge>(FindObjectsInactive.Include);
+        if (sessionBridge != null)
+            Add(rows, "gps.hudOnlyStart", sessionBridge.HudOnlyWithoutGps
+                ? "ON(START の時点でGPSが無ければHUDだけで始める)" : "OFF(既定 — GPSが無くてもアバターを出す)");
 
         // ── ARグラス出力 ─────────────────────────────────────────────
         var glass = UnityEngine.Object.FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
@@ -86,6 +90,9 @@ public static class DevDiagnostics
             Add(rows, "glass.profile", glass.ActiveProfile != null ? glass.ActiveProfile.ToString() : "");
             Add(rows, "glass.orientation", glass.OrientationSource.ToString());
             Add(rows, "glass.downPitchDeg", Num(glass.AppliedDownPitchDegrees));
+            Add(rows, "glass.headYawDeg", glass.HasFreshHeadYaw
+                ? Num(glass.AppliedHeadYawDegrees)
+                : "供給なし(AirPods の頭の向きが届いていない)");
             Add(rows, "glass.viewportAspect", Num(glass.ViewportAspect));
             Add(rows, "glass.fillsScreen", glass.IsGlassOutputActive
                 ? (glass.ViewportMatchesGlass ? "一致(画面を埋めている)" : "不一致(帯が出る)")
@@ -112,7 +119,9 @@ public static class DevDiagnostics
 
         // ── 状態と描画 ───────────────────────────────────────────────
         var state = UnityEngine.Object.FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
-        if (state != null) Add(rows, "fsm.state", state.currentState.ToString());
+        if (state != null)
+            Add(rows, "fsm.state", state.currentState == GameStateController.ARVisionState.Standby
+                ? $"Standby({state.CurrentStandbyCause})" : state.currentState.ToString());
 
         var visibility = UnityEngine.Object.FindFirstObjectByType<AvatarVisibilityDiagnostics>(FindObjectsInactive.Include);
         if (visibility != null)
@@ -137,6 +146,31 @@ public static class DevDiagnostics
                 Add(rows, "avatar.footPlanting", planting.UsesMeshSolePoints
                     ? $"メッシュ {planting.SolePointCount}点 / 持ち上げ {Num(planting.CurrentLiftMeters)}m"
                     : "骨からの概算(メッシュを読めない — FBXのRead/Writeを確認)");
+
+            Add(rows, "avatar.pacing", engine.IsSelfPaced
+                ? $"自走(目標ペース)— 前方 {Num(engine.DisplayedLeadDistanceMeters)}m"
+                : "走者+3m(既定)");
+
+            // 選んだルート(GPS)からの逸脱。実機で「案内された/されない」を確かめる
+            var recoverer = engine.GetComponent<SilentRouteRecoverer>();
+            if (recoverer != null)
+            {
+                var gate = recoverer.GpsGate;
+                Add(rows, "route.deviation", !recoverer.HasGpsRoute
+                    ? "選んだルートなし"
+                    : gate.IsRouteFarAway
+                        ? $"ルートから {Num(gate.LastDistanceMeters)}m 以上離れている(まだ近づいていない)"
+                        : gate.LastDistanceMeters < 0.0
+                            ? $"{recoverer.GpsRoutePointCount}点・測位待ち"
+                            : $"{(gate.IsDeviated ? "逸脱中" : "ルート上")} {Num(gate.LastDistanceMeters)}m(しきい値 {Num(gate.LastEnterThresholdMeters)}m)");
+            }
+
+            // 身長(要求・上限・実際)とサイズの異常。実機で「大きい/小さい」と言われたときの確認用
+            Add(rows, "avatar.height",
+                $"要求 {Num(engine.RequestedHeightCm)}cm / 上限 {(engine.HeightLimitCm > 0f ? Num(engine.HeightLimitCm) + "cm" : "なし")}" +
+                $" / 表示 {Num(engine.MeasuredAvatarHeightMeters * 100f)}cm");
+            if (!string.IsNullOrEmpty(engine.HeightAnomaly))
+                Add(rows, "avatar.heightAnomaly", engine.HeightAnomaly);
         }
         Add(rows, "app.persistentDataPath", Application.persistentDataPath);
 

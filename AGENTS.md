@@ -167,7 +167,9 @@ stateDiagram-v2
 
 - `TransitionToState(Reaccumulation)` は `SimulatedGPSAccuracyRadius` を 99 に戻す。精度を設定するのは**遷移の後**。
 - 復帰の遷移表は `GpsSignalPolicy`(純ロジック)。Standby へは原因つき(`EnterStandby`)で入る。
-  GPS復帰で ReAccumulation へ進むのは原因が `GpsLost` のときだけ — グラス切断(§8.3)は再スタート操作を待つ。
+  GPS復帰で ReAccumulation へ進むのは原因が `GpsLost` と `AwaitingGps`(START の時点でGPSが無くHUDだけで始めた —
+  AR設定のスイッチ・既定OFF)のときだけ — グラス切断(§8.3)は再スタート操作を待つ。
+  StartSession は前の走行のGPS起因の状態を Normal へ戻す(GPS待ちのまま終えた走行を持ち越さない)。
 
 ---
 
@@ -179,9 +181,9 @@ stateDiagram-v2
 
 | # | ステップ | 個別コマンド | 備考 |
 |---|---|---|---|
-| 1 | C#コンパイル | `dotnet build tools/compile-check` | Unityを開かずに `Assets/_Project/Scripts` を検証。要: Unity 6000.3.17f1 と一度生成済みの `Library/` |
+| 1 | C#コンパイル | `dotnet build tools/compile-check`(+ `-p:CompileCheckEditor=true`) | Unityを開かずに `Assets/_Project/Scripts` を検証。2回目は `UNITY_EDITOR` を定義して `#if UNITY_EDITOR` の中(E2E シナリオ等)も通す。要: Unity 6000.3.17f1 と一度生成済みの `Library/` |
 | 2 | ユニットテスト | `dotnet test Tests/UnitTests` | Unity非依存・数秒。PRでもCIが自動実行する |
-| 3 | Swift構文 | `swiftc -parse <file>` | 構文のみ。型検査はMacのXcodeでのみ可能 |
+| 3 | Swift構文 | `swiftc -parse <file>` | 構文のみ。型検査はMacのXcodeでのみ可能。併せて `import Combine` の漏れを grep で検査(Xcode 26 は SwiftUI 経由で Combine を見せない — `@Published`・`ObservableObject`・`Timer.publish().autoconnect()` 等を使うファイルは自分で import する) |
 | 3b | Swiftロジックテスト | `swift test --package-path ios` | **macOSでのみ**(WindowsのSwiftはリンクに Visual Studio が要る)。CI は `swift-logic-tests.yml` |
 | 4 | E2E回帰 | Unity を `-batchmode -projectPath <repo> -executeMethod E2EScenarioRunner.Run -logFile e2e.log` | 2〜10分。**Unityエディタでプロジェクトを開いていると失敗する**(verify.sh は最初に検知して止まる)。失敗時は `e2e.log` の `[E2E] FAIL` 行を読む |
 
@@ -207,9 +209,15 @@ stateDiagram-v2
 ### 実装の約束(破ると壊れる)
 - **`AvatarEngine.IsHalted` は `GroundSnap` が毎フレーム上書きする**。恒久的な停止には `IsSessionEnded` を使う
 - **距離の単一ソース原則**: Swift主導中(`ARSessionManagerBridge.ExternalMetricsActive`)はUnity内部計測をスプリット判定へ流さない。記録・ゴール判定は `RunSessionController.AuthoritativeDistanceMeters`(新鮮なGPS優先・5秒でUnity計測へフォールバック)を共用
-- **アバターは常時「ユーザー+3m」アンカー追従**(自走ではない)。10m離隔待機は「アバター停止中にユーザーが離れる」場合にのみ発生する
+- **アバターは常時「ユーザー+3m」アンカー追従**(自走ではない)。10m離隔待機は「アバター停止中にユーザーが離れる」場合にのみ発生する。
+  例外は**自走モード**(AR設定のスイッチ・既定OFF・StartSession の `selfPaced`): 前方距離を「3m − 遅れ」にずらす(0.8〜9.5m)。
+  遅れは START からの正規の距離 − 目標ペースの距離(`SelfPacedTarget`)で取り、シンクロ率の距離偏差(速さの積分)は使わない
+  (平滑化した速さの立ち上がりの偏りが数mの一定の遅れとして残る)
 - **Animator取得は `AvatarRigLocator.FindBestAnimator`** — コンテナに無効化された旧Animatorが残っており、素の `GetComponentInChildren<Animator>` はそれを拾う
 - **AnimatorControllerはジェネレータ管理**(`AvatarAnimatorControllerGenerator`)。手編集せず再生成する(同一パスならGUID維持でシーン参照は無傷)。閾値は km/h 基準を m/s に換算した値(Walk 0.0278 / Run 1.3889 / Sprint 4.1667)
+- **Unity が自前で作る全画面ウインドウは SwiftUI のウインドウの後ろへ下げる**(`UnityLauncher.sendUnityWindowBehindApp`)。
+  描画ビューは SwiftUI へ移しているので、そのウインドウは中身が空のまま最前面に残り、**全てのボタンのタップを吸い込む**。
+  `showUnityWindow()` は呼ばない(空のウインドウを前へ出し直す)
 - **UnitySendMessage対象のGameObject名は固定**: "ARSessionManager" / "DeviceManager"(Bootstrapが自動生成)。
   Swiftは `UnityReady` を受けるまでコマンドを溜める — Unity起動前に送ると受け手が無く消える
 - 追従を止めていた後の再開(GPS復帰・離隔待機)は `ResyncAfterPause`、位置を外部が飛ばした後は `ResyncPacingAnchor`。
@@ -223,6 +231,10 @@ stateDiagram-v2
 - アバターの透過率・発光は `AvatarMaterialSet`(モデル配下の全レンダラーの全マテリアル)で操作する。
   `renderer.material` は1枚目だけ — Y Bot は2メッシュなので半身しか変わらない
 - GPSロスト判定を止めたいときは実行時コマンド `SetGpsLostHandling {enabled}` を使う(iPhoneでは開発者モードの「屋内テスト」スイッチ)。既定値(`true`)は仕様どおりに保つ。
+- **GPSが使えないときはHUDだけ**(AR設定「HUDだけで走り始める」・**既定OFF**・StartSession の `hudOnlyWithoutGps`):
+  START の時点で新鮮な測位が無いか精度10m以上なら `EnterStandby(StandbyCause.AwaitingGps)`(アバター非表示・HUD下部に
+  「測位後にアバターが現れます」)。精度5m以内で ReAccumulation → Normal。判定は `GpsSignalPolicy.ShouldStartHudOnly`。
+  GPSロスト判定OFF(屋内テスト)と展示デモでは入らない — 復帰を判定する者がいない/アバターを消さないため
   屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)
 - 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する
 - IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、エディタ=カメラ差分近似)。`SetImuAcceleration` はC#専用で、Swiftからは呼べない
@@ -237,6 +249,12 @@ stateDiagram-v2
 - **アバターの身長は `AvatarEngine.ApplyHeightCm` / `SetHeightLimitCm` だけで変える**(モデルの `localScale` を直接書かない)。
   適用されるのは要求身長と上限の小さい方(`EffectiveHeightCm`)— グラス出力中の上限が §7-1 の決定を実現している
 - **展示デモではアバターを一度も消さない**(GPSロスト判定OFF)。向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView`)— §4.1 Gaze Lock の**唯一の例外**で、走行には持ち込まない
+- **AirPods の頭の向き(`HeadphoneHeadTracker` → `UpdateHeadYaw`)は準備画面(S4)で「接続」を押したときだけ使う**(既定OFF・走行の終了で止める)。
+  グラスは Follow(固定)なので、首振りは Unity が進行方向ヨーへ足して打ち消す(`HeadYawBaseline`)。Anchor モードでは足さない
+- 準備画面(S4)では **ARグラスが必須**(未接続・ミラーリングでは「次へ」を押せない — `DeviceGate`)。
+  iPhone 画面だけで試すときは開発者モード「ARグラスなしで走行を始める」を使い、走者に渡す前に OFF へ戻す
+- **選んだルートからの逸脱(`RouteDeviation`)は GPS の座標のまま測る** — 経路を AR の世界へ置かない(原点・ヨーが任意で位置合わせの誤差が乗る)。
+  案内は既定OFF(S8 のスイッチ)で、しきい値・持続時間は `RouteDeviationGate`(トラックの GPS 誤差で反応しない値)。作った往復ルートは渡さない
 - `tools/prepare-free-signing.sh` の実行結果(Bundle ID・署名設定の一時改変)はコミットしない。CIが検知して落とす
 
 ### ペース単位の規約

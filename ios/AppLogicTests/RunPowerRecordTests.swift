@@ -70,4 +70,24 @@ final class RunPowerRecordTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RunPowerRecord.self, from: JSONEncoder().encode(r))
         XCTAssertEqual(decoded, r)
     }
+    // MARK: 走行中の電池の警告(タスク表 S6)
+
+    private func sample(battery: Double?, lowPower: Bool) -> PowerSample {
+        PowerSample(at: Date(timeIntervalSince1970: 0), batteryLevel: battery, thermal: .nominal, lowPowerMode: lowPower)
+    }
+
+    func testNoWarningWhenPowerIsFine() {
+        XCTAssertNil(RunPowerWarning.resolve(sample(battery: 0.8, lowPower: false)))
+        XCTAssertNil(RunPowerWarning.resolve(sample(battery: nil, lowPower: false)), "電池が読めない(シミュレータ)")
+    }
+
+    func testLowBatteryIsWarnedWithThePercentage() {
+        XCTAssertEqual(RunPowerWarning.resolve(sample(battery: 0.15, lowPower: false)), .lowBattery(percent: 15))
+        XCTAssertEqual(RunPowerWarning.resolve(sample(battery: 0.20, lowPower: false)), .lowBattery(percent: 20))
+    }
+
+    func testLowBatteryWinsOverLowPowerMode() {
+        XCTAssertEqual(RunPowerWarning.resolve(sample(battery: 0.10, lowPower: true)), .lowBattery(percent: 10))
+        XCTAssertEqual(RunPowerWarning.resolve(sample(battery: 0.60, lowPower: true)), .lowPowerMode)
+    }
 }

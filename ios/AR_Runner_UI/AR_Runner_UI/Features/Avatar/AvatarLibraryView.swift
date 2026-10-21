@@ -32,6 +32,7 @@ struct AvatarLibraryView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     intro
                     importButton
+                    deliveryCard
                     resultCard
                     avatarList
                 }
@@ -91,6 +92,48 @@ struct AvatarLibraryView: View {
         }
     }
 
+    // MARK: - グラスへの反映(タスク表 S9 異常系「送信失敗時のトーストと再送信」)
+
+    @ViewBuilder
+    private var deliveryCard: some View {
+        switch bridge.avatarDelivery {
+        case .idle:
+            EmptyView()
+        case .sending:
+            HStack(spacing: 10) {
+                ProgressView().tint(.white)
+                Text(AppStrings.Avatar.sending)
+                    .font(.system(size: 13))
+                    .foregroundStyle(secondaryText)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+        case .queued:
+            noticeCard(title: AppStrings.Avatar.queuedTitle, body: "", tint: secondaryText)
+        case .failed:
+            VStack(alignment: .leading, spacing: 8) {
+                Text(AppStrings.Avatar.deliveryFailed)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.orange)
+                Button { bridge.retryAvatarSelection() } label: {
+                    Text(AppStrings.Avatar.resend)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(accent)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(accent.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().stroke(accent.opacity(0.4), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange.opacity(0.45), lineWidth: 1))
+        }
+    }
+
     // MARK: - 直近の結果(断った理由を必ず出す)
 
     @ViewBuilder
@@ -138,7 +181,8 @@ struct AvatarLibraryView: View {
                 .textCase(.uppercase)
 
             if bridge.vrmAvatars.isEmpty {
-                Text(AppStrings.Avatar.none)
+                // 一度も一覧を受け取っていない(Unity が未起動)なら「無い」とは言わない
+                Text(bridge.vrmAvatarsLoaded ? AppStrings.Avatar.none : AppStrings.Avatar.notLoaded)
                     .font(.system(size: 13))
                     .foregroundStyle(secondaryText)
                     .padding(14)
@@ -147,6 +191,7 @@ struct AvatarLibraryView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(bridge.vrmAvatars) { avatar in
+                        // 応答を待っている間は押せない(連打で二重に送らない)
                         Button { bridge.selectVrmAvatar(path: avatar.path) } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "person.crop.square")
@@ -164,6 +209,7 @@ struct AvatarLibraryView: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
                         }
+                        .disabled(bridge.avatarDelivery == .sending)
                         if avatar.id != bridge.vrmAvatars.last?.id {
                             Divider().background(Color.white.opacity(0.08)).padding(.leading, 44)
                         }

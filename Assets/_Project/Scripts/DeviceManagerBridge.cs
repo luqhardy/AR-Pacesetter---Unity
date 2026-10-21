@@ -11,6 +11,9 @@ using UnityEngine;
 ///                        走行セッションは終了させず、CSVログ書き出しは継続する
 ///   UpdateGlassPose {yaw, pitch, roll, timestamp}
 ///                      — グラス実機の頭部姿勢(将来用。iOSでは現状供給元が無い)
+///   UpdateHeadYaw {yaw}
+///                      — AirPods の頭のヨー(度・基準は任意・右が正)。進行方向との差を首振りとして
+///                        グラスの描画の向きへ足し、首を振ってもアバターが進行方向の3m先に留まって見える
 /// </summary>
 public class DeviceManagerBridge : MonoBehaviour
 {
@@ -27,7 +30,7 @@ public class DeviceManagerBridge : MonoBehaviour
         public int pixelHeight;
         public float refreshHz;
 
-        // UpdateGlassPose (度)
+        // UpdateGlassPose (度)。UpdateHeadYaw は yaw だけを使う(AirPods の頭のヨー・右が正)
         public float yaw;
         public float pitch;
         public float roll;
@@ -103,6 +106,11 @@ public class DeviceManagerBridge : MonoBehaviour
                 ApplyGlassPose(cmd);
                 break;
 
+            case "UpdateHeadYaw":
+                // AirPods の頭のヨー(基準は任意・右が正)
+                ApplyHeadYaw(cmd);
+                break;
+
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown device command: {cmd.command}");
                 break;
@@ -166,6 +174,16 @@ public class DeviceManagerBridge : MonoBehaviour
         // 鮮度判定はUnityの時間軸で行う。Swiftの timestamp は CACurrentMediaTime 系で
         // 起点が違うためそのまま渡すと必ず「古い」と判定される — 到着時刻で刻む(0を渡す)
         rig.SetExternalHeadPose(Quaternion.Euler(cmd.pitch, cmd.yaw, cmd.roll), 0f);
+    }
+
+    /// <summary>
+    /// 首振りを出力リグへ渡す(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」)。
+    /// 供給が途切れれば進行方向ヨーだけに戻る
+    /// </summary>
+    private void ApplyHeadYaw(SwiftCommand cmd)
+    {
+        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (rig != null) rig.SetHeadYaw(cmd.yaw);
     }
 
     /// <summary>

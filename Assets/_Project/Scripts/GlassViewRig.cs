@@ -46,6 +46,10 @@ public sealed class GlassViewRig : MonoBehaviour
     private Camera _outputCamera;
     private Quaternion _externalPose = Quaternion.identity;
     private float _externalPoseTime = -1f;
+    // 首振り。AirPods の頭のヨー(基準は任意・右が正)を進行方向との差にして足す(HeadPoseMath 参照)
+    private float _headYawRaw;
+    private float _headYawTime = -1f;
+    private HeadYawBaseline _headYawBaseline;
 
     // ARカメラの復帰用に退避する描画設定
     private int _savedCullingMask;
@@ -116,6 +120,9 @@ public sealed class GlassViewRig : MonoBehaviour
         EnsureOutputCamera();
         TakeOverFromArCamera();
         IsGlassOutputActive = true;
+        // 首振りの「まっすぐ前」は接続し直すたびに取り直す。切断中に進行方向が変わっていると、
+        // 古い基準のままでは最大90°ずれた向きから始まり、戻るまで数十秒かかる
+        _headYawBaseline.Reset();
 
         ApplyFitHeightLimit();
         ReportOpticalFit();
@@ -133,6 +140,8 @@ public sealed class GlassViewRig : MonoBehaviour
         if (!IsGlassOutputActive) return;
 
         IsGlassOutputActive = false;
+        _headYawBaseline.Reset();
+        AppliedHeadYawDegrees = 0f;
         ActiveProfile = GlassDisplayProfile.PhoneScreen;
         OrientationSource = HeadOrientationSource.PhoneCamera;
         AppliedDownPitchDegrees = 0f;
@@ -157,6 +166,23 @@ public sealed class GlassViewRig : MonoBehaviour
         _externalPose = rotation;
         _externalPoseTime = timestampSeconds > 0f ? timestampSeconds : Time.time;
     }
+
+    /// <summary>
+    /// AirPods の頭のヨー(度・基準は任意・右が正)を受け取る。グラスは Follow(固定) なので、
+    /// 首振りを描画の向きへ足さないと、首を振ったときアバターが視線の先へ付いてくる。
+    /// 供給が <see cref="HeadPoseMath.DefaultHeadYawMaxAgeSeconds"/> 途切れれば進行方向だけに戻る
+    /// </summary>
+    public void SetHeadYaw(float degrees)
+    {
+        _headYawRaw = degrees;
+        _headYawTime = Time.time;
+    }
+
+    public bool HasFreshHeadYaw =>
+        HeadPoseMath.IsExternalPoseFresh(Time.time, _headYawTime, HeadPoseMath.DefaultHeadYawMaxAgeSeconds);
+
+    /// <summary>直近のフレームで描画に足した首振り(度)。足していなければ0。診断・E2E用</summary>
+    public float AppliedHeadYawDegrees { get; private set; }
 
     public bool HasFreshExternalPose =>
         HeadPoseMath.IsExternalPoseFresh(Time.time, _externalPoseTime, HeadPoseMath.DefaultExternalPoseMaxAgeSeconds);
@@ -202,13 +228,18 @@ public sealed class GlassViewRig : MonoBehaviour
 
         double maxHeight = GlassOpticsMath.MaxFullBodyHeightMeters(
             eyeHeightMeters, lead, ActiveProfile.VerticalFovDegrees, maxDownPitchDegrees);
-        double limited = maxHeight - FitHeightMarginMeters;
-        FitHeightLimitCm = limited > 0.5 ? (float)(limited * 100.0) : 0f;
+        // 前方距離が短いと上限は数十cmになる — 人形にはせず下限(AvatarScale.MinHeightLimitCm)で止める
+        // (タスク表 ARグラス「サイズの異常系」。そのときは頭か足元が少し欠ける)
+        FitHeightLimitCm = AvatarScale.ResolveHeightLimitCm(maxHeight, FitHeightMarginMeters);
+        bool floored = FitHeightLimitCm > 0f && maxHeight - FitHeightMarginMeters < AvatarScale.MinHeightLimitCm / 100.0;
 
         avatarEngine.SetHeightLimitCm(FitHeightLimitCm);
-        Debug.Log(FitHeightLimitCm > 0f
-            ? $"[GLASS] 全身を画角に収める身長の上限 {FitHeightLimitCm:F0}cm({ActiveProfile.Model}・{lead:F1}m前方)"
-            : $"[GLASS] {lead:F1}m前方では足元が画角に入らないため、身長の上限は設けません");
+        Debug.Log(FitHeightLimitCm <= 0f
+            ? $"[GLASS] {lead:F1}m前方では足元が画角に入らないため、身長の上限は設けません"
+            : floored
+                ? $"[GLASS] {lead:F1}m前方で全身を収めると {(maxHeight - FitHeightMarginMeters) * 100.0:F0}cm になるため、" +
+                  $"下限の {FitHeightLimitCm:F0}cm に留めます(頭か足元が少し欠ける)"
+                : $"[GLASS] 全身を画角に収める身長の上限 {FitHeightLimitCm:F0}cm({ActiveProfile.Model}・{lead:F1}m前方)");
     }
 
     private void UpdateOutputCamera()
@@ -224,6 +255,7 @@ public sealed class GlassViewRig : MonoBehaviour
 
         // 向き
         float downPitch = 0f;
+        float headYaw = 0f;
         Quaternion rotation;
         switch (OrientationSource)
         {
@@ -235,9 +267,17 @@ public sealed class GlassViewRig : MonoBehaviour
             case HeadOrientationSource.TravelHeading:
             default:
                 downPitch = (float)ResolveDownPitch();
-                rotation = Quaternion.Euler(downPitch, ResolveHeadingYawDegrees(), 0f);
+                float travelYaw = ResolveHeadingYawDegrees();
+                bool applyHeadYaw = HeadPoseMath.ShouldApplyHeadYaw(screenMode, HasFreshHeadYaw);
+                float offset = 0f;
+                if (applyHeadYaw) offset = _headYawBaseline.Update(_headYawRaw, travelYaw, Time.deltaTime);
+                else _headYawBaseline.Reset();
+                float viewYaw = HeadPoseMath.ResolveViewYawDegrees(travelYaw, offset, applyHeadYaw);
+                headYaw = viewYaw - travelYaw;
+                rotation = Quaternion.Euler(downPitch, viewYaw, 0f);
                 break;
         }
+        AppliedHeadYawDegrees = headYaw;
 
         _outputCamera.transform.rotation = rotation;
         AppliedDownPitchDegrees = downPitch;

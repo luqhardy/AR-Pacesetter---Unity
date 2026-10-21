@@ -116,13 +116,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Motion data is used to measure your running cadence."
+            "value" : "Motion data is used to measure your running cadence and to read your head direction from AirPods."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ランニングピッチの計測にモーションデータを使用します"
+            "value" : "ランニングピッチの計測と、AirPodsで頭の向きを読み取るためにモーションデータを使用します"
           }
         }
       }

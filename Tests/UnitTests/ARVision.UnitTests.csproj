@@ -56,5 +56,8 @@
     <Compile Include="..\..\Assets\_Project\Scripts\SyncAverage.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\BoothDemoScript.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\RouteRecorder.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\RunSummaryText.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\RouteDeviation.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\SelfPacedLead.cs" />
   </ItemGroup>
 </Project>

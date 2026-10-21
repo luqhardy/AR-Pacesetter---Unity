@@ -26,6 +26,8 @@ struct DevModeView: View {
 
     @State private var shareItem: ShareItem?
     @State private var autoRefresh = true
+    /// 準備画面(S4)で ARグラスなしでも「次へ」を押せるようにする(既定 OFF — 仕様ではグラスは必須)
+    @AppStorage(DeviceGate.allowRunWithoutGlassesKey) private var allowRunWithoutGlasses = false
     @State private var reportCopied = false
 
     private let accent = Color(red: 199.0 / 255.0, green: 242.0 / 255.0, blue: 25.0 / 255.0)
@@ -296,6 +298,25 @@ struct DevModeView: View {
                      : "ON(仕様どおり)。屋内で走ってアバターが消えるときだけOFFにする")
                     .font(.system(size: 12))
                     .foregroundStyle(gpsLostHandlingOn == false ? Color.orange : secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+
+            // タスク表 S4: ARグラスは必須(未接続では準備画面から先へ進めない)。
+            // iPhone の画面だけで動作を確かめるときだけ外す
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: $allowRunWithoutGlasses) {
+                    Text("ARグラスなしで走行を始める")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .tint(accent)
+                Text(allowRunWithoutGlasses
+                     ? "ON — 準備画面でグラスが未接続でも「次へ」を押せます(iPhone の画面で走る)。走者に渡す前に OFF に戻すこと"
+                     : "OFF(仕様どおり)。グラスがつながるまで準備画面から先へ進めない")
+                    .font(.system(size: 12))
+                    .foregroundStyle(allowRunWithoutGlasses ? Color.orange : secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(14)

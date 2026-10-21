@@ -9,6 +9,7 @@ using UnityEngine;
 ///   復帰判定 : 新鮮なサンプルがあり、かつ精度が復帰ゲート(5m)以内
 /// 判定と遷移の表は <see cref="GpsSignalPolicy"/>(純ロジック・ユニットテスト付き)。
 /// 復帰は InertialMovement / FadeOut → Normal、GPSロストによる Standby → ReAccumulation。
+/// START の時点でGPSが無くHUDだけで始めたスタンバイ(オプトイン)も、同じく ReAccumulation へ進む。
 ///
 /// 実測サンプルを一度も受け取っていない間(エディタ単体走行・E2E)は一切介入しない
 /// ため、既存のシミュレーションキー(G/R/A)の挙動は従来どおり。
@@ -168,9 +169,12 @@ public class GpsSignalMonitor : MonoBehaviour
             case GameStateController.ARVisionState.InertialMovement: return GpsSignalPolicy.Phase.InertialMovement;
             case GameStateController.ARVisionState.FadeOut:          return GpsSignalPolicy.Phase.FadeOut;
             case GameStateController.ARVisionState.Standby:
-                return stateController.CurrentStandbyCause == GameStateController.StandbyCause.GpsLost
-                    ? GpsSignalPolicy.Phase.StandbyAfterGpsLoss
-                    : GpsSignalPolicy.Phase.Other;
+                switch (stateController.CurrentStandbyCause)
+                {
+                    case GameStateController.StandbyCause.GpsLost:     return GpsSignalPolicy.Phase.StandbyAfterGpsLoss;
+                    case GameStateController.StandbyCause.AwaitingGps: return GpsSignalPolicy.Phase.StandbyAwaitingGps;
+                    default:                                           return GpsSignalPolicy.Phase.Other;
+                }
             default:
                 return GpsSignalPolicy.Phase.Other;
         }
@@ -186,6 +190,16 @@ public class GpsSignalMonitor : MonoBehaviour
     private bool EvaluateRecovered() => GpsSignalPolicy.IsRecovered(
         Time.time - _lastUpdateTime, staleTimeoutSeconds,
         _lastAccuracy, accuracyRecoveredThresholdMeters);
+
+    /// <summary>
+    /// START の時点でGPSが使えず、アバターを出さずHUDだけで始めるか(<see cref="GpsSignalPolicy.ShouldStartHudOnly"/>)。
+    /// 測位が一度も届いていなければ「使えない」
+    /// </summary>
+    /// <param name="optedIn">AR設定「GPSが使えないときはHUDだけで始める」(StartSession の hudOnlyWithoutGps)</param>
+    public bool ShouldStartHudOnly(bool optedIn) => GpsSignalPolicy.ShouldStartHudOnly(
+        optedIn, autoLostHandlingEnabled,
+        _hasReceivedSample ? Time.time - _lastUpdateTime : float.PositiveInfinity, staleTimeoutSeconds,
+        _lastAccuracy, accuracyLostThresholdMeters);
 
     /// <summary>再走行対応: 監視状態を初期化する。</summary>
     public void ResetSession()

@@ -14,6 +14,11 @@ struct StatsView: View {
     @State private var shownAt = Date()
     @State private var now = Date()
 
+    /// 「詳細」(消費カロリー・疲労度など、メイン表示に含めない項目 — タスク表 S7)
+    @State private var showDetails = false
+    /// 「保存に失敗しました」のダイアログ(タスク表 S7 異常系: 再試行 or 端末に控えを残す)
+    @State private var showSaveFailedAlert = false
+
     private var result: UnityBridge.SessionResult? { bridge.lastResult }
 
     private var resultState: SessionResultState {
@@ -32,31 +37,20 @@ struct StatsView: View {
         }
     }
 
-    private var distanceStr: String {
-        result.map { String(format: "%.2f", $0.distanceKm) } ?? "-"
-    }
+    // 書式は RunResultFormat(テスト対象)— 超短距離・超長時間・GPS の飛びでもカードからはみ出さない(タスク表 S7)
+    private var distanceStr: String { RunResultFormat.distanceKm(result?.distanceKm) }
 
-    private var timeStr: String {
-        guard let r = result else { return "-" }
-        let total = Int(r.elapsedSeconds)
-        return String(format: "%02d:%02d", total / 60, total % 60)
-    }
+    private var timeStr: String { RunResultFormat.duration(result?.elapsedSeconds) }
 
     private var paceStr: String {
-        guard let r = result, r.distanceKm > 0.01 else { return "-" }
-        let minPerKm = (r.elapsedSeconds / 60.0) / r.distanceKm
-        let minutes = Int(minPerKm)
-        let seconds = Int((minPerKm - Double(minutes)) * 60.0)
-        return String(format: "%d'%02d\"", minutes, seconds)
+        RunResultFormat.pace(distanceKm: result?.distanceKm, elapsedSeconds: result?.elapsedSeconds)
     }
 
     private var kcalStr: String {
         guard let r = result else { return "-" }
         // Unity側がオンボーディングの実体重で算出した値を優先。
         // 旧データ等で未提供(0)の場合のみ体重60kg想定で概算
-        return r.calories > 0
-            ? String(Int(r.calories.rounded()))
-            : String(Int(r.distanceKm * 60.0 * 1.05))
+        return RunResultFormat.calories(r.calories > 0 ? r.calories : r.distanceKm * 60.0 * 1.05)
     }
 
     /// 値が無いときは単位を出さない(「- km」にしない)
@@ -77,10 +71,10 @@ struct StatsView: View {
                 // Scrollable content below nav bar
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
-                        // Header
+                        // Header — タイトルは「ランニング結果」(タスク表 S7)
                         VStack(alignment: .leading, spacing: 4) {
                             ARLabel(text: AppStrings.Results.activityEyebrow)
-                            Text(AppStrings.Results.niceRun)
+                            Text(AppStrings.Results.title)
                                 .font(.system(size: 30, weight: .bold))
                                 .foregroundColor(.white)
                         }
@@ -108,8 +102,9 @@ struct StatsView: View {
                                     .frame(width: 172, height: 172)
                                     .rotationEffect(.degrees(-90))
 
+                                // 目標達成率 = 走行全体の平均シンクロ率(目標ペースとのずれから算出 — タスク表 S7)
                                 VStack(spacing: 3) {
-                                    Text(AppStrings.Results.syncRate)
+                                    Text(AppStrings.Results.achievement)
                                         .font(.system(size: 11))
                                         .foregroundColor(.arGrayText)
                                     Text(syncPercent.map { "\($0)%" } ?? "-")
@@ -184,7 +179,13 @@ struct StatsView: View {
                             }
                             GridRow {
                                 StatMiniCard(title: AppStrings.Results.averagePace, value: paceStr, unit: unit("/km", for: paceStr))
-                                StatMiniCard(title: AppStrings.Results.calories, value: kcalStr, unit: unit("kcal", for: kcalStr))
+                                // 消費カロリー・疲労度などメイン表示に含めない項目は「詳細」へ(タスク表 S7)
+                                Button { showDetails = true } label: {
+                                    StatMiniCard(title: AppStrings.Results.details, value: "", unit: "",
+                                                 icon: "chevron.right.circle")
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(result == nil)
                             }
                         }
                         .padding(.horizontal, 24)
@@ -207,6 +208,78 @@ struct StatsView: View {
             try? await Task.sleep(for: .seconds(SessionResultState.waitSeconds))
             now = Date()
         }
+        .onAppear {
+            if result?.saved == false { showSaveFailedAlert = true }
+        }
+        .onChange(of: result?.saved) { _, saved in
+            if saved == false { showSaveFailedAlert = true }
+        }
+        .onChange(of: bridge.isRetryingSave) { wasRetrying, retrying in
+            // 再試行しても保存できなかった → もう一度知らせる(控えは端末に残っている)
+            if wasRetrying && !retrying && result?.saved == false { showSaveFailedAlert = true }
+        }
+        .alert(AppStrings.Results.saveFailedTitle, isPresented: $showSaveFailedAlert) {
+            Button(AppStrings.Results.retry) { bridge.retrySessionSave() }
+            Button(AppStrings.Results.saveLater, role: .cancel) {}
+        } message: {
+            Text(AppStrings.Results.saveFailedBody)
+        }
+        .sheet(isPresented: $showDetails) {
+            if let r = result {
+                RunResultDetailSheet(result: r, kcal: kcalStr)
+            }
+        }
+    }
+}
+
+// MARK: - ラン結果の詳細(タスク表 S7「詳細」)
+
+/// メイン表示に含めない項目(消費カロリー・疲労度・評価)
+private struct RunResultDetailSheet: View {
+    let result: UnityBridge.SessionResult
+    let kcal: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ARScreen {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text(AppStrings.Results.detailsTitle)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Color.arCard, in: Circle())
+                    }
+                    .accessibilityLabel(Text(AppStrings.Common.close))
+                }
+
+                Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                    GridRow {
+                        StatMiniCard(title: AppStrings.Results.calories, value: kcal, unit: kcal == "-" ? "" : "kcal")
+                        StatMiniCard(title: AppStrings.Results.fatigue, value: RunResultFormat.fatigue(result.fatigue), unit: "")
+                    }
+                    GridRow {
+                        StatMiniCard(title: AppStrings.Results.syncRate,
+                                     value: "\(Int(result.averageSync.rounded()))", unit: "%")
+                        StatMiniCard(title: AppStrings.Results.grade, value: result.grade, unit: "")
+                    }
+                }
+
+                Text(AppStrings.Results.fatigueNote)
+                    .font(.system(size: 12))
+                    .foregroundColor(.arGrayText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer()
+            }
+            .padding(24)
+        }
+        .presentationDetents([.medium])
     }
 }
 
@@ -361,6 +434,8 @@ struct StatMiniCard: View {
     let title: LocalizedStringKey
     let value: String
     let unit: String
+    /// 値の代わりに出すアイコン(「詳細」への入口など)
+    var icon: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -368,9 +443,18 @@ struct StatMiniCard: View {
                 .font(.system(size: 11))
                 .foregroundColor(.arGrayText)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(.white)
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(.arYellow)
+                } else {
+                    // 桁が増えても1行に収める(タスク表 S7: 極端な値でカードからはみ出さない)
+                    Text(value)
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                }
                 if !unit.isEmpty {
                     Text(unit)
                         .font(.system(size: 12))

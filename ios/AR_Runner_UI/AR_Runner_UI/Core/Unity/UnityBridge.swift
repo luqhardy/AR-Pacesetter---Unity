@@ -26,6 +26,9 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var avatarSyncRate: Int = 0       // 0–100%
     @Published var avatarState: AvatarState = .idle
     @Published var gpsStatus: GPSStatus = .searching
+    /// GPSロストのうち「START の時点でGPSが無く、HUDだけで始めた」もの(HudOnlyStart)。
+    /// アバターはまだ一度も出ていないので、バナーを「慣性走行中」にしない
+    @Published var gpsAwaitingFirstFix = false
     /// アバターが見えていない理由(Unity AvatarVisibilityDiagnostics)。見えていれば nil。
     /// 実機で「消えた」を「どの経路で消えたか」に変えるための診断表示
     @Published var avatarHiddenReason: String? = nil
@@ -42,6 +45,8 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var motionToPhotonSampleCount: Int = 0
     /// EndSession後にUnityから届く。走行開始で nil に戻す(前回の結果を今回のものとして出さない)
     @Published var lastResult: SessionResult?
+    /// 結果画面(S7)の「保存に失敗しました」→ 再試行の応答を待っているか(連打で二重に頼まない)
+    @Published private(set) var isRetryingSave = false
     /// RequestHistory応答(新しい順)。最後に受け取ったものは端末にも保存し、
     /// Unity が起動する前(アプリ起動直後のホーム・履歴画面)でも出せるようにする
     @Published private(set) var history: [HistoryEntry] = []
@@ -64,6 +69,16 @@ final class UnityBridge: NSObject, ObservableObject {
     @Published var currentVrmAvatar: String = ""
     /// 直近の取り込み/選択の結果。UIはこれを見て成否と理由を出す
     @Published var lastVrmResult: VrmImportResult?
+    /// アバターの選択をグラス(Unity)へ反映できたか(タスク表 S9 異常系「送信失敗時のトーストと再送信」)
+    @Published private(set) var avatarDelivery: SettingDeliveryState = .idle
+    /// 反映を待っている選択・取り込み(再送信で同じものを送る)。command は SelectVrmAvatar / ImportVrmAvatar
+    private var pendingAvatarCommand: (command: String, path: String)?
+    /// アバターの一覧(VrmAvatarList)を一度でも受け取ったか。false の間の空は「無い」ではなく「まだ読めていない」
+    /// (Unity は走行画面で初めて起動する)
+    @Published private(set) var vrmAvatarsLoaded = false
+    /// 応答を待つ間だけ Unity を動かしているか(応答・時間切れで止め直す)
+    private var resumedForAvatarDelivery = false
+    private var avatarDeliveryTimeout: DispatchWorkItem?
 
     // MARK: 展示ブースの体験モード (Kobe Calling)
     /// 体験モードの進行(Unity BoothDemoController の BoothDemoProgress)
@@ -94,6 +109,8 @@ final class UnityBridge: NSObject, ObservableObject {
         let calories: Double     // Unity側でオンボーディング体重から算出
         /// 履歴への保存に成功したか。false なら結果画面で知らせる(容量不足等。次の走行の開始時に Unity が復元を試みる)
         let saved: Bool
+        /// §4.3 の疲労度(累積指数)。2026-10-19 より前の Unity エクスポートは送らない(nil)
+        var fatigue: Double? = nil
     }
 
     struct VrmAvatar: Identifiable {
@@ -227,7 +244,8 @@ final class UnityBridge: NSObject, ObservableObject {
     ///   ARビューがiPhoneに出ている間はSwiftUIのHUDを使う(手に持って正面から見る
     ///   画面に適した意匠)。グラス出力中はUnityのF-07 HUDが担当する。
     func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
-                      hideUnityHud: Bool = false) {
+                      hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false,
+                      hudOnlyWithoutGps: Bool = false) {
         // 前回の走行の結果を消す。残すと、今回の SessionEnded が届かなかったときに
         // 結果画面が前回の数字を今回のものとして出す
         lastResult = nil
@@ -242,6 +260,18 @@ final class UnityBridge: NSObject, ObservableObject {
         if let ghost = ghostDateIso, !ghost.isEmpty {
             payload["mode"] = "ghost"
             payload["ghostDateIso"] = ghost
+        }
+        // アバターが目標ペースで走る(遅れると前へ離れる — AvatarPacing・既定は「走者+3m」)
+        if selfPaced {
+            payload["selfPaced"] = true
+        }
+        // START の時点でGPSが使えなければHUDだけで始める(HudOnlyStart・既定はアバターを出す)
+        if hudOnlyWithoutGps {
+            payload["hudOnlyWithoutGps"] = true
+        }
+        // 選んだルート(S8)。外れたらアバターが案内する(サイレントルート復帰 — RouteGuidance)
+        if let route = routeLatLon, route.count >= 4 {
+            payload["routeLatLon"] = route
         }
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand", payload: payload)
     }
@@ -307,6 +337,30 @@ final class UnityBridge: NSObject, ObservableObject {
                               "yaw": yaw, "pitch": pitch, "roll": roll, "timestamp": timestamp])
     }
 
+    /// 履歴への保存をやり直す(タスク表 S7「保存に失敗しました」→ 再試行)。
+    /// 走行後の Unity は止めてあるので、応答(SessionSaveRetried)までの間だけ動かす。
+    /// 応答が来なければ諦めて止め直す — 控えは Unity に残り、次に Unity が起動したときに復元される
+    func retrySessionSave() {
+        guard lastResult?.saved == false, !isRetryingSave else { return }
+        isRetryingSave = true
+        UnityLauncher.shared.resume()
+        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
+                    payload: ["command": "RetrySaveSession"])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.isRetryingSave else { return }
+            self.isRetryingSave = false
+            UnityLauncher.shared.pause()
+        }
+    }
+
+    /// AirPods の頭のヨー(度・基準は任意・右が正)を Unity へ渡す
+    /// (タスク表 ARグラス「首を振り向けた時に想定する場所を走る」)。
+    /// Unity が進行方向との差を首振りとしてグラスの描画の向きへ足す。途切れれば進行方向だけに戻る
+    func updateHeadYaw(degrees: Double) {
+        sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
+                    payload: ["command": "UpdateHeadYaw", "yaw": degrees])
+    }
+
     /// ARグラス切断 (§8.3): Unityをスタンバイへ移行させアバターを消去する。
     /// 走行セッションは終了させないため、CSVログ書き出しは継続する。
     func disconnectGlass() {
@@ -352,14 +406,56 @@ final class UnityBridge: NSObject, ObservableObject {
     /// Swift側でファイルをサンドボックスへコピーしてから呼ぶこと — ドキュメントピッカーが
     /// 返すURLはセキュリティスコープ付きで、Unity側からはそのままでは読めない。
     func importVrmAvatar(path: String) {
-        sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
-                    payload: ["command": "ImportVrmAvatar", "path": path])
+        // 選択と同じく応答を待つ(届かなければ再送信できる)。Unity 未起動なら次の走行で取り込む
+        pendingAvatarCommand = ("ImportVrmAvatar", path)
+        deliverPendingAvatar()
     }
 
     /// 一覧から既存のアバターを選び直す。
     func selectVrmAvatar(path: String) {
+        pendingAvatarCommand = ("SelectVrmAvatar", path)
+        deliverPendingAvatar()
+    }
+
+    /// 「再送信」: 反映できなかった選択をもう一度送る
+    func retryAvatarSelection() {
+        deliverPendingAvatar()
+    }
+
+    /// 選択を送り、応答(VrmImportResult)を待つ。走行の後で止めてある Unity は応答までの間だけ動かす。
+    /// 一度も起動していなければ送れないので溜め(`.queued`)、次に走り始めたときに反映する
+    private func deliverPendingAvatar() {
+        guard let pending = pendingAvatarCommand else { return }
+        let launched = UnityLauncher.shared.hasLaunchedOnce
+        if !resumedForAvatarDelivery,
+           SettingDeliveryState.needsTemporaryResume(unityLaunched: launched, unityReady: isUnityReady,
+                                                     sessionActive: ARSessionManager.shared.isSessionActive) {
+            UnityLauncher.shared.resume()
+            resumedForAvatarDelivery = true
+        }
+        avatarDelivery = SettingDeliveryState.onSend(unityLaunched: launched, unityReady: isUnityReady)
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
-                    payload: ["command": "SelectVrmAvatar", "path": path])
+                    payload: ["command": pending.command, "path": pending.path])
+
+        avatarDeliveryTimeout?.cancel()
+        guard avatarDelivery == .sending else { return }
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.avatarDelivery == .sending else { return }
+            self.avatarDelivery = .failed
+            self.endAvatarDelivery()
+        }
+        avatarDeliveryTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + SettingDeliveryState.responseTimeoutSeconds, execute: timeout)
+    }
+
+    /// 応答が来た・諦めた。応答のために動かした Unity は止め直す(走行が始まっていたら止めない)
+    private func endAvatarDelivery() {
+        avatarDeliveryTimeout?.cancel()
+        avatarDeliveryTimeout = nil
+        if resumedForAvatarDelivery {
+            resumedForAvatarDelivery = false
+            if !ARSessionManager.shared.isSessionActive { UnityLauncher.shared.pause() }
+        }
     }
 
     /// 選べるアバターの一覧を要求する(VrmAvatarList イベントで返る)。
@@ -416,8 +512,10 @@ final class UnityBridge: NSObject, ObservableObject {
                 }
             case "GPSLost":
                 self.gpsStatus = .lost
+                self.gpsAwaitingFirstFix = HudOnlyStart.isAwaitingFirstFix(gpsLostEvent: dict)
             case "GPSRecovered":
                 self.gpsStatus = .recovered
+                self.gpsAwaitingFirstFix = false
             case "AvatarVisibility":
                 // Unityが判定した「アバターが見えない経路」。見えていれば nil
                 let visible = dict["visible"] as? Bool ?? true
@@ -433,6 +531,7 @@ final class UnityBridge: NSObject, ObservableObject {
                 if let ratio = dict["overBudgetRatio"] as? Double { self.motionToPhotonOverBudgetRatio = ratio }
                 if let count = dict["sampleCount"] as? Int { self.motionToPhotonSampleCount = count }
             case "VrmAvatarList":
+                self.vrmAvatarsLoaded = true
                 self.currentVrmAvatar = dict["current"] as? String ?? ""
                 let list = dict["avatars"] as? [[String: Any]] ?? []
                 self.vrmAvatars = list.map {
@@ -440,6 +539,12 @@ final class UnityBridge: NSObject, ObservableObject {
                               path: $0["path"] as? String ?? "")
                 }
             case "VrmImportResult":
+                // 選択が届いた(成否は下の結果で出す)。取り込みの応答でも同じ — 待っていた選択は済んだ扱い
+                if self.avatarDelivery != .idle {
+                    self.avatarDelivery = .idle
+                    self.pendingAvatarCommand = nil
+                    self.endAvatarDelivery()
+                }
                 let accepted = dict["accepted"] as? Bool ?? false
                 self.lastVrmResult = VrmImportResult(
                     accepted: accepted,
@@ -475,7 +580,8 @@ final class UnityBridge: NSObject, ObservableObject {
                     elapsedSeconds: dict["elapsedSeconds"] as? Double ?? 0,
                     calories: dict["calories"] as? Double ?? 0,
                     // 2026-10-14 より前の Unity エクスポートは送らない — 誤って失敗と出さない
-                    saved: dict["saved"] as? Bool ?? true
+                    saved: dict["saved"] as? Bool ?? true,
+                    fatigue: (dict["fatigue"] as? NSNumber)?.doubleValue
                 )
                 self.lastResult = result
 
@@ -485,6 +591,16 @@ final class UnityBridge: NSObject, ObservableObject {
                     elapsedSeconds: result.elapsedSeconds,
                     calories: result.calories
                 )
+            case "SessionSaveRetried":
+                // 再試行の結果。成功なら結果画面の「保存に失敗しました」を消す
+                guard self.isRetryingSave else { break }
+                self.isRetryingSave = false
+                UnityLauncher.shared.pause()
+                if dict["saved"] as? Bool == true, let r = self.lastResult {
+                    self.lastResult = SessionResult(grade: r.grade, rank: r.rank, averageSync: r.averageSync,
+                                                    distanceKm: r.distanceKm, elapsedSeconds: r.elapsedSeconds,
+                                                    calories: r.calories, saved: true, fatigue: r.fatigue)
+                }
             case "BoothDemoProgress":
                 self.boothDemoProgress = BoothDemoProgress(
                     mode: dict["mode"] as? String ?? "",
@@ -563,19 +679,21 @@ final class UnityBridge: NSObject, ObservableObject {
             withName: object, functionName: method, message: json)
 #else
         // Development / simulator fallback (UnityFramework not linked)
+        // 頭の向き(30Hz)はログを埋めるので出さない
+        if payload["command"] as? String == "UpdateHeadYaw" { return }
         print("[UnityBridge → Unity] \(object).\(method)(\(json))")
         simulateUnityResponse(event: payload["command"] as? String ?? "")
 #endif
     }
 
     /// Unity起動前のコマンドを溜める。
-    /// - 測位・頭部姿勢の連続ストリーム(UpdateMetrics / UpdateGlassPose)は溜めない。
+    /// - 測位・頭部姿勢の連続ストリーム(UpdateMetrics / UpdateGlassPose / UpdateHeadYaw)は溜めない。
     ///   古い測位をまとめて流すと、Unity側はそれを「今届いた新鮮な測位」として扱ってしまう
     /// - グラスの接続/切断は状態なので最新の1件だけ残す
     /// - 履歴の要求も1件で足りる(ホーム・ルート選択・履歴画面が開くたびに要求し、応答は経路つきで約100KB)
     private func enqueueUntilReady(object: String, method: String, command: String, json: String) {
         switch command {
-        case "UpdateMetrics", "UpdateGlassPose":
+        case "UpdateMetrics", "UpdateGlassPose", "UpdateHeadYaw":
             return
         case "ConnectXREAL", "DisconnectXREAL":
             pendingCommands.removeAll { $0.command == "ConnectXREAL" || $0.command == "DisconnectXREAL" }
@@ -714,7 +832,8 @@ final class ARSessionManager: ObservableObject {
     #endif
 
     func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
-               hideUnityHud: Bool = false) {
+               hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false,
+               hudOnlyWithoutGps: Bool = false) {
         isSessionActive = true
         startDate = Date()
         elapsedSeconds = 0
@@ -736,9 +855,13 @@ final class ARSessionManager: ObservableObject {
         HeartRateMonitor.shared.start()
         // §10(連続稼働60分・電池30%以上)の確認用に、開始時の電池・発熱を残す
         PowerMonitor.shared.runStarted()
+        // 途中でアプリが落ちたら、次の起動のホームで「前回の記録」を「-」にする(タスク表 S3)
+        RunInterruption.markStarted(in: .standard)
 
         bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm,
-                            ghostDateIso: ghostDateIso, hideUnityHud: hideUnityHud)
+                            ghostDateIso: ghostDateIso, hideUnityHud: hideUnityHud,
+                            routeLatLon: routeLatLon, selfPaced: selfPaced,
+                            hudOnlyWithoutGps: hudOnlyWithoutGps)
 
         // 実測が届くたびに送る — 画面ロック中もCoreLocationは動き続けるため、
         // タイマーが止まってもUnityへの供給が途切れない(M3)
@@ -902,5 +1025,8 @@ final class ARSessionManager: ObservableObject {
         LocationTracker.shared.stop()
         HeartRateMonitor.shared.stop()
         PowerMonitor.shared.runEnded()
+        // AirPods の頭の向きは走行のためだけに使う(準備画面で「接続」を押したときから終了まで)
+        HeadphoneHeadTracker.shared.stop()
+        RunInterruption.markEnded(in: .standard)
     }
 }

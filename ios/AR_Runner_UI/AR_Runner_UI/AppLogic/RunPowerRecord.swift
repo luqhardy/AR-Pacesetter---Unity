@@ -86,3 +86,25 @@ nonisolated struct RunPowerRecord: Codable, Equatable {
         percentAt60Minutes.map { $0 >= Self.minimumPercentAfter60Minutes }
     }
 }
+
+// MARK: - 走行中の電池の警告
+
+/// 走行中に出す電池の警告(タスク表 S6「端末の低電力モード・バッテリー低下でも計測は止めず、警告を出す」)。
+/// 計測も自動スリープの無効化も続ける — 走者に知らせるだけ
+nonisolated enum RunPowerWarning: Equatable {
+    /// 残量が少ない(%)
+    case lowBattery(percent: Int)
+    /// 低電力モードがオン
+    case lowPowerMode
+
+    /// これ以下で「残量が少ない」とする(§10 は60分後に30%以上を求める。走行中に20%を切ったら知らせる)
+    static let lowBatteryThreshold = 0.20
+
+    /// 残量の警告を優先する(低電力モードより差し迫っている)。電池が読めないとき(シミュレータ)は残量の警告を出さない
+    static func resolve(_ sample: PowerSample) -> RunPowerWarning? {
+        if let level = sample.batteryLevel, level <= lowBatteryThreshold {
+            return .lowBattery(percent: Int((level * 100).rounded()))
+        }
+        return sample.lowPowerMode ? .lowPowerMode : nil
+    }
+}

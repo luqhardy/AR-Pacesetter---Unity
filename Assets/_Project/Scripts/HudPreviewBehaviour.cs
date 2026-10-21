@@ -94,6 +94,12 @@ public class HudPreviewBehaviour : MonoBehaviour
             yield return new WaitForSeconds(0.6f);
             LogText("SafetyWarning");
             Capture("4_gps_lost");
+
+            // 5. START の時点でGPSが無くHUDだけ(AR設定のスイッチ)— 警告の文言が変わる
+            state.EnterStandby(GameStateController.StandbyCause.AwaitingGps);
+            yield return new WaitForSeconds(0.6f);
+            LogText("SafetyWarning");
+            Capture("5_awaiting_gps");
         }
 
         Debug.Log($"[HUD PREVIEW] 書き出し完了: {_outDir}");

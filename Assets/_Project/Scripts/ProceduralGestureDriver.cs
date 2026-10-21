@@ -4,7 +4,8 @@ using UnityEngine;
 /// プロシージャルジェスチャー (企画書 4.1 自律アクションの可視化):
 /// Mixamoの専用モーションが用意されるまでの間、ヒューマノイドボーンを
 /// LateUpdate(Animator書き込み後)でワールド空間回転させ、
-///  - Beckon: 離隔待機中の手招き(右腕を上げ、前腕を1.6Hzで振る)
+///  - Beckon: 離隔待機中・ペースが遅れて離れているとき(オーラが出る5m以上の遅れ — §7.2)の手招き
+///            (右腕を上げ、前腕を1.6Hzで振る。タスク表 ARグラス「ペース遅延時: 離れ、色が変わり、手招き」)
 ///  - CalmDown: バイタル警告中の「落ち着け」(手のひらを前に、ゆっくり上下)
 ///  - Goodbye: 終了時のお辞儀(背骨+頭を前傾→戻す)
 /// を実際に見える形にする。専用モーション導入後もフォールバックとして無害
@@ -18,6 +19,7 @@ public class ProceduralGestureDriver : MonoBehaviour
 
     private AvatarEngine _engine;
     private AvatarVisualsAndActions _visuals;
+    private AvatarAuraEffect _aura;
     private Animator _animator;
 
     private Transform _rightUpperArm;
@@ -37,6 +39,7 @@ public class ProceduralGestureDriver : MonoBehaviour
     {
         _engine = GetComponent<AvatarEngine>();
         _visuals = GetComponent<AvatarVisualsAndActions>();
+        _aura = GetComponent<AvatarAuraEffect>();
         ResolveRig();
     }
 
@@ -69,7 +72,7 @@ public class ProceduralGestureDriver : MonoBehaviour
         string target = "None";
         if (ended && Time.time - _farewellStartTime < FarewellGestureSeconds)
             target = "Goodbye";
-        else if (!ended && _engine.IsWaitingForUser)
+        else if (!ended && (_engine.IsWaitingForUser || IsLaggingBehind))
             target = "Beckon";
         else if (!ended && _visuals != null && _visuals.IsVitalWarningActive)
             target = "CalmDown";
@@ -82,6 +85,19 @@ public class ProceduralGestureDriver : MonoBehaviour
         if (_weight <= 0.001f) return;
 
         ApplyPose(_currentPose, _weight);
+    }
+
+    /// <summary>
+    /// ペースが遅れてアバターが離れているか(オーラが出る5m以上の遅れ — §7.2)。
+    /// 色(橙→赤)とオーラに加えて手招きで「ついて来て」を伝える
+    /// </summary>
+    private bool IsLaggingBehind
+    {
+        get
+        {
+            if (_aura == null) _aura = GetComponent<AvatarAuraEffect>();
+            return _aura != null && _aura.IsAuraActive;
+        }
     }
 
     private void ApplyPose(string pose, float weight)

@@ -363,6 +363,26 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(Mathf.Abs(avatarHeight - 1.75f) < 0.15f,
                 $"scale: avatar renders at real-world height for 175cm (measured {avatarHeight:F2}m)");
 
+        // サイズの異常系(タスク表 ARグラス): 桁外れの身長指定でも豆粒・巨人にしない。
+        // 範囲外は端へ寄せて異常として残し、正常な指定で元へ戻ること
+        if (avatarHeight > 0.01f)
+        {
+            engine.ApplyHeightCm(9999f);
+            Check(Mathf.Approximately(engine.RequestedHeightCm, AvatarScale.MaxRequestedHeightCm)
+                  && Mathf.Abs(engine.MeasuredAvatarHeightMeters * 100f - engine.EffectiveHeightCm) < 5f,
+                $"size: a 9999cm request is clamped to {AvatarScale.MaxRequestedHeightCm:F0}cm " +
+                $"(measured {engine.MeasuredAvatarHeightMeters:F2}m)");
+            Check(!string.IsNullOrEmpty(engine.HeightAnomaly), "size: the out-of-range request is reported");
+
+            engine.ApplyHeightCm(float.NaN);
+            Check(Mathf.Approximately(engine.RequestedHeightCm, AvatarScale.BaselineHeightCm),
+                $"size: a NaN request falls back to {AvatarScale.BaselineHeightCm:F0}cm");
+
+            engine.ApplyHeightCm(175f);
+            Check(Mathf.Abs(engine.MeasuredAvatarHeightMeters - 1.75f) < 0.15f && string.IsNullOrEmpty(engine.HeightAnomaly),
+                $"size: a normal request restores 175cm and clears the anomaly ({engine.MeasuredAvatarHeightMeters:F2}m)");
+        }
+
         // ── 差し替えアバター(VRM): 判定と入れ替え経路 ──────────────────────
         // 一番壊れやすいのはVRMのパースではなく「差し替えた後の再配線」なので、
         // UniVRM が無い環境でも、拒否経路と既定アバターの無事を常時縛る
@@ -448,6 +468,37 @@ public class E2EScenarioBehaviour : MonoBehaviour
         if (countdown != null)
             Check(countdown.HasCompleted, "countdown: full 3-2-1-START sequence completed");
         yield return null; // allow telemetry/VFX listeners to observe the transition
+
+        // サイズの異常系: START直後のスケールイン(0.15→1.0倍)の途中でアバターごと非アクティブになる
+        // (GPSロスト・グラス切断のスタンバイ)と、復帰後も途中の大きさのまま走っていた
+        {
+            var vfx = engine.GetComponent<AvatarVFXController>();
+            float fullScale = vfx != null ? vfx.FullScale.y : 1f;
+            if (vfx != null)
+            {
+                // timeScale=3 ではスケールインが数フレームで終わるので、時間を止め気味にして途中を確実に踏む
+                float savedTimeScale = Time.timeScale;
+                Time.timeScale = 0.01f;
+                vfx.RestartSpawnForVerification();
+                yield return null;
+                yield return null;
+                float midSpawn = engine.transform.localScale.y;
+                Check(midSpawn < fullScale * 0.9f, $"size: the spawn scale-in is in progress ({midSpawn:F2})");
+                engine.gameObject.SetActive(false);
+                yield return null;
+                engine.gameObject.SetActive(true);
+                yield return null;
+                Time.timeScale = savedTimeScale;
+                Check(Mathf.Abs(engine.transform.localScale.y - fullScale) < 0.02f,
+                    $"size: a spawn interrupted by standby resumes at full size ({midSpawn:F2} -> {engine.transform.localScale.y:F2})");
+            }
+
+            // 演出の外で倍率がずれたら戻す(原因を問わない見張り)
+            engine.transform.localScale = Vector3.one * 0.4f;
+            yield return null;
+            Check(vfx == null || Mathf.Abs(engine.transform.localScale.y - fullScale) < 0.02f,
+                $"size: a drifted root scale is restored during the run ({engine.transform.localScale.y:F2})");
+        }
 
         var fakeShadow = FindFirstObjectByType<FakeShadowRenderer>(FindObjectsInactive.Include);
         Check(fakeShadow != null && fakeShadow.IsVisible,
@@ -916,6 +967,13 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 "result: SessionEnded tells Swift the run was saved");
             Check(SwiftMessageSender.BuildSessionResultJson(record, false).EndsWith(",\"saved\":false}"),
                 "result: a failed save reaches Swift as saved:false");
+            // 結果画面(S7)の「詳細」に出す疲労度(§4.3)
+            Check(SwiftMessageSender.BuildSessionResultJson(record, true).Contains("\"fatigue\":"),
+                "result: SessionEnded carries the fatigue index for the details sheet");
+            // 保存済みの走行で「再試行」が来ても二重に保存しない(成功扱いで何もしない)
+            int savedFilesBefore = SessionDataStore.LoadAllSessions().Count;
+            Check(session.RetrySave() && SessionDataStore.LoadAllSessions().Count == savedFilesBefore,
+                "result: retrying the save of an already-saved run does not write it twice");
         }
 
         // ── Step 3: ゴースト再走(保存した記録と競走) ──────────────────────
@@ -1213,6 +1271,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
             }
 
             stateController.TransitionToState(GameStateController.ARVisionState.FadeOut);
+            float fadeStartedAt = Time.time;
             yield return WaitScaled(0.5f);
             bool allFading = fadeMaterials.Count > 0;
             string alphas = "";
@@ -1224,8 +1283,14 @@ public class E2EScenarioBehaviour : MonoBehaviour
             }
             Check(allFading, $"materials: every material is fading mid fade-out (alphas {alphas.Trim()})");
             yield return WaitScaled(1.0f);
+            // フェードの最後の1フレームと、このコルーチンの再開が同じフレームに重なると、遷移の直前に
+            // 判定してしまう(2026-10-19 に一度だけ落ちた — 直後のログで Standby に入っていた)。
+            // 1秒のフェードに対し最大2.5秒まで待ち、実際にかかった時間を結果に残す
+            for (float extra = 0f; extra < 1.0f
+                 && stateController.currentState != GameStateController.ARVisionState.Standby; extra += Time.deltaTime)
+                yield return null;
             Check(stateController.currentState == GameStateController.ARVisionState.Standby,
-                "gps: fade-out completes into Standby (F-10)");
+                $"gps: fade-out completes into Standby (F-10) after {Time.time - fadeStartedAt:F2}s (fade 1s)");
             if (visibility != null)
             {
                 yield return null;
@@ -1495,6 +1560,22 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(hud.CurrentHudVisibility > 0.9f, "hud: restored after gaze settles");
         }
 
+        // ── Step 6a: 首振り(AirPods の頭の向き)— 本走行のシンクロ率を乱さないよう走行の外で ──
+        yield return StartCoroutine(RunHeadTurnTest());
+
+        // ── Step 6a'': 自走モード(タスク表「指定した速さで走る」)— GPS を送る前に(カメラの移動だけでペースを測る) ──
+        yield return StartCoroutine(RunSelfPacedTest(bridge, engine));
+
+        // ── Step 6a': 選んだルート(GPS)から外れたらサイレントルート復帰(HANDOVER §5「ルート同期」) ──
+        yield return StartCoroutine(RunSelectedRouteTest(bridge, engine));
+
+        // ── Step 6a(hud): GPSが使えないときはHUDだけ(タスク表 ARグラス・AR設定のスイッチ・既定OFF) ──
+        yield return StartCoroutine(RunHudOnlyWithoutGpsTest(bridge, engine, stateController, hud));
+
+        // ── Step 6b: グラスへ出している走行の終わり(タスク表 ARグラス「ランニング終了」) ──
+        // 挨拶 → 消滅 → 結果カード → グラスの表示 OFF(詳しい結果は iPhone の結果画面で)
+        yield return StartCoroutine(RunGlassFinishTest(bridge, hud));
+
         // ── Step 7: 展示ブースの体験モード (Kobe Calling) ─────────────────────
         yield return StartCoroutine(RunBoothDemoTest(bridge, engine, stateController, hud));
 
@@ -1504,6 +1585,326 @@ public class E2EScenarioBehaviour : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     // 展示ブースの体験モード: 台本の見せ場が本番の経路で起き、何も保存されないこと
     // ════════════════════════════════════════════════════════════════════════
+    /// <summary>
+    /// 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」)。本走行の外で行う —
+    /// 走行中に止まって待つと、後の「走行中のシンクロ率」の検査がその分だけ下がる(2026-10-19 に 32% → 26% で落ちた)
+    /// </summary>
+    private IEnumerator RunHeadTurnTest()
+    {
+        var deviceBridge = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
+        var glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (deviceBridge == null || glassRig == null) yield break;
+
+        deviceBridge.OnSwiftCommand(
+            "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+        yield return null;
+        Check(glassRig.IsGlassOutputActive, "head: glass output is on for the head-turn checks");
+
+        // 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」): AirPods の頭の向きを
+        // 進行方向との差にして描画の向きへ足す。最初のサンプルを「まっすぐ前」とみなす
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
+        yield return null;
+        Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
+            $"head: the first AirPods sample is taken as looking straight ahead ({glassRig.AppliedHeadYawDegrees:F1}°)");
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+        yield return null;
+        Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees - 30f) < 2f,
+            $"head: turning the head 30° right turns the glass view with it ({glassRig.AppliedHeadYawDegrees:F1}°)");
+
+        // 挿し直したら「まっすぐ前」を取り直す。AirPods が送り続けている間に抜き挿しすると、
+        // 以前は切断前の基準を引きずり、進行方向が変わっていれば最大90°ずれた向きから始まった
+        deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
+        yield return null;
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+        deviceBridge.OnSwiftCommand(
+            "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+        yield return null;
+        Check(glassRig.IsGlassOutputActive && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
+            $"head: reconnecting the glasses takes a fresh straight-ahead baseline ({glassRig.AppliedHeadYawDegrees:F1}°)");
+        yield return WaitScaled(HeadPoseMath.DefaultHeadYawMaxAgeSeconds + 0.2f);
+        Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
+            "head: the view falls back to the travel heading when AirPods stop sending");
+
+        deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
+        yield return null;
+        // 切断はスタンバイへ遷移させるため、後続シナリオのために通常へ戻す
+        var fsm = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
+        if (fsm != null) fsm.TransitionToState(GameStateController.ARVisionState.Normal);
+        yield return null;
+    }
+
+    /// <summary>
+    /// 自走モード(タスク表「指定した速さで走る」・既定OFF): アバターは目標ペースで走ったときの位置にいる。
+    /// 遅れると前へ離れ(9.5m まで — 離隔待機には入らない)、速ければ近づく。既定の走行は「走者+3m」のまま
+    /// </summary>
+    private IEnumerator RunSelfPacedTest(ARSessionManagerBridge bridge, AvatarEngine engine)
+    {
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0,\"selfPaced\":true}");
+        yield return null;
+        Check(engine.IsSelfPaced, "pace-mode: StartSession selfPaced turns the self-paced mode on");
+
+        float startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        Check(engine.IsRunMotionActive, "pace-mode: the self-paced run starts");
+
+        Vector3 dir = Vector3.forward;
+        // 目標ペースどおり(13km/h ≒ 3.6m/s)— 前方距離はほぼ3m
+        for (float t = 0f; t < 3f; t += Time.deltaTime)
+        {
+            MoveRig(dir * 3.6f * Time.deltaTime);
+            yield return null;
+        }
+        float onPaceLead = engine.DisplayedLeadDistanceMeters;
+        // 遅れを速さの積分で取っていたときは、目標ペースどおりでも 8.2m に出ていた(平滑化の立ち上がりの偏り)
+        Check(onPaceLead < 4.5f, $"pace-mode: on target pace the avatar stays near 3m ({onPaceLead:F1}m)");
+
+        // 遅い(1.5m/s)— 遅れた分だけ前へ離れる。9.5m で止まり、離隔待機(10m)には入らない
+        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        {
+            MoveRig(dir * 1.5f * Time.deltaTime);
+            yield return null;
+        }
+        float behindLead = engine.DisplayedLeadDistanceMeters;
+        Check(behindLead > onPaceLead + 3f && behindLead <= SelfPacedLead.MaxDisplayedLeadMeters + 0.01f,
+              $"pace-mode: falling behind lets the avatar pull ahead ({onPaceLead:F1}m -> {behindLead:F1}m)");
+        Check(!engine.IsWaitingForUser, "pace-mode: pulling ahead stays short of the 10m wait-for-runner");
+
+        // 速い(6m/s)— 近づく
+        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        {
+            MoveRig(dir * 6f * Time.deltaTime);
+            yield return null;
+        }
+        float catchUpLead = engine.DisplayedLeadDistanceMeters;
+        Check(catchUpLead < behindLead - 3f,
+              $"pace-mode: running faster closes the gap ({behindLead:F1}m -> {catchUpLead:F1}m)");
+
+        // 既定に戻る(次の走行で selfPaced が無ければ「走者+3m」)
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0}");
+        yield return null;
+        Check(!engine.IsSelfPaced && Mathf.Abs(engine.DisplayedLeadDistanceMeters - 3f) < 0.01f,
+              "pace-mode: a run without selfPaced is back to the runner + 3m anchor");
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+    }
+
+    /// <summary>
+    /// 選んだルート(S8・過去の走行の経路)からの逸脱を GPS で判定し、サイレントルート復帰で案内する。
+    /// トラックの誤差(精度5m)では反応せず、30m外れて5秒続いたら案内、戻って2秒で解除
+    /// </summary>
+    private IEnumerator RunSelectedRouteTest(ARSessionManagerBridge bridge, AvatarEngine engine)
+    {
+        var recoverer = engine.GetComponent<SilentRouteRecoverer>();
+        Check(recoverer != null, "route: SilentRouteRecoverer is on the avatar");
+        if (recoverer == null) yield break;
+
+        // 走行中のものがあれば閉じ、北へ300mのルートつきで始める
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var route = new System.Text.StringBuilder();
+        for (int i = 0; i <= 30; i++)
+        {
+            double lat = NoiseBaseLat + i * 10.0 / 111320.0;
+            if (i > 0) route.Append(',');
+            route.Append(lat.ToString("F7", ci)).Append(',').Append(NoiseBaseLon.ToString("F7", ci));
+        }
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":10.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0,\"routeLatLon\":[" + route + "]}");
+        yield return null;
+        Check(recoverer.HasGpsRoute && recoverer.GpsRoutePointCount == 31,
+              $"route: the selected route arrives with StartSession ({recoverer.GpsRoutePointCount} points)");
+
+        float startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        Check(engine.IsRunMotionActive, "route: the run starts with a selected route");
+
+        // ルートの上(誤差の範囲で横に最大10m揺れる)— 案内しない
+        float north = 0f;
+        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        {
+            north += 3f * Time.deltaTime;
+            SendRouteFix(bridge, east: 10.0 * System.Math.Sin(t * 3.0), north: north);
+            yield return null;
+        }
+        Check(!recoverer.IsRecovering && !recoverer.GpsGate.IsDeviated,
+              $"route: GPS noise on the route does not trigger recovery ({recoverer.GpsGate.LastDistanceMeters:F1}m)");
+
+        // 30m 外れる — 5秒続くまでは案内しない、続いたら案内する
+        float offStarted = Time.time;
+        bool recoveredTooEarly = false;
+        for (float t = 0f; t < 7f && !recoverer.IsRecovering; t += Time.deltaTime)
+        {
+            north += 3f * Time.deltaTime;
+            SendRouteFix(bridge, east: 30.0, north: north);
+            yield return null;
+            if (recoverer.IsRecovering && Time.time - offStarted < 4.5f) recoveredTooEarly = true;
+        }
+        Check(recoverer.IsRecovering && engine.IsOverriddenByRecovery,
+              $"route: 30m off the route for 5s starts silent recovery ({recoverer.GpsGate.LastDistanceMeters:F1}m " +
+              $"after {Time.time - offStarted:F1}s)");
+        Check(!recoveredTooEarly, "route: a short excursion alone does not start recovery");
+
+        // ルートへ戻る — 2秒で解除
+        for (float t = 0f; t < 4f && recoverer.IsRecovering; t += Time.deltaTime)
+        {
+            north += 3f * Time.deltaTime;
+            SendRouteFix(bridge, east: 2.0, north: north);
+            yield return null;
+        }
+        Check(!recoverer.IsRecovering && !engine.IsOverriddenByRecovery,
+              "route: returning to the route ends the recovery");
+
+        // 後続のシナリオへ持ち越さない(ルートなしの走行で選んだルートは消える)
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":10.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0}");
+        yield return null;
+        Check(!recoverer.HasGpsRoute, "route: a run without a selected route clears the previous one");
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+    }
+
+    /// <summary>
+    /// GPSが使えないときはHUDだけ(タスク表 ARグラス・AR設定のスイッチ・既定OFF)。START の時点で測位が無ければ
+    /// アバターを出さず HUD に警告を出し、精度5m以内の測位で現れる。スイッチの無い走行は従来どおりアバターを出し、
+    /// GPS待ちのまま終えた状態も次の走行へ持ち越さない
+    /// </summary>
+    private IEnumerator RunHudOnlyWithoutGpsTest(ARSessionManagerBridge bridge, AvatarEngine engine,
+                                                 GameStateController fsm, PeripheralHUDManager hud)
+    {
+        var gps = FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
+        Check(fsm != null && gps != null && hud != null, "hud-only: GameStateController, GpsSignalMonitor and the HUD exist");
+        if (fsm == null || gps == null || hud == null) yield break;
+        const string start = "{\"command\":\"StartSession\",\"targetPaceKmH\":10.0,\"distanceKm\":5.0," +
+                             "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0";
+
+        // スイッチ ON で始める。測位は送らない(GPS が使えない)
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand(start + ",\"hudOnlyWithoutGps\":true}");
+        yield return null;
+        Check(bridge.HudOnlyWithoutGps, "hud-only: StartSession hudOnlyWithoutGps turns the switch on");
+        Check(fsm.currentState == GameStateController.ARVisionState.Normal,
+              "hud-only: nothing is hidden before START (countdown)");
+
+        float startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        yield return WaitScaled(0.1f);
+        Check(fsm.IsAwaitingInitialGps && !engine.gameObject.activeInHierarchy,
+              $"hud-only: no GPS at START hides the avatar ({fsm.currentState}/{fsm.CurrentStandbyCause})");
+        Check(hud.IsHudVisible && hud.IsSafetyWarningVisible
+              && (hud.SafetyWarningText.Contains("アバターが現れます") || hud.SafetyWarningText.Contains("AVATAR WILL APPEAR")),
+              $"hud-only: the HUD stays on with a waiting-for-GPS warning ('{hud.SafetyWarningText}')");
+
+        // HUD は走行を数え続ける。精度12m(ロストの10m以上)では出さない
+        float hudTime = hud.ElapsedTimeSeconds;
+        for (float t = 0f; t < 1.5f; t += Time.deltaTime)
+        {
+            SendRouteFix(bridge, east: 0.0, north: 0.0, accuracy: 12f);
+            yield return null;
+        }
+        // HUD のタイムは壁時計(E2E は時間を早回しするので、ゲーム内1.5秒は実時間0.5秒)
+        Check(hud.ElapsedTimeSeconds > hudTime + 0.2f, $"hud-only: the HUD keeps timing the run ({hudTime:F1}s -> {hud.ElapsedTimeSeconds:F1}s)");
+        Check(fsm.IsAwaitingInitialGps && !engine.gameObject.activeInHierarchy,
+              "hud-only: a 12m fix is not enough to bring the avatar out");
+
+        // 精度4m の測位が続く — 再集積(1.5秒)を経てアバターが走者の前に現れる
+        float waited = 0f;
+        while (fsm.currentState != GameStateController.ARVisionState.Normal && waited < 6f)
+        {
+            SendRouteFix(bridge, east: 0.0, north: 0.0, accuracy: 4f);
+            waited += Time.deltaTime;
+            yield return null;
+        }
+        yield return null;
+        Vector3 gap = engine.transform.position - _cameraMover.position;
+        gap.y = 0f;
+        Check(fsm.currentState == GameStateController.ARVisionState.Normal && engine.gameObject.activeInHierarchy,
+              $"hud-only: a 4m fix brings the avatar out ({waited:F1}s)");
+        Check(gap.magnitude < 6f, $"hud-only: the avatar appears ahead of the runner ({gap.magnitude:F1}m)");
+        Check(!hud.IsSafetyWarningVisible, "hud-only: the warning clears once the avatar is out");
+
+        // GPS待ちのまま終える → スイッチの無い次の走行は、GPSが無くても従来どおりアバターを出す
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand(start + ",\"hudOnlyWithoutGps\":true}");
+        yield return null;
+        startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        yield return WaitScaled(0.1f);
+        Check(fsm.IsAwaitingInitialGps, "hud-only: a second run without GPS also starts HUD-only");
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand(start + "}");
+        yield return null;
+        startWait = 0f;
+        while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
+        yield return WaitScaled(0.3f);
+        Check(!bridge.HudOnlyWithoutGps && fsm.currentState == GameStateController.ARVisionState.Normal
+              && engine.gameObject.activeInHierarchy && !hud.IsSafetyWarningVisible,
+              $"hud-only: without the switch the avatar shows with no GPS, as before ({fsm.currentState}/{fsm.CurrentStandbyCause})");
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+    }
+
+    /// <summary>NoiseBase からの東・北(m)を緯度経度にして、新しい測位として送る(ノイズ無し・既定は精度5m)</summary>
+    private static void SendRouteFix(ARSessionManagerBridge bridge, double east, double north, float accuracy = 5f)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        double lat = NoiseBaseLat + north / 111320.0;
+        double lon = NoiseBaseLon + east / (111320.0 * System.Math.Cos(NoiseBaseLat * System.Math.PI / 180.0));
+        bridge.OnSwiftCommand(
+            "{\"command\":\"UpdateMetrics\",\"paceKmH\":10.8,\"heartRate\":140,\"distanceKm\":0.1," +
+            $"\"gpsLatitude\":{lat.ToString("F7", ci)},\"gpsLongitude\":{lon.ToString("F7", ci)}," +
+            $"\"gpsAccuracy\":{accuracy.ToString("F1", ci)},\"locationSampleFresh\":true,\"speedSampleValid\":true}}");
+    }
+
+    private IEnumerator RunGlassFinishTest(ARSessionManagerBridge bridge, PeripheralHUDManager hud)
+    {
+        var card = FindFirstObjectByType<GlassRunSummaryCard>(FindObjectsInactive.Include);
+        var device = FindFirstObjectByType<DeviceManagerBridge>(FindObjectsInactive.Include);
+        Check(card != null, "glass-finish: GlassRunSummaryCard auto-created by bootstrap");
+        if (card == null || device == null) yield break;
+
+        // 走行中のものがあれば閉じてから、グラスへ出した新しい走行を始めて終える
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand("{\"command\":\"StartSession\",\"targetPaceKmH\":10.0,\"distanceKm\":5.0," +
+                              "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0}");
+        yield return WaitScaled(0.3f);
+        Check(!card.IsCardVisible && !card.IsGlassDisplayOff, "glass-finish: no card while running");
+        device.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
+        yield return null;
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return null;
+        Check(!card.IsCardVisible, "glass-finish: the card waits for the avatar's farewell");
+
+        yield return WaitScaled(GlassRunSummaryCard.FarewellSeconds + 0.6f);
+        Check(card.IsCardVisible,
+              $"glass-finish: a summary card appears after the farewell ({card.LastRankText} / {card.LastBodyText.Replace('\n', ' ')})");
+        Check(card.LastBodyText.Contains("%") && card.LastBodyText.Contains("km") && card.LastRankText.Length > 0,
+              "glass-finish: the card shows the rank, sync, distance and time");
+
+        yield return WaitScaled(GlassRunSummaryCard.CardSeconds + 0.5f);
+        Check(!card.IsCardVisible && card.IsGlassDisplayOff && (hud == null || !hud.IsHudVisible),
+              "glass-finish: the card and the HUD turn off afterwards (details on the iPhone)");
+
+        device.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
+        yield return null;
+        // 切断はスタンバイへ遷移させるため、後続シナリオのために通常へ戻す
+        var fsm = FindFirstObjectByType<GameStateController>(FindObjectsInactive.Include);
+        if (fsm != null) fsm.TransitionToState(GameStateController.ARVisionState.Normal);
+        yield return null;
+    }
+
     private IEnumerator RunBoothDemoTest(ARSessionManagerBridge bridge, AvatarEngine engine,
                                          GameStateController fsm, PeripheralHUDManager hud)
     {
@@ -1595,6 +1996,12 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(visuals == null || visuals.PaceColorState == "Behind",
               $"booth: falling behind turns the avatar red ({(visuals != null ? visuals.PaceColorState : "-")})");
         Check(aura == null || aura.IsAuraActive, "booth: falling behind raises the aura (§7.2)");
+        {
+            // タスク表 ARグラス「ペース遅延時: アバターが離れ、色が変わって手招き」
+            var lagGestures = FindFirstObjectByType<ProceduralGestureDriver>(FindObjectsInactive.Include);
+            Check(lagGestures == null || aura == null || !aura.IsAuraActive || lagGestures.ActiveGesture == "Beckon",
+                  $"booth: falling behind makes the avatar beckon ({(lagGestures != null ? lagGestures.ActiveGesture : "-")})");
+        }
         Check(engine.GetTargetSpeed() < engine.GetBaseTargetSpeed() * 0.9f,
               "booth: the elastic band slows the avatar while the runner is behind");
         Check(!engine.IsWaitingForUser, "booth: falling behind stays short of the 10m wait-for-user");

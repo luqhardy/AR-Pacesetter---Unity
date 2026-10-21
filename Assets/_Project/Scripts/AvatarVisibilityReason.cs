@@ -36,6 +36,8 @@ public static class AvatarVisibilityReason
         public bool PlaneOcclusionEnabled;
         /// <summary>スタンバイの原因がグラス切断か(GPSロストと取り違えないため)。</summary>
         public bool GlassDisconnected;
+        /// <summary>START の時点でGPSが無く、HUDだけで始めたスタンバイか(AR設定のスイッチ — GPSロストではない)。</summary>
+        public bool AwaitingInitialGps;
     }
 
     /// <summary>これより遠いと「遠すぎる」を理由に出す(m)。通常追従は3.0m。</summary>
@@ -51,6 +53,8 @@ public static class AvatarVisibilityReason
         {
             reason = i.GlassDisconnected
                 ? "グラス切断のスタンバイ(§8.3) — 準備画面からの再スタートで復帰"
+                : i.AwaitingInitialGps
+                ? "GPS待ち: START の時点でGPSが無くHUDだけで開始(AR設定) — 精度5m以内の測位で現れる"
                 : IsGpsLostState(i.FsmState)
                 ? $"GPSロスト: FSM={i.FsmState} でアバターを無効化(F-10 フェードアウト後のスタンバイ)"
                 : "アバターのGameObjectが無効(グラス切断のスタンバイ or 外部からのSetActive(false))";

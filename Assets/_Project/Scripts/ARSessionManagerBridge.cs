@@ -8,7 +8,10 @@ using UnityEngine;
 /// 受信コマンド:
 ///   StartSession  { targetPaceKmH, distanceKm, avatarHeightCm, forwardOffsetM }
 ///   UpdateMetrics { paceKmH, heartRate, distanceKm }
+///   (StartSession は任意で routeLatLon [緯度0, 経度0, ...] — 選んだルートからの逸脱をサイレントルート復帰で案内、
+///    selfPaced true — アバターが目標ペースで走り、遅れると前へ離れる(既定は走者+3m))
 ///   EndSession    {}
+///   RetrySaveSession {} — 履歴への保存をやり直す(結果は SessionSaveRetried {saved})
 ///
 /// また、走行中は 1Hz で SyncRate / AvatarState / GPS / Latency をSwiftへ送信する。
 /// </summary>
@@ -28,6 +31,14 @@ public class ARSessionManagerBridge : MonoBehaviour
         public double forwardOffsetM;
         public string mode;         // StartSession: "pace"(既定) | "ghost" / StartBoothDemo: "standing"(既定) | "walking"
         public string ghostDateIso; // mode=ghost時: 競走相手のセッションdateIso
+        // StartSession: 選んだルート(S8 で「ルートを外れたら案内する」を ON・過去の走行の経路のときだけ)。
+        // [緯度0, 経度0, 緯度1, 経度1, ...]。無ければ選んだルート無し(サイレントルート復帰は従来どおり)
+        public double[] routeLatLon;
+        // StartSession: 自走モード(アバターが目標ペースで走る — 遅れると前へ離れる。既定 false = 走者+3m)
+        public bool selfPaced;
+        // StartSession: START の時点でGPSが使えなければ、アバターを出さずHUDだけで始める
+        // (精度5m以内の測位でアバターが現れる。既定 false = 従来どおりアバターを出す)
+        public bool hudOnlyWithoutGps;
         // UpdateMetrics の測位サンプル(§8.1 ロスト判定 / §5.2 CSVログ用)。
         // gpsAccuracy > 0 が有効サンプルの目印(CoreLocation同様、負値/未送信は無効)
         public double gpsLatitude;
@@ -108,6 +119,11 @@ public class ARSessionManagerBridge : MonoBehaviour
     private double _runStartDistanceBaselineMeters = 0;
     private bool _runDistanceBaselineCaptured = false;
     private bool _previousRunMotionActive = false;
+    // この走行は「GPSが使えなければHUDだけで始める」か(StartSession の hudOnlyWithoutGps)
+    private bool _hudOnlyWithoutGps = false;
+
+    /// <summary>この走行は START の時点でGPSが使えなければHUDだけで始めるか(AR設定のスイッチ・既定OFF)</summary>
+    public bool HudOnlyWithoutGps => _hudOnlyWithoutGps;
 
     void Awake()
     {
@@ -162,6 +178,10 @@ public class ARSessionManagerBridge : MonoBehaviour
             case "StartSession": HandleStartSession(cmd); break;
             case "UpdateMetrics": HandleUpdateMetrics(cmd); break;
             case "EndSession": HandleEndSession(); break;
+            case "RetrySaveSession":
+                // 結果画面(S7)の「保存に失敗しました」→ 再試行
+                SwiftMessageSender.SendSessionSaveRetried(sessionController != null && sessionController.RetrySave());
+                break;
             case "RequestHistory": HandleRequestHistory(); break;
             case "ResumeSession": HandleResumeSession(); break;
             case "SetGpsLostHandling": HandleSetGpsLostHandling(cmd); break;
@@ -195,6 +215,22 @@ public class ARSessionManagerBridge : MonoBehaviour
             sessionController.ResetForNewSession();
             _lastSentAvatarState = ""; // Idle→Run遷移を再送させる
         }
+
+        // 自走モード(タスク表「指定した速さで走る」)。展示デモでは使わない(台本のずらしと取り合う)
+        avatarEngine.SetSelfPaced(cmd.selfPaced && !_dispatchingPresentation);
+
+        // GPSが使えなければHUDだけで始める(タスク表 ARグラス)。展示デモではアバターを一度も消さない
+        _hudOnlyWithoutGps = cmd.hudOnlyWithoutGps && !_dispatchingPresentation;
+        // 前の走行のGPSロスト・HUDのみの状態を持ち越さない(GPS待ちのまま終えると、次の走行でアバターが出なかった)。
+        // グラス切断のスタンバイ(§8.3)は再スタート操作を待つので触らない
+        if (gameStateController != null
+            && (gameStateController.IsGpsLossState
+                || gameStateController.currentState == GameStateController.ARVisionState.Reaccumulation))
+            gameStateController.TransitionToState(GameStateController.ARVisionState.Normal);
+
+        // 選んだルート(GPS)。無い走行でも呼んで、前の走行のルートを持ち越さない
+        var routeRecoverer = avatarEngine.GetComponent<SilentRouteRecoverer>();
+        if (routeRecoverer != null) routeRecoverer.SetGpsRoute(cmd.routeLatLon);
 
         // リセットで false に戻るため、必ずリセット後に立てる
         ExternalMetricsActive = true;
@@ -481,6 +517,10 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         gpsMonitor.AutoLostHandlingEnabled = cmd.enabled;
         Debug.Log($"[SWIFT BRIDGE] SetGpsLostHandling — F-09/F-10 自動判定を{(cmd.enabled ? "ON" : "OFF")}へ");
+
+        // 判定を止めると復帰を判定する者がいない — GPS待ちのHUDのみで止まらないよう、アバターを出す
+        if (!cmd.enabled && gameStateController != null && gameStateController.IsAwaitingInitialGps)
+            gameStateController.TransitionToState(GameStateController.ARVisionState.Normal);
     }
 
     /// <summary>
@@ -624,7 +664,8 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (gpsLost && !_gpsWasLost)
         {
             _gpsWasLost = true;
-            SwiftMessageSender.SendGpsLost();
+            // START からGPSを待っている(HUDのみ)ときは、Swift のバナーを「慣性走行中」にしない
+            SwiftMessageSender.SendGpsLost(gameStateController.IsAwaitingInitialGps);
         }
         else if (!gpsLost && _gpsWasLost)
         {
@@ -668,8 +709,28 @@ public class ARSessionManagerBridge : MonoBehaviour
     {
         bool active = avatarEngine != null && avatarEngine.IsRunMotionActive;
         if (active && !_previousRunMotionActive)
+        {
             CaptureRunDistanceBaseline(_latestRawDistanceMeters);
+            MaybeStartHudOnly();
+        }
         _previousRunMotionActive = active;
+    }
+
+    /// <summary>
+    /// START の時点でGPSが使えなければ、アバターを出さずHUDだけで始める(AR設定のスイッチ・既定OFF)。
+    /// HUD下部に警告を出し、GPSロスト後のスタンバイと同じく精度5m以内の測位で再集積を経てアバターが現れる
+    /// (<see cref="GpsSignalMonitor"/>)。既定では従来どおり、GPSが無くてもアバターを出す
+    /// </summary>
+    private void MaybeStartHudOnly()
+    {
+        if (gameStateController == null || gpsMonitor == null) return;
+        // カウントダウン中にGPSロストの遷移が始まっていれば、そちらに任せる
+        if (gameStateController.currentState != GameStateController.ARVisionState.Normal) return;
+        if (!gpsMonitor.ShouldStartHudOnly(_hudOnlyWithoutGps)) return;
+
+        Debug.LogWarning($"[SWIFT BRIDGE] START の時点でGPSが使えない(精度 {gpsMonitor.LastAccuracyMeters:F1}m)— " +
+                         "アバターを出さずHUDだけで始めます。精度5m以内の測位で現れます。");
+        gameStateController.EnterStandby(GameStateController.StandbyCause.AwaitingGps);
     }
 
     private void CaptureRunDistanceBaseline(double rawDistanceMeters)

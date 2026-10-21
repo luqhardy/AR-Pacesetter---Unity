@@ -42,6 +42,11 @@ XREALは軸を明記しないが、One Pro を「4mで171インチ相当」と�
   (公開APIが無く、MFi/DriverKitの対象外)。
 - したがって第1期の空間トラッキングは**iPhoneのARKitが単独で担う**。
   これは既に確定している胸マウント運用(README 2026-09-02)の前提と一致する。
+- **首振りだけは AirPods で補える(2026-10-19・タスク表「首を振り向けた時に想定する場所を走る」)**。
+  AirPods(Pro・第3世代以降・Max)の頭の向きは `CMHeadphoneMotionManager` で取れる。Swift が頭のヨーを
+  `UpdateHeadYaw` で送り、Unity が進行方向との差(首振り)をグラスの描画の向きへ足す(`HeadYawBaseline`)。
+  ヨーだけ・基準は差の長周期平均・±90°で打ち切り。準備画面で AirPods を「接続」したときだけ使う(既定OFF)。
+  Bluetooth 経由なので遅延はグラス本体の IMU より大きいはず — 実機で見え方を確かめる(FIELD_TEST_PLAN §0-A 13)
 
 ### 2-2. グラスは「平面スクリーン1枚」である
 
@@ -121,7 +126,7 @@ iPhone画面用の「隅から100px」のままでは時間・ペースが読め
   日本語フォントが無い端末では英語の文言にする。開発者モードの `hud.jaFont` で読み込めたフォントが分かる
 
 **見た目を変えたら画像で確かめる**: `Unity.exe -batchmode -projectPath <repo> -executeMethod HudPreviewRunner.Run -logFile hud-preview.log`
-(エディタでは Build → Capture HUD Preview)。`Builds/HudPreview/` に4状態(維持・遅れ・スプリット・GPS喪失)×2枚 —
+(エディタでは Build → Capture HUD Preview)。`Builds/HudPreview/` に5状態(維持・遅れ・スプリット・GPS喪失・GPS待ちのHUDのみ)×2枚 —
 `*_glass.png` はグラスが出す光そのもの(黒=透明)、`*_seethrough.png` は晴れたトラックに重ねた近似。
 
 ---

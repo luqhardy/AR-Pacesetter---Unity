@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AuRa Vision Glasses Fallback</title>
+<!--
+  展示ブース(Kobe Calling)の予備手段: Mac + ARグラスだけで「立ったまま」の台本を見せる。
+  iPhone・Unity・ネットワークは不要(このファイル1つで動く)。
+
+  使い方: グラスを Mac に USB-C で挿し、ディスプレイ設定で「拡張」にする。このファイルをブラウザで開き、
+  ウインドウをグラス側の画面へ移して F(全画面)。Space で開始(既定は10秒の猶予 → 3-2-1-START → 52秒)。
+  背景は黒 = グラスでは透明。アバターと HUD だけが現実に重なって見える。
+
+  台本・色・距離は Unity の展示デモ(BoothDemoScript / AvatarPaceColor / AvatarAuraEffect)と同じ値。
+  来場者の動きは追わない(ARKit が無い)— 正面を向いて立ってもらう。
+
+  キー: Space 開始/やり直し  S 中断  F 全画面  H ヘルプ  P 一時停止  ← → 5秒戻る/進む  L 繰り返し  D 猶予の秒数
+  URL: ?delay=10(猶予秒) &loop=1(終わったら5秒後に次を開始) &vfov=25.7(グラスの垂直画角) &t=15(15秒の時点から・確認用) &pause=1
+  動画に書き出す: ?render=1&fps=60 で開くと時間を1フレームずつ進める関数 window.__video を出す(render-video.mjs が使う)
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: none; }
+  canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<script>
+"use strict";
+
+// ── 設定 ─────────────────────────────────────────────────────────────────
+const W = 1920, H = 1080;                      // XREAL One の1眼
+const params = new URLSearchParams(location.search);
+const num = (v, d) => (v !== null && v !== "" && isFinite(+v)) ? +v : d;
+let delaySeconds = num(params.get("delay"), 10);
+let loop = params.get("loop") === "1";
+const VFOV_DEG = num(params.get("vfov"), 25.7);
+// 動画の書き出し(render-video.mjs): 実時間ではなく1フレームずつ進め、乱数も固定する
+const RENDER = params.get("render") === "1";
+const RENDER_FPS = num(params.get("fps"), 60);
+let seed = 20261020;
+const rand = RENDER ? () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; } : Math.random;  // XREAL One の垂直画角
+const F = (H / 2) / Math.tan(VFOV_DEG / 2 * Math.PI / 180);
+
+const AVATAR_HEIGHT_M = 1.45;   // 展示デモは145cm(BoothDemoScript.AvatarHeightCm)
+const EYE_HEIGHT_M = 1.60;
+const TARGET_LEAD_M = 3.0;
+const TARGET_PACE_S = 277;      // 4'37"/km(13 km/h)
+
+const COUNTDOWN_S = 4, RUN_S = 52, FAREWELL_S = 3.0, CARD_S = 6.0, CARD_FADE_S = 1.0;
+
+const C = {
+  lime: "#E4F24A", white: "#F2F4F5", mint: "#5BE8A8", red: "#FF5C4D", dim: "#3a3a3a",
+};
+const FONT = '-apple-system, "SF Pro Display", "Helvetica Neue", "Hiragino Sans", Arial, sans-serif';
+
+// ── 台本(KOBE_CALLING_DEMO.md「立ったままの台本」と同じ区間)──────────────
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const ease = x => x * x * (3 - 2 * x);
+const mix = (a, b, t) => a + (b - a) * t;
+
+function leadAt(t) {             // アバターの前方距離(m)
+  if (t < 10) return 3;
+  if (t < 22) return 3 + 6 * ease(clamp01((t - 10) / 4));        // 遅れ: 4秒かけて約9m先へ
+  if (t < 28) return 9 - 6 * ease(clamp01((t - 22) / 4));        // 追い上げ: 3mへ
+  if (t < 35) return 3 - 1.8 * ease(clamp01((t - 28) / 2.5));    // 追い抜き: 1.2mまで寄る
+  if (t < 40) return 1.2 + 1.8 * ease(clamp01((t - 35) / 2.5));  // 戻る
+  return 3;                                                       // 最後の直線
+}
+function paceAt(t) {             // HUD に出す走者のペース(秒/km)
+  if (t < 10) return 277;
+  if (t < 22) return 348;
+  if (t < 28) return 245;
+  if (t < 35) return 238;
+  if (t < 40) return 277;
+  return 270;
+}
+function strideHzAt(t) {         // アバターの脚の回転
+  if (t < 10) return 1.45;
+  if (t < 22) return 1.30;
+  if (t < 28) return 1.60;
+  if (t < 35) return 1.85;
+  if (t < 40) return 1.50;
+  return 1.45;
+}
+function beckonAt(t) {           // 遅れ区間の手招き(9m先から)
+  if (t < 14 || t >= 22) return 0;
+  const c = (t - 14) % 4;
+  return c < 1.8 ? Math.min(1, 2.5 * Math.sin(Math.PI * c / 1.8)) : 0;
+}
+const syncRate = lead => 100 * (1 - Math.min(10, Math.abs(lead - TARGET_LEAD_M)) / 10);
+
+// 距離・シンクロ率・表示ペースは時刻から決まる(早送り・巻き戻しでも同じ値)
+function runStats(t) {
+  let dist = 0, sync = 0, pace = TARGET_PACE_S;
+  const step = 0.05;
+  for (let x = 0; x < t; x += step) {
+    const h = Math.min(step, t - x);
+    pace += (paceAt(x) - pace) * (1 - Math.exp(-h / 1.2));
+    dist += h * 1000 / pace;
+    sync += h * syncRate(leadAt(x));
+  }
+  return { dist, sync: t > 0 ? sync / t : 100, pace };
+}
+const rankOf = s => s >= 90 ? "S" : s >= 80 ? "A" : s >= 65 ? "B" : s >= 50 ? "C" : "D";
+
+// アバターの色(§7.1): ジャスト±1.5m=緑 / 3m以上遅れ=橙→赤 / 追い抜き=青
+const GREEN = [70, 235, 120], ORANGE = [255, 160, 40], RED = [255, 60, 45], BLUE = [80, 150, 255];
+const mixRgb = (a, b, t) => a.map((v, i) => Math.round(mix(v, b[i], t)));
+function avatarColor(lead) {
+  const behind = lead - TARGET_LEAD_M;
+  if (behind >= 0) {
+    if (behind <= 1.5) return GREEN;
+    if (behind < 3) return mixRgb(GREEN, ORANGE, (behind - 1.5) / 1.5);
+    return mixRgb(ORANGE, RED, clamp01((behind - 3) / 3));
+  }
+  const ahead = -behind;
+  return ahead <= 1.5 ? GREEN : mixRgb(GREEN, BLUE, clamp01((ahead - 1.5) / 0.3));
+}
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+// ── 状態 ─────────────────────────────────────────────────────────────────
+let state = "idle", st = 0;      // st = いまの状態に入ってからの秒
+let paused = params.get("pause") === "1";
+let showHelp = false;
+let phi = 0;                     // 走りの位相
+let pitch = null;                // グラスの俯角(ラジアン)。アバターの距離に合わせて追う
+let particles = [];
+let finalStats = null;
+let wakeLock = null;
+
+function setState(s) { state = s; st = 0; }
+function start() {
+  particles = []; finalStats = null; phi = 0;
+  setState(delaySeconds > 0 ? "delay" : "countdown");
+  requestWakeLock();
+}
+function stop() { particles = []; setState("idle"); }
+
+const initialT = num(params.get("t"), null);
+if (initialT !== null) { setState("run"); st = Math.max(0, Math.min(RUN_S - 0.01, initialT)); }
+
+async function requestWakeLock() {
+  try { if ("wakeLock" in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } } catch (e) { /* 対応していないブラウザでは何もしない */ }
+}
+
+addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  if (k === " ") { e.preventDefault(); start(); }
+  else if (k === "s" || k === "escape" && !document.fullscreenElement) stop();
+  else if (k === "f") { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }
+  else if (k === "h") showHelp = !showHelp;
+  else if (k === "p") paused = !paused;
+  else if (k === "l") loop = !loop;
+  else if (k === "d") { const steps = [0, 5, 10, 15, 20]; delaySeconds = steps[(steps.indexOf(delaySeconds) + 1) % steps.length]; flash(`猶予 ${delaySeconds} 秒`); }
+  else if ((k === "arrowleft" || k === "arrowright") && state === "run") {
+    st = Math.max(0, Math.min(RUN_S - 0.01, st + (k === "arrowright" ? 5 : -5)));
+    pitch = null;
+  }
+});
+addEventListener("click", () => { if (state === "idle") start(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && state !== "idle") requestWakeLock(); });
+
+let flashText = "", flashUntil = 0;
+function flash(text) { flashText = text; flashUntil = performance.now() / 1000 + 1.5; }
+
+function update(dt) {
+  st += dt;
+  switch (state) {
+    case "delay": if (st >= delaySeconds) setState("countdown"); break;
+    case "countdown": if (st >= COUNTDOWN_S) setState("run"); break;
+    case "run":
+      if (st >= RUN_S) { finalStats = runStats(RUN_S); setState("farewell"); }
+      break;
+    case "farewell": if (st >= FAREWELL_S) { particles = []; setState("card"); } break;
+    case "card": if (st >= CARD_S + CARD_FADE_S) setState(loop ? "loopwait" : "idle"); break;
+    case "loopwait": if (st >= 5) start(); break;
+  }
+}
+
+// ── 描画の土台 ───────────────────────────────────────────────────────────
+const canvas = document.getElementById("screen");
+const ctx = canvas.getContext("2d");
+const body = document.createElement("canvas");     // アバターを不透明で描いてから半透明で重ねる
+const bctx = body.getContext("2d");
+// 光のにじみ: 縮小して拡大し直すとぼける(shadowBlur は全画面だと 1〜2fps まで落ちる)
+const glowA = document.createElement("canvas"), gaCtx = glowA.getContext("2d");
+const glowB = document.createElement("canvas"), gbCtx = glowB.getContext("2d");
+let scale = 1, ox = 0, oy = 0;
+function resize() {
+  // 1920x1080 を描くのに必要な分だけ(Retina で4倍の画素を塗らない)
+  const dpr = Math.min(window.devicePixelRatio || 1, Math.max(1, W / innerWidth));
+  canvas.width = body.width = RENDER ? W : Math.round(innerWidth * dpr);
+  canvas.height = body.height = RENDER ? H : Math.round(innerHeight * dpr);
+  glowA.width = Math.ceil(canvas.width / 4); glowA.height = Math.ceil(canvas.height / 4);
+  glowB.width = Math.ceil(canvas.width / 12); glowB.height = Math.ceil(canvas.height / 12);
+  scale = Math.min(canvas.width / W, canvas.height / H);
+  ox = (canvas.width - W * scale) / 2;
+  oy = (canvas.height - H * scale) / 2;
+}
+addEventListener("resize", resize);
+resize();
+
+// アバターの座標(x=横, y=地面からの高さ, z=奥へのずれ・m)→ 画面
+function project(x, y, z, lead) {
+  const d = Math.max(0.3, lead + z);
+  const ang = Math.atan2(EYE_HEIGHT_M - y, d);     // 水平から下向きの角
+  return { x: W / 2 + F * x / d, y: H / 2 + F * Math.tan(ang - pitch), s: F / d };
+}
+
+// 距離に応じた俯角: 頭から足元まで入れば真ん中に、入らなければ頭を上に寄せる(GlassViewRig と同じ考え)
+function targetPitch(lead) {
+  const head = Math.atan2(EYE_HEIGHT_M - AVATAR_HEIGHT_M, lead);
+  const feet = Math.atan2(EYE_HEIGHT_M, lead);
+  const fov = VFOV_DEG * Math.PI / 180;
+  return (feet - head) <= fov * 0.98 ? (head + feet) / 2 : head - fov * 0.04 + fov / 2;
+}
+
+// ── アバター(後ろ姿のマネキン)──────────────────────────────────────────
+function skeleton(p) {
+  // 身長1.75mの体で組み、展示デモの145cmへ縮める
+  const k = AVATAR_HEIGHT_M / 1.75;
+  const L = Math.max(0, Math.sin(p.phi)) * p.amp;            // 左脚の振り上げ
+  const R = Math.max(0, Math.sin(p.phi + Math.PI)) * p.amp;  // 右脚
+  const aL = Math.sin(p.phi + Math.PI) * p.amp;              // 左腕は右脚と同じ側へ
+  const aR = Math.sin(p.phi) * p.amp;
+  const b = p.amp * 0.035 * Math.abs(Math.cos(p.phi)) + p.breath;
+  const lean = 0.06 * p.amp + p.bow;
+  const J = {
+    hipL: [-0.10, 0.95 + b, 0], hipR: [0.10, 0.95 + b, 0], pelvis: [0, 0.98 + b, 0],
+    kneeL: [-0.11, 0.52 + 0.16 * L + b * 0.5, 0.22 * L], kneeR: [0.11, 0.52 + 0.16 * R + b * 0.5, 0.22 * R],
+    ankleL: [-0.10, 0.08 + 0.32 * L, -0.16 * L + 0.02], ankleR: [0.10, 0.08 + 0.32 * R, -0.16 * R + 0.02],
+    toeL: [-0.10, 0.03 + 0.30 * L, 0.12 - 0.12 * L], toeR: [0.10, 0.03 + 0.30 * R, 0.12 - 0.12 * R],
+    neck: [0, 1.46 + b, lean], shL: [-0.19, 1.41 + b, lean * 0.9], shR: [0.19, 1.41 + b, lean * 0.9],
+    head: [0, 1.61 + b - p.bow * 0.6, lean * 1.1 + p.bow],
+  };
+  const bend = Math.min(1, p.amp * 1.6);
+  const arm = (side, a, sh) => {
+    const sx = side * 1;
+    const elbowIdle = [sx * 0.23, 1.13 + b, 0.0], wristIdle = [sx * 0.25, 0.87 + b, 0.02];
+    const elbowRun = [sx * 0.25, 1.16 + b, -0.12 * a], wristRun = [sx * 0.20, 1.04 + b + 0.10 * Math.max(0, a), 0.22 * a + 0.06];
+    return [elbowIdle.map((v, i) => mix(v, elbowRun[i], bend)), wristIdle.map((v, i) => mix(v, wristRun[i], bend))];
+  };
+  [J.elbowL, J.wristL] = arm(-1, aL, J.shL);
+  [J.elbowR, J.wristR] = arm(1, aR, J.shR);
+  if (p.wave > 0) {   // 右手を上げて振る(手招き・最後の挨拶)
+    const w = p.wave, sway = 0.07 * Math.sin(p.time * 11);
+    J.elbowR = J.elbowR.map((v, i) => mix(v, [0.32, 1.52 + b, 0.02][i], w));
+    J.wristR = J.wristR.map((v, i) => mix(v, [0.34 + sway, 1.80 + b, 0.03][i], w));
+  }
+  for (const key in J) J[key] = [J[key][0] * k, J[key][1] * k, J[key][2]];
+  return J;
+}
+
+const SEGMENTS = [   // [から, まで, 太さ(m)]
+  ["hipL", "kneeL", 0.16], ["kneeL", "ankleL", 0.115], ["ankleL", "toeL", 0.08],
+  ["hipR", "kneeR", 0.16], ["kneeR", "ankleR", 0.115], ["ankleR", "toeR", 0.08],
+  ["pelvis", "neck", 0.30], ["hipL", "hipR", 0.20], ["shL", "shR", 0.12],
+  ["shL", "elbowL", 0.095], ["elbowL", "wristL", 0.08],
+  ["shR", "elbowR", 0.095], ["elbowR", "wristR", 0.08],
+];
+
+function drawAvatar(J, lead, color, alpha) {
+  if (alpha <= 0.01) return;
+  const k = AVATAR_HEIGHT_M / 1.75;
+  const P = {};
+  for (const key in J) P[key] = project(J[key][0], J[key][1], J[key][2], lead);
+
+  bctx.setTransform(1, 0, 0, 1, 0, 0);
+  bctx.clearRect(0, 0, body.width, body.height);
+  bctx.setTransform(scale, 0, 0, scale, ox, oy);
+  bctx.lineCap = "round"; bctx.lineJoin = "round";
+  const outer = rgba(color.map(v => Math.round(v * 0.72)), 1);
+  const inner = rgba(mixRgb(color, [255, 255, 255], 0.25), 1);
+  for (const [pass, style, widthScale] of [[0, outer, 1], [1, inner, 0.42]]) {
+    bctx.strokeStyle = style; bctx.fillStyle = style;
+    for (const [a, b, thick] of SEGMENTS) {
+      bctx.lineWidth = thick * k * (P[a].s + P[b].s) / 2 * widthScale;
+      bctx.beginPath(); bctx.moveTo(P[a].x, P[a].y); bctx.lineTo(P[b].x, P[b].y); bctx.stroke();
+    }
+    const h = P.head;
+    bctx.beginPath(); bctx.arc(h.x, h.y, 0.105 * k * h.s * (pass ? 0.55 : 1), 0, Math.PI * 2); bctx.fill();
+  }
+
+  for (const [g, gc] of [[glowA, gaCtx], [glowB, gbCtx]]) {
+    gc.setTransform(1, 0, 0, 1, 0, 0);
+    gc.clearRect(0, 0, g.width, g.height);
+    gc.imageSmoothingEnabled = true;
+    gc.drawImage(g === glowA ? body : glowA, 0, 0, g.width, g.height);
+  }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = 0.45 * alpha;
+  ctx.drawImage(glowB, 0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 0.25 * alpha;
+  ctx.drawImage(glowA, 0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 0.5 * alpha;                    // 企画書 4.1: 半透明
+  ctx.drawImage(body, 0, 0);
+  ctx.restore();
+}
+
+function drawFootGlow(lead, color, alpha) {
+  const c = project(0, 0, 0, lead);
+  const edge = project(0.35, 0, 0, lead);
+  const rx = Math.max(4, edge.x - c.x);
+  const ry = rx * Math.sin(Math.atan2(EYE_HEIGHT_M, lead));
+  ctx.save();
+  const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, rx);
+  g.addColorStop(0, rgba(color, 0.35 * alpha)); g.addColorStop(1, rgba(color, 0));
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// §7.2: 5m以上遅れたら足元からランナー側へ光のライン
+function drawAura(lead, t, intensity) {
+  if (intensity <= 0.01) return;
+  const from = project(0, 0, 0, lead);
+  const to = { x: W / 2, y: H + 60 };
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
+  g.addColorStop(0, rgba([255, 120, 50], 0.85 * intensity));
+  g.addColorStop(1, rgba([255, 60, 45], 0.15 * intensity));
+  ctx.strokeStyle = g; ctx.lineCap = "round";
+  for (const [width, a] of [[46, 0.18], [22, 0.35], [9, 1]]) {   // 外側ほど太く淡く(にじみ)
+    ctx.globalAlpha = a; ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // 走者の方へ流れる光の粒
+  ctx.fillStyle = rgba([255, 210, 150], 0.9 * intensity);
+  for (let i = 0; i < 6; i++) {
+    const u = ((t * 0.6 + i / 6) % 1);
+    const x = mix(from.x, to.x, u * u), y = mix(from.y, to.y, u * u);
+    ctx.beginPath(); ctx.arc(x, y, 5 + 14 * u * u, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// 最後の直線のゴールライン(地面の上の横線)
+function drawGoalLine(goalDist) {
+  if (goalDist <= 0.6 || goalDist > 60) return;
+  const y = H / 2 + F * Math.tan(Math.atan2(EYE_HEIGHT_M, goalDist) - pitch);
+  if (y > H + 40 || y < -40) return;
+  const half = F * 2.6 / goalDist;
+  const thick = Math.max(3, F * 0.10 / goalDist * Math.sin(Math.atan2(EYE_HEIGHT_M, goalDist)) * 2.2);
+  const appear = clamp01((60 - goalDist) / 12);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = appear * 0.25;
+  ctx.fillStyle = C.lime;
+  ctx.fillRect(W / 2 - half - 8, y - thick * 1.6, 2 * half + 16, thick * 3.2);   // にじみ
+  ctx.globalAlpha = appear;
+  const cells = 14;
+  for (let i = 0; i < cells; i++) {          // 市松模様
+    if (i % 2) continue;
+    ctx.fillRect(W / 2 - half + (2 * half) * i / cells, y - thick / 2, 2 * half / cells, thick);
+  }
+  ctx.globalAlpha = appear * 0.55;
+  ctx.fillRect(W / 2 - half, y - thick / 2, 2 * half, Math.max(1.5, thick * 0.18));
+  ctx.globalAlpha = appear;
+  ctx.font = `800 ${Math.max(18, Math.min(120, F * 0.32 / goalDist))}px ${FONT}`;
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  spaced("GOAL", W / 2, y - thick * 1.4 - 6, 0.25, "center");
+  ctx.restore();
+}
+
+function spawnParticles(J, lead) {
+  particles = [];
+  for (const [a, b] of SEGMENTS) {
+    for (let i = 0; i < 18; i++) {
+      const u = rand();
+      const p = J[a].map((v, j) => mix(v, J[b][j], u));
+      particles.push({ x: p[0] + (rand() - 0.5) * 0.06, y: p[1], z: p[2],
+        vx: (rand() - 0.5) * 0.25, vy: 0.25 + rand() * 0.6, life: 0.8 + rand() * 0.6, age: 0 });
+    }
+  }
+  for (let i = 0; i < 40; i++) {
+    const h = J.head;
+    particles.push({ x: h[0] + (rand() - 0.5) * 0.15, y: h[1] + (rand() - 0.5) * 0.15, z: h[2],
+      vx: (rand() - 0.5) * 0.2, vy: 0.3 + rand() * 0.6, life: 0.8 + rand() * 0.6, age: 0 });
+  }
+}
+function drawParticles(dt, lead, color) {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const p of particles) {
+    p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    const life = 1 - p.age / p.life;
+    if (life <= 0) continue;
+    const s = project(p.x, p.y, p.z, lead);
+    const r = Math.max(1.5, 0.018 * s.s);
+    ctx.fillStyle = rgba(color, life * 0.25);
+    ctx.beginPath(); ctx.arc(s.x, s.y, r * 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = rgba(mixRgb(color, [255, 255, 255], 0.4), life * 0.9);
+    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── HUD(Unity の PeripheralHudSkin と同じ配置)──────────────────────────
+function spaced(text, x, y, em, align) {   // 字間を空けて描く
+  const size = parseFloat(ctx.font.match(/(\d+(\.\d+)?)px/)[1]);
+  const gap = size * em;
+  const widths = [...text].map(ch => ctx.measureText(ch).width);
+  const total = widths.reduce((a, b) => a + b, 0) + gap * (text.length - 1);
+  let cx = align === "right" ? x - total : align === "center" ? x - total / 2 : x;
+  const saved = ctx.textAlign; ctx.textAlign = "left";
+  [...text].forEach((ch, i) => { ctx.fillText(ch, cx, y); cx += widths[i] + gap; });
+  ctx.textAlign = saved;
+  return total;
+}
+function mono(text, x, y, align) {          // 数字は等幅(桁が変わっても揺れない)
+  const digit = ctx.measureText("0").width;
+  const widthOf = ch => /[0-9]/.test(ch) ? digit : ctx.measureText(ch).width;
+  const total = [...text].reduce((a, ch) => a + widthOf(ch), 0);
+  let cx = align === "right" ? x - total : x;
+  const saved = ctx.textAlign; ctx.textAlign = "center";
+  for (const ch of text) { const w = widthOf(ch); ctx.fillText(ch, cx + w / 2, y); cx += w; }
+  ctx.textAlign = saved;
+  return total;
+}
+const fmtTime = s => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const fmtPace = s => { s = Math.round(s); return `${Math.floor(s / 60)}'${String(s % 60).padStart(2, "0")}"`; };
+
+function drawHud(time, distKm, paceS, alpha) {
+  if (alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textBaseline = "alphabetic";
+  ctx.lineWidth = 3; ctx.strokeStyle = C.lime;
+  // 左上: TIME / DISTANCE
+  ctx.beginPath(); ctx.moveTo(80, 56); ctx.lineTo(68, 56); ctx.lineTo(68, 264); ctx.lineTo(80, 264); ctx.stroke();
+  ctx.fillStyle = C.lime; ctx.fillRect(100, 52, 6, 4);
+  ctx.font = `600 20px ${FONT}`; ctx.fillStyle = C.lime;
+  spaced("TIME", 86, 80, 0.32, "left");
+  ctx.font = `700 70px ${FONT}`; ctx.fillStyle = C.white;
+  mono(fmtTime(time), 82, 148, "left");
+  ctx.font = `600 20px ${FONT}`; ctx.fillStyle = C.lime;
+  spaced("DISTANCE", 86, 188, 0.32, "left");
+  ctx.font = `700 70px ${FONT}`; ctx.fillStyle = C.white;
+  const w = mono(distKm.toFixed(2), 82, 254, "left");
+  ctx.font = `600 30px ${FONT}`; ctx.fillStyle = C.lime;
+  ctx.fillText("KM", 82 + w + 26, 252);
+
+  // 右上: PACE(維持=緑・遅れ=赤)とゲージ
+  const diff = paceS - TARGET_PACE_S;
+  const behind = diff > 15, ahead = diff < -15;
+  const color = behind ? C.red : C.mint;
+  ctx.lineWidth = 3; ctx.strokeStyle = C.lime;
+  ctx.beginPath(); ctx.moveTo(1840, 56); ctx.lineTo(1852, 56); ctx.lineTo(1852, 260); ctx.lineTo(1840, 260); ctx.stroke();
+  ctx.fillStyle = C.lime; ctx.fillRect(1814, 52, 6, 4);
+  ctx.font = `600 20px ${FONT}`; ctx.fillStyle = C.lime;
+  spaced("/KM", 1836, 80, 0.32, "right");
+  spaced("PACE", 1764, 80, 0.32, "right");
+  ctx.font = `800 80px ${FONT}`; ctx.fillStyle = color;
+  ctx.shadowColor = color; ctx.shadowBlur = 12;
+  mono(fmtPace(paceS), 1836, 156, "right");
+  ctx.shadowBlur = 0;
+  ctx.font = `700 21px ${FONT}`; ctx.fillStyle = color;
+  ctx.fillRect(1824, 188, 9, 9);
+  spaced(behind ? "BEHIND" : ahead ? "AHEAD" : "ON PACE", 1812, 204, 0.32, "right");
+  // ゲージ: 中央=目標・右=速い・左=遅い(±30秒/km で端)
+  const gx0 = 1616, gx1 = 1834, gy = 227;
+  ctx.strokeStyle = C.white; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(gx0, gy); ctx.lineTo(gx1, gy); ctx.stroke();
+  for (const x of [gx0, gx1]) { ctx.beginPath(); ctx.moveTo(x, gy - 5); ctx.lineTo(x, gy + 5); ctx.stroke(); }
+  const pos = Math.max(-1, Math.min(1, -diff / 30));
+  ctx.fillStyle = color;
+  ctx.fillRect((gx0 + gx1) / 2 + pos * (gx1 - gx0) / 2 - 3, gy - 8, 6, 16);
+  ctx.font = `600 14px ${FONT}`; ctx.fillStyle = C.white;
+  spaced("SLOW", gx0, 252, 0.3, "left");
+  spaced("FAST", gx1, 252, 0.3, "right");
+  ctx.restore();
+}
+
+function drawCountdown(t) {
+  const i = Math.floor(t);
+  const label = ["3", "2", "1", "START"][Math.min(3, i)];
+  const f = t - i;
+  const size = (label === "START" ? 190 : 280) * (1.25 - 0.25 * ease(clamp01(f * 3)));
+  ctx.save();
+  ctx.globalAlpha = 1 - clamp01((f - 0.7) / 0.3);
+  ctx.font = `800 ${size}px ${FONT}`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = C.lime; ctx.shadowColor = C.lime; ctx.shadowBlur = 40;
+  ctx.fillText(label, W / 2, H / 2);
+  ctx.restore();
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+// 走り切った後の結果カード(GlassRunSummaryCard と同じ中身: 評価・シンクロ率・距離・時間)
+function drawCard(t, stats) {
+  const a = clamp01(t / 0.5) * (1 - clamp01((t - CARD_S) / CARD_FADE_S));
+  if (a <= 0.01) return;
+  const rank = rankOf(stats.sync);
+  const w = 820, h = 400, x = (W - w) / 2, y = (H - h) / 2;
+  ctx.save();
+  ctx.globalAlpha = a;
+  roundRect(x, y, w, h, 28);
+  ctx.fillStyle = "rgba(228,242,74,0.05)"; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = C.lime; ctx.shadowColor = C.lime; ctx.shadowBlur = 18; ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `700 26px ${FONT}`; ctx.fillStyle = C.lime;
+  spaced("FINISH", W / 2, y + 66, 0.45, "center");
+  ctx.font = `800 210px ${FONT}`; ctx.textAlign = "center"; ctx.fillStyle = C.white;
+  ctx.shadowColor = C.lime; ctx.shadowBlur = 30;
+  ctx.fillText(rank, x + 210, y + 310);
+  ctx.shadowBlur = 0;
+  ctx.font = `600 18px ${FONT}`; ctx.fillStyle = C.lime;
+  spaced("RANK", x + 210, y + 352, 0.4, "center");
+  const rows = [["SYNC", `${Math.round(stats.sync)}%`], ["DISTANCE", `${stats.dist / 1000 >= 0 ? (stats.dist / 1000).toFixed(2) : "0.00"} km`], ["TIME", fmtTime(RUN_S)]];
+  rows.forEach(([label, value], i) => {
+    const ry = y + 150 + i * 86;
+    ctx.font = `600 20px ${FONT}`; ctx.fillStyle = C.lime;
+    spaced(label, x + 420, ry, 0.32, "left");
+    ctx.font = `700 52px ${FONT}`; ctx.fillStyle = C.white;
+    mono(value, x + 420, ry + 54, "left");
+  });
+  ctx.restore();
+}
+
+function drawOperatorText() {
+  // グラスではほとんど見えない暗さ(Mac の画面で操作するとき用)。動画には入れない
+  if (RENDER) return;
+  ctx.save();
+  ctx.font = `500 18px ${FONT}`; ctx.textAlign = "center"; ctx.fillStyle = C.dim;
+  if (state === "idle")
+    ctx.fillText(`AuRa Vision 予備デモ — Space: 開始  F: 全画面  H: ヘルプ   (猶予 ${delaySeconds}秒${loop ? "・繰り返し" : ""})`, W / 2, H - 40);
+  if (paused) ctx.fillText("一時停止中 — P で再開", W / 2, H - 70);
+  if (performance.now() / 1000 < flashUntil) ctx.fillText(flashText, W / 2, H - 100);
+  if (showHelp) {
+    const lines = ["Space 開始 / やり直し", "S 中断", "F 全画面", "P 一時停止", "← → 5秒戻る / 進む(走行中)",
+                   `L 繰り返し(いま ${loop ? "ON" : "OFF"})`, `D 猶予の秒数(いま ${delaySeconds}秒)`, "H ヘルプを閉じる"];
+    ctx.fillStyle = "#555"; ctx.font = `500 24px ${FONT}`;
+    lines.forEach((l, i) => ctx.fillText(l, W / 2, 380 + i * 40));
+  }
+  ctx.restore();
+}
+
+// ── 1フレーム ────────────────────────────────────────────────────────────
+let last = performance.now();
+let clock = 0;
+function frame(now) {
+  const realDt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  tick(paused ? 0 : realDt);
+  requestAnimationFrame(frame);
+}
+
+function tick(dt) {
+  clock += dt;
+  update(dt);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(scale, 0, 0, scale, ox, oy);
+
+  // アバターの状態をこのフレームの時刻から決める
+  let lead = TARGET_LEAD_M, amp = 0, hz = 0, wave = 0, breath = 0, bow = 0, bodyAlpha = 0, runT = 0, hudAlpha = 0;
+  if (state === "delay") {
+    bodyAlpha = clamp01(st / 0.8); breath = 0.006 * Math.sin(clock * 1.6);
+  } else if (state === "countdown") {
+    bodyAlpha = 1; amp = 0.45; hz = 1.3; hudAlpha = clamp01(st / 0.6);   // その場で足踏み
+  } else if (state === "run") {
+    runT = st; lead = leadAt(st); amp = 1; hz = strideHzAt(st); wave = beckonAt(st); bodyAlpha = 1; hudAlpha = 1;
+  } else if (state === "farewell") {
+    runT = RUN_S; amp = Math.max(0, 1 - st / 0.5); hz = 1.2; hudAlpha = 1;
+    wave = st < 1.5 ? Math.min(1, st * 3) * (st > 1.2 ? 1 - (st - 1.2) / 0.3 : 1) : 0;   // 挨拶
+    bow = st > 1.2 && st < 2.2 ? 0.08 * Math.sin(Math.PI * (st - 1.2) / 1.0) : 0;           // 一礼
+    bodyAlpha = 1 - clamp01((st - 1.7) / 1.0);                                                // 粒になって消える
+  } else if (state === "card") {
+    runT = RUN_S; hudAlpha = 1 - clamp01((st - CARD_S) / CARD_FADE_S);
+  }
+
+  phi += 2 * Math.PI * hz * dt;
+  const tp = targetPitch(lead);
+  pitch = pitch === null ? tp : pitch + (tp - pitch) * (1 - Math.exp(-dt / 0.35));
+
+  const color = avatarColor(lead);
+  const J = skeleton({ phi, amp, breath, bow, wave, time: clock });
+
+  if (state === "run") {
+    const goalDist = (RUN_S - st) * 1000 / 270;     // 最後の直線: ゴールが走者へ近づく
+    if (goalDist > lead) drawGoalLine(goalDist);
+    drawAura(lead, clock, clamp01((lead - TARGET_LEAD_M - 4.5) / 1.5));
+    drawFootGlow(lead, color, bodyAlpha);
+    drawAvatar(J, lead, color, bodyAlpha);
+    if (goalDist <= lead) drawGoalLine(goalDist);
+  } else if (state === "farewell") {
+    if (st >= 1.7 && particles.length === 0) spawnParticles(J, lead);
+    drawFootGlow(lead, color, bodyAlpha);
+    drawAvatar(J, lead, color, bodyAlpha);
+    drawParticles(dt, lead, color);
+  } else if (bodyAlpha > 0) {
+    drawFootGlow(lead, color, bodyAlpha);
+    drawAvatar(J, lead, color, bodyAlpha);
+  }
+
+  if (hudAlpha > 0) {
+    const s = runT > 0 ? (state === "run" ? runStats(runT) : finalStats) : { dist: 0, pace: TARGET_PACE_S };
+    drawHud(runT, s.dist / 1000, runT > 0 ? s.pace : TARGET_PACE_S, hudAlpha);
+  }
+  if (state === "countdown") drawCountdown(st);
+  if (state === "card" && finalStats) drawCard(st, finalStats);
+  drawOperatorText();
+}
+
+if (RENDER) {
+  // 猶予 → 3-2-1-START → 52秒 → 挨拶・消滅 → 結果カード → 黒(1.5秒)
+  loop = false;
+  start();
+  const seconds = delaySeconds + COUNTDOWN_S + RUN_S + FAREWELL_S + CARD_S + CARD_FADE_S + 1.5;
+  window.__video = {
+    fps: RENDER_FPS,
+    frames: Math.ceil(seconds * RENDER_FPS),
+    next() { tick(1 / RENDER_FPS); return canvas.toDataURL("image/png"); },
+  };
+} else {
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
