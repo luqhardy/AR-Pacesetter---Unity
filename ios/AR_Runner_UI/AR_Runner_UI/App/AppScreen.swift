@@ -13,4 +13,6 @@ enum AppScreen {
     case boothDemo
     case glassSettings
     case phoneSettings
+    case bodyInfo        // 初回(オンボーディングと免責の後に1度)
+    case bodyInfoEdit    // スマホ設定から編集
 }

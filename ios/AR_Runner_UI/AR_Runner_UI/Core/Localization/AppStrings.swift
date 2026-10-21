@@ -293,6 +293,38 @@ enum AppStrings {
         static let locationDenied: LocalizedStringKey = "phoneSettings.location.denied"
         static let locationRestricted: LocalizedStringKey = "phoneSettings.location.restricted"
         static let locationServicesOff: LocalizedStringKey = "phoneSettings.location.servicesOff"
+        static let bodyInfo: LocalizedStringKey = "phoneSettings.bodyInfo"
+    }
+
+    /// 身体情報(S9-2)
+    enum BodyInfo {
+        static let eyebrow: LocalizedStringKey = "bodyInfo.eyebrow"
+        static let title: LocalizedStringKey = "bodyInfo.title"
+        static let subtitleInitial: LocalizedStringKey = "bodyInfo.subtitle.initial"
+        static let subtitleEdit: LocalizedStringKey = "bodyInfo.subtitle.edit"
+        static let gender: LocalizedStringKey = "bodyInfo.gender"
+        static let male: LocalizedStringKey = "bodyInfo.gender.male"
+        static let female: LocalizedStringKey = "bodyInfo.gender.female"
+        static let other: LocalizedStringKey = "bodyInfo.gender.other"
+        static let height: LocalizedStringKey = "bodyInfo.height"
+        static let weight: LocalizedStringKey = "bodyInfo.weight"
+        static let clear: LocalizedStringKey = "bodyInfo.clear"
+        static let choose: LocalizedStringKey = "bodyInfo.choose"
+        static let invalidCharacter: LocalizedStringKey = "bodyInfo.error.invalidCharacter"
+        static let heightRange: LocalizedStringKey = "bodyInfo.error.heightRange"
+        static let weightRange: LocalizedStringKey = "bodyInfo.error.weightRange"
+        static let saveFailed: LocalizedStringKey = "bodyInfo.error.saveFailed"
+        static let save: LocalizedStringKey = "bodyInfo.save"
+        static let cancel: LocalizedStringKey = "bodyInfo.cancel"
+        static let done: LocalizedStringKey = "bodyInfo.done"
+
+        static func genderLabel(_ gender: Gender) -> LocalizedStringKey {
+            switch gender {
+            case .male: return male
+            case .female: return female
+            case .other: return other
+            }
+        }
     }
 
     /// 数値の書式。値(Localizable.xcstrings)が書式指定子を持つ
