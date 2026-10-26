@@ -33,7 +33,9 @@ final class PowerMonitor {
             at: Date(),
             batteryLevel: level >= 0 ? Double(level) : nil,
             thermal: ThermalLevel(rawValue: ProcessInfo.processInfo.thermalState.rawValue) ?? .nominal,
-            lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled
+            lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            charging: device.batteryState == .unknown ? nil
+                : (device.batteryState == .charging || device.batteryState == .full)
         )
     }
 
