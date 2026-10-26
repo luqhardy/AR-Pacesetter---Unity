@@ -4,6 +4,16 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-26 (3) — チーム向けの実機ビルド手順を vrbuild.luqmanhadi.com で公開
+- `site/index.html`(日本語の手順書)を GitHub Pages へ。`pages.yml` が master の `site/**` 変更でデプロイ。`Docs/` と `/docs` が大文字小文字で衝突するため Actions で `site/` を直接出す。
+- Pages(build_type=workflow)と独自ドメインはリポジトリ設定で有効化済み。DNS(Cloudflare の CNAME vrbuild → luqhardy.github.io)は未設定。
+- 検証: YAML の構文のみ。デプロイは master へ入った後。
+
+### 2026-10-26 (2) — チーム全員の iPhone へのビルドを自動化(Mac 1コマンド + TestFlight)
+- `tools/build-to-iphone.sh`: Mac に挿した iPhone へ pull → エクスポート取得 → 無料署名(ビルド中だけ・自動で戻す)→ ビルド → インストール → 起動。チームIDは証明書から自動検出。
+- `.github/workflows/ios-testflight.yml`: master の iOS 変更・エクスポート公開で TestFlight へ。変数 `TESTFLIGHT_BUNDLE_ID` を設定するまで skipped(有料アカウント待ち)。
+- 検証: verify.sh(dotnet test 477/477、E2E 332/332)。新スクリプトとワークフローは bash -n・YAML の構文のみ — Mac 実機・TestFlight へのアップロードは未実行。
+
 ### 2026-10-26 — 体験モードのスタッフ画面に電池・温度を出す(Kobe Calling)
 - `BoothPowerStatus`(AppLogic)で電池・発熱を3段階に。iOS が絞る手前(thermal fair)で橙の注意、serious 以上で赤。給電中は電池を警告しない。
 - 理由: 胸のマウントで長時間回すと絞られてアバターがカクつく。来場者の前で起きる前にスタッフが交代・冷却できるように。`PowerSample` に `charging` を追加(旧保存データも読める)。
