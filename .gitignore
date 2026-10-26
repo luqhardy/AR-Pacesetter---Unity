@@ -37,6 +37,9 @@ ios/**/*.xcuserstate
 ios/**/*.xcbkptlist
 # swift test --package-path ios(AppLogic のテスト)の生成物
 /ios/.build/
+# tools/build-to-iphone.sh のビルド生成物と、各自のチームID・Bundle ID・端末の記憶
+/ios/build/
+/ios/.build-to-iphone.local
 
 # Unit test build artifacts (dotnet test)
 /Tests/**/bin/

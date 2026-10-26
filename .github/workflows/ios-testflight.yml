@@ -1,0 +1,205 @@
+# TestFlight 配布 (macOSランナー・API キーで自動署名)
+#
+# master へ iOS 側の変更が入るか、新しい Unity エクスポート(unity-export-*)が公開されるたびに、
+# アプリを署名して TestFlight へ上げる。チームは iPhone の TestFlight アプリから入れるだけ — Mac も
+# 7日ごとの入れ直しも要らない。計画と決めることは Docs/TESTFLIGHT.md。
+#
+# **リポジトリ変数 TESTFLIGHT_BUNDLE_ID を設定するまで動かない**(ジョブは skipped)。
+# 有料の Apple Developer Program・App Store Connect のアプリ登録・API キーが揃ってから設定する:
+#   Variables: TESTFLIGHT_BUNDLE_ID(App Store Connect に登録した Bundle ID。一度決めたら変えない)
+#   Secrets:   APPLE_TEAM_ID / ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_P8(.p8 ファイルの中身)
+#
+# 署名の設定はランナーの中でだけ書き換える(リポジトリの pbxproj は変えない)。
+# ビルドの手順(エクスポートの取得・展開・chmod)は ios-build.yml と同じ。
+name: TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      export_tag:
+        description: "使用するエクスポートのタグ (空なら最新の unity-export-* を自動選択)"
+        required: false
+        default: ""
+  push:
+    branches: [master]
+    paths:
+      - "ios/**"
+      - "Assets/Plugins/iOS/**"
+      - ".github/workflows/ios-testflight.yml"
+  # tools/publish-unity-export.sh がプレリリースを作ったとき(Unity 側の変更を配る)
+  release:
+    types: [published]
+
+# 同時に2本上げるとビルド番号の順序が入れ替わる。途中のものは止めずに順番に
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    name: Archive & upload to TestFlight
+    if: >-
+      vars.TESTFLIGHT_BUNDLE_ID != '' &&
+      (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'unity-export-'))
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check secrets
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          missing=""
+          for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::TESTFLIGHT_BUNDLE_ID は設定済みですが、Secrets が足りません:$missing(Docs/TESTFLIGHT.md)"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE_APP=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE_APP" ]; then
+            sudo xcode-select -s "$XCODE_APP"
+          else
+            echo "::warning::Xcode 26系が見つかりません。Deployment Target iOS 26.0 が通らない可能性があります"
+          fi
+          xcodebuild -version
+
+      - name: Resolve export tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.export_tag }}"
+          if [ -z "$TAG" ] && [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release list --limit 30 \
+                  --json tagName --jq '[.[] | select(.tagName | startswith("unity-export-"))][0].tagName')
+          fi
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "::error::unity-export-* のReleaseが見つかりません。先にエクスポートを公開してください"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "::notice::使用するエクスポート: $TAG (Swift 側: ${GITHUB_SHA:0:8})"
+
+      - name: Download Unity export
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --pattern 'UnityExport.tar.gz' --output /tmp/UnityExport.tar.gz
+          rm -rf ios/UnityExport
+          tar xzf /tmp/UnityExport.tar.gz -C ios/
+          # Windowsで固めたアーカイブでは拡張子の無いMach-Oの実行ビットが落ちる(ios-build.yml と同じ修復)
+          chmod +x ios/UnityExport/usymtool ios/UnityExport/usymtoolarm64 ios/UnityExport/*.sh || true
+          test -f ios/UnityExport/Unity-iPhone.xcodeproj/project.pbxproj \
+            || { echo "::error::エクスポートの展開に失敗しました"; exit 1; }
+
+      # リポジトリの pbxproj にはチームIDと Bundle ID が埋まっている。配布用のものへ、このランナーの中でだけ替える。
+      # コマンドライン引数で渡すと UnityFramework にも同じ Bundle ID が付き、アップロードで重複として弾かれる
+      - name: Apply distribution signing (runner only)
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: ${{ vars.TESTFLIGHT_BUNDLE_ID }}
+        run: |
+          PBX=ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj
+          perl -pi -e "s/DEVELOPMENT_TEAM = [^;]+;/DEVELOPMENT_TEAM = $APPLE_TEAM_ID;/g" "$PBX"
+          perl -pi -e "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID;/g" "$PBX"
+          grep -o 'PRODUCT_BUNDLE_IDENTIFIER = [^;]*;' "$PBX" | sort -u
+          grep -q 'com.apple.developer.healthkit' ios/AR_Runner_UI/AR_Runner_UI/AR_Runner_UI.entitlements \
+            || { echo "::error::HealthKit ケイパビリティが無い entitlements です(無料署名の改変が混入?)"; exit 1; }
+
+      - name: Write API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+
+      # ビルド番号 = このワークフローの実行番号(TestFlight は同じバージョン内で番号の重複を受け付けない)。
+      # 証明書・プロファイルは手で管理しない: API キーでの自動署名(クラウド管理の証明書)
+      - name: Archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -workspace ios/ARRunner.xcworkspace \
+            -scheme AR_Runner_UI \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/ARRunner.xcarchive" \
+            -derivedDataPath /tmp/dd \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            2>&1 | tee /tmp/archive.log || {
+              echo "── 失敗箇所 ──"
+              grep -E "error:|Undefined symbol|Signing|provisioning" /tmp/archive.log | head -40
+              exit 1; }
+
+      - name: Upload to TestFlight
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/ARRunner.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | tee /tmp/export.log || {
+              echo "── 失敗箇所 ──"
+              grep -E "error:|Signing|provisioning|ITMS-" /tmp/export.log | head -40
+              exit 1; }
+          echo "::notice::ビルド ${{ github.run_number }} を TestFlight へ上げました(処理に10〜30分。内部テスターへ自動で届く)"
+
+      - name: Remove API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-logs
+          path: |
+            /tmp/archive.log
+            /tmp/export.log
+          retention-days: 7
+          if-no-files-found: ignore

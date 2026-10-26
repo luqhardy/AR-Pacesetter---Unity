@@ -3,6 +3,18 @@
 Windows開発機 + 一時的に借りるMac、という前提の実機ビルド手順。
 Mac作業を最小化するため、**Windowsでできることは全て事前に済ませてから行く**。
 
+> **1コマンドで済ませる(2026-10-26〜)**: Xcode 26 に自分の Apple ID を追加し(Settings → Accounts)、
+> `gh auth login` したら、iPhone を USB で挿して
+>
+> ```bash
+> tools/build-to-iphone.sh
+> ```
+>
+> pull → Unity エクスポートの取得(§1 の公開済みのもの)→ 無料署名の改変(ビルド中だけ・終われば戻す)→
+> ビルド → インストール → 起動、まで行う。チームID・Bundle ID・端末は `ios/.build-to-iphone.local` に覚えるので
+> 2回目からは引数なし。7日で起動しなくなったら再実行する。止まったときは下の手順と §6 を見る。
+> Mac が無い人向けの TestFlight 配布は [TESTFLIGHT.md](TESTFLIGHT.md)。
+
 対象は「SwiftUIアプリ + Unity埋め込み」の最終アプリ。Unity単体をビルドしても
 SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION.md))。
 

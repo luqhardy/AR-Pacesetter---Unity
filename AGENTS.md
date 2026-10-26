@@ -30,7 +30,8 @@ Unityプロジェクト(本リポジトリのルート)+ SwiftUIホスト(`ios/`
 - 展示ブースの体験モード(Kobe Calling・立ったまま/数歩あるく) → [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
 - 走行ログCSVを解析する(T2 の M2P p95・記録レート・GPS途絶) → [tools/analyze-run-log](tools/analyze-run-log/README.md)
 - iOSビルド(Mac) → [SWIFT_INTEGRATION.md](SWIFT_INTEGRATION.md) ② / [Docs/BUILD_ON_BORROWED_MAC.md](Docs/BUILD_ON_BORROWED_MAC.md)。
-  Unity エクスポートの公開は `tools/publish-unity-export.sh`、Mac での取得は `tools/fetch-unity-export.sh`。TestFlight 配布の計画は [Docs/TESTFLIGHT.md](Docs/TESTFLIGHT.md)
+  Unity エクスポートの公開は `tools/publish-unity-export.sh`、Mac での取得は `tools/fetch-unity-export.sh`。
+  Mac に挿した iPhone へ1コマンドで入れるのは `tools/build-to-iphone.sh`。TestFlight 配布(`ios-testflight.yml`・有料アカウント待ち)は [Docs/TESTFLIGHT.md](Docs/TESTFLIGHT.md)
 - Android のテストAPK(第1期のスコープ外) → [Docs/ANDROID_BUILD.md](Docs/ANDROID_BUILD.md)
 - 過去の経緯(なぜそうなっているか) → [CHANGELOG.md](CHANGELOG.md) を検索する(全文は長いので読み通さない)
 
