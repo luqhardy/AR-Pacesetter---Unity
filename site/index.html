@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="AuRa Vision を Mac から iPhone へ1コマンドで入れる手順(チーム向け)">
+<title>AuRa Vision 実機ビルド手順</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+/* 1カラムの手順書。番号は実際の順序。コマンドは等幅のブロック+コピー */
+:root {
+  --bg: #f6f8f7;
+  --surface: #ffffff;
+  --fg: #17201d;
+  --muted: #56645f;
+  --line: #d9e1de;
+  --accent: #157a55;        /* ジャスト(緑)のアバター色から */
+  --accent-soft: #e2f2ea;
+  --warn: #a8461f;
+  --warn-soft: #fbece4;
+  --code-bg: #14201c;
+  --code-fg: #e4efe9;
+  --display: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --body: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1513; --surface: #161e1b; --fg: #e3ebe7; --muted: #9aaba4; --line: #2a3632;
+    --accent: #4cc596; --accent-soft: #173328; --warn: #f0936a; --warn-soft: #3a2219;
+    --code-bg: #0a0f0d; --code-fg: #d9e8e0; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1513; --surface: #161e1b; --fg: #e3ebe7; --muted: #9aaba4; --line: #2a3632;
+  --accent: #4cc596; --accent-soft: #173328; --warn: #f0936a; --warn-soft: #3a2219;
+  --code-bg: #0a0f0d; --code-fg: #d9e8e0; color-scheme: dark;
+}
+body {
+  margin: 0;
+  background: var(--bg); color: var(--fg);
+  font-family: var(--body); font-size: 16px; line-height: 1.8;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+}
+main { max-width: 760px; margin: 0 auto; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.35; margin: 0; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.2rem); font-weight: 700; }
+h2 { font-size: 1.35rem; font-weight: 700; display: flex; align-items: baseline; gap: 12px; }
+h3 { font-size: 1.05rem; font-weight: 700; }
+p { margin: 0; }
+.eyebrow { font-family: var(--mono); font-size: .78rem; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; }
+header { display: grid; gap: 12px; }
+.lead { color: var(--muted); max-width: 62ch; }
+.summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: .85rem; padding: 4px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+section { display: grid; gap: 16px; }
+.num { font-family: var(--mono); font-size: .9rem; color: var(--accent); font-weight: 600; min-width: 2ch; }
+.when { font-family: var(--body); font-size: .8rem; font-weight: 500; color: var(--muted); }
+ol.steps, ul.plain { margin: 0; padding-left: 1.4em; display: grid; gap: 10px; }
+ol.steps li::marker { color: var(--accent); font-family: var(--mono); font-weight: 600; }
+.ui { font-weight: 700; }
+code { font-family: var(--mono); font-size: .88em; background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.cmd { position: relative; background: var(--code-bg); color: var(--code-fg); border-radius: 8px; min-width: 0; }
+.cmd pre { margin: 0; padding: 14px 92px 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: .9rem; line-height: 1.6; }
+.cmd pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+.copy {
+  position: absolute; top: 8px; right: 8px; font: 500 .78rem var(--body);
+  color: var(--code-fg); background: transparent; border: 1px solid #ffffff40; border-radius: 6px;
+  padding: 4px 10px; cursor: pointer;
+}
+.copy:hover { border-color: #ffffff90; }
+.copy:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; display: grid; gap: 6px; }
+.note strong { color: var(--warn); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+th { font-family: var(--display); font-weight: 700; color: var(--muted); font-size: .85rem; background: var(--bg); }
+tr:last-child td { border-bottom: none; }
+td:first-child { min-width: 11em; }
+hr { border: none; border-top: 1px solid var(--line); margin: 0; }
+a { color: var(--accent); }
+footer { color: var(--muted); font-size: .85rem; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+</head>
+<body>
+<main>
+  <header>
+    <span class="eyebrow">AuRa Vision · iOS</span>
+    <h1>iPhone へのビルド手順(Mac)</h1>
+    <p class="lead">Mac に iPhone を USB で挿して、コマンド1つで最新のアプリを入れる手順です。
+      ソースの更新・Unity エクスポートの取得・署名・ビルド・インストール・起動までをスクリプトがまとめて行います。
+      無料の Apple ID で使えます。</p>
+    <div class="summary">
+      <span class="chip">初回の準備 15〜30分</span>
+      <span class="chip">2回目から コマンド1つ</span>
+      <span class="chip">7日ごとに入れ直す</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>用意するもの</h2>
+    <ul class="plain">
+      <li><span class="ui">Mac</span> と <span class="ui">Xcode 26</span>(App Store から。約15GBなので先に入れておく)</li>
+      <li><span class="ui">iPhone</span>(iOS 26・iPhone 12 Pro 以上)と USB ケーブル</li>
+      <li><span class="ui">Apple ID</span>(無料のものでよい)</li>
+      <li><span class="ui">GitHub アカウント</span></li>
+    </ul>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2><span class="num">1</span>初回だけの準備 <span class="when">1回だけ</span></h2>
+
+    <h3>Xcode に Apple ID を追加する</h3>
+    <ol class="steps">
+      <li>Xcode を一度起動し、追加コンポーネントのインストールを済ませる</li>
+      <li><span class="ui">Xcode → Settings → Accounts</span> の <span class="ui">+</span> から自分の Apple ID でサインイン</li>
+      <li>表示されたチーム(Personal Team)を選び、<span class="ui">Manage Certificates… → + → Apple Development</span></li>
+    </ol>
+
+    <h3>GitHub の CLI を入れてログインする</h3>
+    <p>Homebrew が無ければ先に <a href="https://brew.sh" target="_blank" rel="noopener">brew.sh</a> の1行を実行してください。</p>
+    <div class="cmd"><pre><code>brew install gh</code></pre></div>
+    <div class="cmd"><pre><code>gh auth login</code></pre></div>
+    <p>質問には <code>GitHub.com</code> → <code>HTTPS</code> → <code>Login with a web browser</code> と答え、ブラウザでログインします。</p>
+
+    <h3>リポジトリを取得する</h3>
+    <p>すでに手元にある人は不要です(下の手順2で自動的に最新になります)。</p>
+    <div class="cmd"><pre><code>git clone --depth 1 https://github.com/luqhardy/AR-Pacesetter---Unity.git</code></pre></div>
+
+    <h3>iPhone を開発に使えるようにする</h3>
+    <ol class="steps">
+      <li>USB で Mac に挿し、iPhone に出る <span class="ui">「このコンピュータを信頼」</span> で信頼する</li>
+      <li>iPhone の <span class="ui">設定 → プライバシーとセキュリティ → デベロッパモード</span> を ON(再起動を求められる)</li>
+    </ol>
+    <p class="lead">デベロッパモードの項目が無いときは、Xcode を開いた状態で iPhone を挿し直すと現れます。</p>
+  </section>
+
+  <section>
+    <h2><span class="num">2</span>ビルドして iPhone に入れる <span class="when">毎回</span></h2>
+    <p>iPhone を USB で挿し、ロックを解除した状態で、ターミナルで次を実行します。</p>
+    <div class="cmd"><pre><code>cd AR-Pacesetter---Unity
+tools/build-to-iphone.sh</code></pre></div>
+    <ul class="plain">
+      <li>初回は10分ほどかかります。2回目からは数分です。</li>
+      <li>途中で Mac のパスワード(キーチェーン)を聞かれたら、入力して <span class="ui">「常に許可」</span> を押します。</li>
+      <li>チームID・Bundle ID・iPhone は自動で見つけ、次回のために覚えます。2回目からは引数は要りません。</li>
+      <li>最後に <code>完了: … を ○○ の iPhone に入れました。</code> と出れば成功です。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="num">3</span>iPhone で開発元を信頼する <span class="when">初回だけ</span></h2>
+    <p>無料の Apple ID で入れたアプリは、初回だけ iPhone 側で信頼が必要です。
+      スクリプトが「起動できませんでした」と出したときがこれにあたります。</p>
+    <ol class="steps">
+      <li><span class="ui">設定 → 一般 → VPNとデバイス管理</span></li>
+      <li>自分の Apple ID を選んで <span class="ui">信頼</span></li>
+      <li>ホーム画面のアプリを開く</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2><span class="num">4</span>7日たったら</h2>
+    <p>無料の Apple ID で入れたアプリは7日で起動しなくなります(Apple の仕様)。
+      そのときは手順2の <code>tools/build-to-iphone.sh</code> をもう一度実行してください。
+      アプリ内の走行ログ(CSV)は消えません。</p>
+  </section>
+
+  <hr>
+
+  <section>
+    <h2>必要なときだけ使うオプション</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>オプション</th><th>使う場面</th></tr></thead>
+        <tbody>
+          <tr><td><code>--no-pull</code></td><td>最新にせず、今の手元のソースのまま入れる</td></tr>
+          <tr><td><code>--release</code></td><td>実地テストで M2P などを計測するとき(既定は Debug)</td></tr>
+          <tr><td><code>--device "名前"</code></td><td>iPhone を複数つないでいるとき。名前か UDID を指定</td></tr>
+          <tr><td><code>--team ABCDE12345</code></td><td>Apple ID のチームが複数あるとき(表示された10文字のどれか)</td></tr>
+          <tr><td><code>--bundle-id com.○○.pacesetter</code></td><td>以前に手作業(<code>prepare-free-signing.sh</code>)で入れていて、その走行ログを引き継ぎたいとき。以前と同じ値を指定する</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="cmd"><pre><code>tools/build-to-iphone.sh --release</code></pre></div>
+  </section>
+
+  <section>
+    <h2>うまくいかないとき</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>表示</th><th>対処</th></tr></thead>
+        <tbody>
+          <tr><td>Apple ID のチームが見つかりません</td><td>手順1の「Xcode に Apple ID を追加する」をやり直す(証明書の作成まで)</td></tr>
+          <tr><td>iPhone が見つかりません</td><td>ケーブルを挿し直し、「このコンピュータを信頼」とデベロッパモードを確認する</td></tr>
+          <tr><td>チームが複数あります / iPhone を選んでください</td><td>一覧に出た値を <code>--team</code> / <code>--device</code> に付けて再実行する</td></tr>
+          <tr><td>gh にログインしていません</td><td><code>gh auth login</code> を実行する</td></tr>
+          <tr><td>git pull できません</td><td><code>git status</code> で手元の変更を確認する。今のまま入れるなら <code>--no-pull</code></td></tr>
+          <tr><td>このエクスポートの後に Unity 側で…が変わっています</td><td>エラーではなく注意です。Unity 側の最新の変更はまだ入っていないので、ルクマンに新しいエクスポートの公開を頼む</td></tr>
+          <tr><td>ビルドに失敗しました</td><td><code>ios/build/xcodebuild.log</code> をルクマンに送る</td></tr>
+          <tr><td>インストールに失敗しました</td><td>iPhone のロックを解除して再実行する</td></tr>
+          <tr><td>起動できませんでした</td><td>手順3(開発元を信頼)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <strong>署名の設定はコミットしない</strong>
+      <p>スクリプトはビルドの間だけ署名の設定(HealthKit・チーム・Bundle ID)を書き換え、終わったら自動で元に戻します。
+        もし <code>git status</code> に <code>ios/AR_Runner_UI</code> の変更が残っていたら、コミットせずに
+        <code>git checkout -- ios/AR_Runner_UI</code> で戻してください。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Mac が無い人は</h2>
+    <p>TestFlight での配布を準備中です。チームで有料の Apple Developer Program を用意すると、
+      iPhone の TestFlight アプリから入れられるようになります(Mac も7日ごとの入れ直しも不要)。</p>
+  </section>
+
+  <footer>
+    詳しい仕組みは <a href="https://github.com/luqhardy/AR-Pacesetter---Unity" target="_blank" rel="noopener">リポジトリ</a> の
+    <code>Docs/BUILD_ON_BORROWED_MAC.md</code> と <code>Docs/TESTFLIGHT.md</code>。
+    このページの元は <code>site/index.html</code>(master へ入ると自動で公開)。
+  </footer>
+</main>
+
+<script>
+document.querySelectorAll('.cmd').forEach(function (block) {
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'copy';
+  btn.textContent = 'コピー';
+  btn.addEventListener('click', function () {
+    var text = block.querySelector('code').textContent;
+    var done = function () { btn.textContent = 'コピーしました'; setTimeout(function () { btn.textContent = 'コピー'; }, 1600); };
+    var fallback = function () {
+      var range = document.createRange();
+      range.selectNodeContents(block.querySelector('code'));
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      btn.textContent = '選択しました';
+    };
+    try {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } catch (e) { fallback(); }
+  });
+  block.appendChild(btn);
+});
+</script>
+</body>
+</html>

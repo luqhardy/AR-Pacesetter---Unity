@@ -1,0 +1,41 @@
+# チーム向けの実機ビルド手順を GitHub Pages で公開する(https://vrbuild.luqmanhadi.com)
+#
+# 中身は site/ の静的ファイルだけ。Docs/(大文字)は Pages の「/docs から公開」と大文字小文字で衝突し、
+# Windows / macOS では docs/ を別に作れないため、Actions で site/ を直接デプロイする。
+# 独自ドメインは Settings → Pages の Custom domain(Actions でのデプロイでは CNAME ファイルは使われない)。
+# DNS は Cloudflare の luqmanhadi.com に CNAME vrbuild → luqhardy.github.io。
+name: Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

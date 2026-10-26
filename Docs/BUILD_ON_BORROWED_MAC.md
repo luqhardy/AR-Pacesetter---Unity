@@ -14,6 +14,7 @@ Mac作業を最小化するため、**Windowsでできることは全て事前�
 > ビルド → インストール → 起動、まで行う。チームID・Bundle ID・端末は `ios/.build-to-iphone.local` に覚えるので
 > 2回目からは引数なし。7日で起動しなくなったら再実行する。止まったときは下の手順と §6 を見る。
 > Mac が無い人向けの TestFlight 配布は [TESTFLIGHT.md](TESTFLIGHT.md)。
+> チームに渡す手順書(日本語): https://vrbuild.luqmanhadi.com(元は `site/index.html`、master へ入ると `pages.yml` が公開)
 
 対象は「SwiftUIアプリ + Unity埋め込み」の最終アプリ。Unity単体をビルドしても
 SwiftUI画面は入らない(詳細: [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION.md))。
