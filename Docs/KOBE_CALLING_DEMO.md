@@ -78,6 +78,8 @@
   3. 実行中は「いまの区間」と、来場者へかける一言(何が見えているか)を大きく出す。残り秒数と区間の一覧つき
   4. ゴールで自動終了 →「次の方を開始」。途中で止めるときは **中断**
   - 画面は体験モード中ずっと自動ロックしない(消えるとグラスへの出力も止まる)
+  - 上部に電池・温度のチップ(5秒ごと)。iOS が処理を絞る手前(温度「やや高い」)で橙、絞り始め(「高い」)で赤の一言を出す。
+    体験は止めない — スタッフが次の方の前に交代・冷却を判断する(`BoothPowerStatus`)
   - 送るのは `StartBoothDemo {"mode":"standing"|"walking"}` / `StopBoothDemo`、受けるのは `BoothDemoProgress` / `BoothDemoEnded`
     (契約は [SWIFT_INTEGRATION.md](../SWIFT_INTEGRATION.md))。走行用の CoreLocation / HealthKit は起動しない
 - **Mac+グラス+ブラウザ(Unity も iPhone も無しで見せる最後の予備)**: [tools/booth-fallback/glasses-fallback.html](../tools/booth-fallback/glasses-fallback.html)。

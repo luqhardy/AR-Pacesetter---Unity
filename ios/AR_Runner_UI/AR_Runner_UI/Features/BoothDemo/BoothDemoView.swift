@@ -35,6 +35,9 @@ struct BoothDemoView: View {
     /// 猶予のカウントダウン用。経過バーは TimelineView で描き、画面全体(Unityのビューを含む)を
     /// 毎回描き直さない
     private let tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+    /// 電池・発熱(AppLogic/BoothPowerStatus)。iOS の電池は5%刻み・発熱の段階もゆっくり変わるので5秒ごとで足りる
+    private let powerTick = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+    @State private var power = BoothPowerStatus(PowerMonitor.shared.sample())
     private let danger = Color(red: 0.85, green: 0.25, blue: 0.2)
 
     private var hasUnityView: Bool { unity.isRunning && unity.unityRootView != nil }
@@ -95,6 +98,13 @@ struct BoothDemoView: View {
         .onReceive(tick) { date in
             perform(flow.tick(now: date))
         }
+        .onReceive(powerTick) { _ in
+            power = BoothPowerStatus(PowerMonitor.shared.sample())
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)
+            .receive(on: RunLoop.main)) { _ in
+            power = BoothPowerStatus(PowerMonitor.shared.sample())
+        }
         .onReceive(bridge.$boothDemoProgress) { progress in
             guard progress != nil else { return }
             flow.progressReceived()
@@ -137,12 +147,53 @@ struct BoothDemoView: View {
     }
 
     private var statusChips: some View {
-        HStack(spacing: 8) {
-            chip(icon: "eyeglasses", text: glassesStatusText, ok: external.isGlassesConnected)
-            if !hasUnityView && !unity.isPreparing {
-                chip(icon: "exclamationmark.triangle", text: "Unity未起動", ok: false)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                chip(icon: "eyeglasses", text: glassesStatusText, ok: external.isGlassesConnected)
+                if !hasUnityView && !unity.isPreparing {
+                    chip(icon: "exclamationmark.triangle", text: "Unity未起動", ok: false)
+                }
+                Spacer()
             }
-            Spacer()
+            HStack(spacing: 8) {
+                powerChip(icon: "battery.75percent", text: power.batteryText, level: power.batteryLevel)
+                powerChip(icon: "thermometer.medium", text: power.thermalText, level: power.thermalLevel)
+                Spacer()
+            }
+            if let advice = power.advice {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                    Text(advice)
+                        .font(.system(size: 14, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundColor(.white)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(color(for: power.level).opacity(0.85), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    /// 電池・発熱のチップ。平常はグラスのチップ(黄=良い)と紛れないよう灰色の枠だけ
+    private func powerChip(icon: String, text: String, level: BoothPowerStatus.Level) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 11, weight: .bold))
+            Text(text).font(.system(size: 12, weight: .semibold)).monospacedDigit()
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 10)
+        .frame(height: 28)
+        .background(level == .ok ? Color.arCard : color(for: level), in: Capsule())
+        .overlay(Capsule().stroke(level == .ok ? Color.arBorder : .clear, lineWidth: 1))
+    }
+
+    private func color(for level: BoothPowerStatus.Level) -> Color {
+        switch level {
+        case .ok:      return .arCard
+        case .caution: return Color(red: 0.85, green: 0.5, blue: 0.1)
+        case .danger:  return danger
         }
     }
 

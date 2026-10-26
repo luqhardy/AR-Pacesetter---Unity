@@ -32,6 +32,8 @@ nonisolated struct PowerSample: Codable, Equatable {
     var batteryLevel: Double?
     var thermal: ThermalLevel
     var lowPowerMode: Bool
+    /// 充電中(満充電で給電中も含む)か。取れなければ nil。展示ブースのパススルー給電の確認用
+    var charging: Bool? = nil
 }
 
 /// 1回の走行の電池・発熱
