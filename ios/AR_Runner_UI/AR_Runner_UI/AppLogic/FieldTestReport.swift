@@ -34,6 +34,18 @@ nonisolated struct FieldTestReport {
     var power: RunPowerRecord? = nil
     /// 書き出した時点の電池・発熱
     var currentPower: PowerSample? = nil
+    /// グラス(XREAL One)のIMUの受信状況。受信していなければ nil
+    var glassImu: GlassImu? = nil
+
+    struct GlassImu {
+        var status: String              // 例 "受信中"
+        var rateHz: Double?
+        var imuRecords: Int
+        var skippedBytes: Int
+        var temperatureCelsius: Float?
+        var forRun: Bool                // 頭のヨー・CSV へ送っているか
+        var accelSamplesPushed: Int     // CSV へ渡した 100Hz の加速度
+    }
 
     func markdown(timeZone: TimeZone = .current) -> String {
         var lines: [String] = []
@@ -51,6 +63,7 @@ nonisolated struct FieldTestReport {
         lines.append("|---|---|---|---|")
         lines.append("| \(Self.ms(latency.lastMs)) | \(Self.ms(latency.maxMs)) | \(Self.ratio(latency.overBudgetRatio)) | \(latency.sampleCount) |")
         lines.append("")
+        lines.append(contentsOf: glassImuSection())
         lines.append(contentsOf: powerSection(timeZone: timeZone))
         lines.append("### アバター非表示の履歴(古い順)")
         lines.append("")
@@ -77,6 +90,24 @@ nonisolated struct FieldTestReport {
             }
         }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// グラスのIMU(XREAL One)— iPhone で受け取れたか・走行で使ったか
+    private func glassImuSection() -> [String] {
+        var lines = ["### グラスのIMU(XREAL One・USBネットワーク)", ""]
+        guard let imu = glassImu else {
+            lines.append("(受信していない)")
+            lines.append("")
+            return lines
+        }
+        let rate = imu.rateHz.map { String(format: "%.0f Hz", $0) } ?? "測定中"
+        let temperature = imu.temperatureCelsius.map { String(format: "%.1f °C", $0) } ?? "—"
+        lines.append("| 状態 | レート | IMU | 読み飛ばし | 温度 | 走行用(ヨー・CSV) |")
+        lines.append("|---|---|---|---|---|---|")
+        lines.append("| \(Self.cell(imu.status)) | \(rate) | \(imu.imuRecords) | \(imu.skippedBytes) B | \(temperature) | "
+                     + (imu.forRun ? "ON・CSVへ \(imu.accelSamplesPushed) 件" : "OFF") + " |")
+        lines.append("")
+        return lines
     }
 
     /// §10 連続稼働60分・電池30%以上

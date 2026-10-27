@@ -4,10 +4,20 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
-### 2026-10-27 — UniVRM を導入し .vrm の取り込みを有効化
+### 2026-10-27 (3) — UniVRM を導入し .vrm の取り込みを有効化
 - `Packages/manifest.json` に UniVRM v0.131.3(`com.vrmc.gltf` / `com.vrmc.univrm`、新しい `/Packages/` 配置)、`UNIVRM` を Android / Standalone / iPhone に定義。
 - `VrmAvatarLoader` の `Load()` を拡張メソッドとして明示呼び出しに。compile-check は VRM.dll があれば `UNIVRM` 付きで検証。ライセンス同意の導線は未実装(チーム判断)。
 - 検証: verify.sh ALL CHECKS PASSED(dotnet test 477/477、compile-check は UNIVRM 付き、E2E 332/332)。実物の .vrm での読み込みは未確認(同梱モデル無し)。
+
+### 2026-10-27 (2) — XREAL One の IMU を走行で使う(頭のヨー・CSV の加速度・レポート)
+- 準備画面に「グラスのセンサー」行(既定OFF)。`XrealImuFusion` が上向きへ射影したジャイロを積分して `UpdateHeadYaw` へ(AirPods より優先)、重力を除いた100Hz加速度を `ARV_PushGlassImuSample` で CSV の imu_accel 列へ(`csv.imuSource=glasses100hz`)。
+- 開発者モードの実地テスト書き出しにグラスIMUの節。プローブは `XrealImuReceiver` に改名。較正キャプチャで右80°→+79.8°を検算。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 477/477、Swift 構文 88 ファイル、E2E 332/332)。Swift の型検査・`swift test`(新規テスト9件)は CI、iPhone 実機は未確認。
+
+### 2026-10-27 — 開発者モードに XREAL One の IMU プローブ(試験・既定OFF)
+- base One は USB-NCM 越しに TCP 169.254.2.1:52998 で生IMU(134B・1kHz・ジャイロ/加速度/温度)を流している(Mac・Windows で取得し形式と軸を解析)。iPhone で届くかを確かめるため、読むだけのプローブとレート・ヨー角速度(+gyro y)の表示を追加。
+- 純ロジック `XrealImuStream`(切り出し・再同期・レート)とテスト。`NSLocalNetworkUsageDescription`(日英)を追加。Unity へはまだ流さない。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 477/477、Swift 構文 86 ファイル、E2E 332/332)。Swift の型検査と `swift test` は Mac / CI 待ち。iPhone 実機では未確認。
 
 ### 2026-10-26 (3) — チーム向けの実機ビルド手順を vrbuild.luqmanhadi.com で公開
 - `site/index.html`(日本語の手順書)を GitHub Pages へ。`pages.yml` が master の `site/**` 変更でデプロイ。`Docs/` と `/docs` が大文字小文字で衝突するため Actions で `site/` を直接出す。

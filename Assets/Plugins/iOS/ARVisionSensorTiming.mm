@@ -239,9 +239,67 @@ static const int kImuRingCapacity = 512; // 100Hz なら約5秒ぶん。フレ�
 @end
 
 // ════════════════════════════════════════════════════════════════════════════
+// グラス(XREAL One)の IMU — Swift が USBネットワーク越しに受けて 100Hz に平均した加速度
+//
+// Swift(XrealImuReceiver)が dlsym で ARV_PushGlassImuSample を引いて呼ぶ(UnityFramework を
+// リンクしない開発ビルドでも落ちないように直接リンクしない)。時刻は Swift 側で CACurrentMediaTime 軸へ
+// 写してあるので、端末の IMU と同じように RunTelemetryLogger が1件1行で書ける。
+// ════════════════════════════════════════════════════════════════════════════
+
+// これより新しいサンプルが来ていなければ「流れていない」(端末の IMU へ戻す)
+static const double kGlassImuStaleSeconds = 0.5;
+
+static double gGlassRingTime[kImuRingCapacity];
+static float  gGlassRingXyz[kImuRingCapacity * 3];
+static int    gGlassRingHead = 0;
+static int    gGlassRingCount = 0;
+static double gGlassLastPushTime = 0.0;
+static os_unfair_lock gGlassRingLock = OS_UNFAIR_LOCK_INIT;
+
+// ════════════════════════════════════════════════════════════════════════════
 // C API (Unity から DllImport("__Internal") で呼ばれる)
 // ════════════════════════════════════════════════════════════════════════════
 extern "C" {
+
+/// Swift から: グラスの加速度(重力除去・m/s²)を1件積む。満杯なら最古を捨てる
+__attribute__((visibility("default"), used))
+void ARV_PushGlassImuSample(double mediaTime, float x, float y, float z) {
+    os_unfair_lock_lock(&gGlassRingLock);
+    gGlassRingTime[gGlassRingHead] = mediaTime;
+    gGlassRingXyz[gGlassRingHead * 3 + 0] = x;
+    gGlassRingXyz[gGlassRingHead * 3 + 1] = y;
+    gGlassRingXyz[gGlassRingHead * 3 + 2] = z;
+    gGlassRingHead = (gGlassRingHead + 1) % kImuRingCapacity;
+    if (gGlassRingCount < kImuRingCapacity) gGlassRingCount++;
+    gGlassLastPushTime = CACurrentMediaTime();
+    os_unfair_lock_unlock(&gGlassRingLock);
+}
+
+/// グラスの IMU が直近に届いているか。
+int ARV_IsGlassImuStreaming(void) {
+    os_unfair_lock_lock(&gGlassRingLock);
+    double last = gGlassLastPushTime;
+    os_unfair_lock_unlock(&gGlassRingLock);
+    return (last > 0.0 && CACurrentMediaTime() - last < kGlassImuStaleSeconds) ? 1 : 0;
+}
+
+/// 貯まったグラスの IMU サンプルを古い順に引き取る。戻り値 = 実際に取れた件数。
+int ARV_DrainGlassImuSamples(double* outTimestamps, float* outXyz, int maxSamples) {
+    if (outTimestamps == NULL || outXyz == NULL || maxSamples <= 0) return 0;
+    os_unfair_lock_lock(&gGlassRingLock);
+    int take = (gGlassRingCount < maxSamples) ? gGlassRingCount : maxSamples;
+    int start = (gGlassRingHead - gGlassRingCount + kImuRingCapacity * 2) % kImuRingCapacity;
+    for (int i = 0; i < take; i++) {
+        int idx = (start + i) % kImuRingCapacity;
+        outTimestamps[i]  = gGlassRingTime[idx];
+        outXyz[i * 3 + 0] = gGlassRingXyz[idx * 3 + 0];
+        outXyz[i * 3 + 1] = gGlassRingXyz[idx * 3 + 1];
+        outXyz[i * 3 + 2] = gGlassRingXyz[idx * 3 + 2];
+    }
+    gGlassRingCount -= take;
+    os_unfair_lock_unlock(&gGlassRingLock);
+    return take;
+}
 
 void ARV_StartSensorTiming(void) { [[ARVSensorTiming shared] start]; }
 void ARV_StopSensorTiming(void)  { [[ARVSensorTiming shared] stop]; }

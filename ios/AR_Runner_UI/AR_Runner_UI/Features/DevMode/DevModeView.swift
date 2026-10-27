@@ -22,6 +22,7 @@ struct DevModeView: View {
 
     @ObservedObject private var bridge = UnityBridge.shared
     @ObservedObject private var external = ExternalDisplayManager.shared
+    @ObservedObject private var imuProbe = XrealImuReceiver.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var shareItem: ShareItem?
@@ -45,6 +46,7 @@ struct DevModeView: View {
                     logSection
                     visibilitySection
                     indoorTestSection
+                    xrealImuSection
                     statsSection
                 }
                 .padding(.horizontal, 20)
@@ -64,6 +66,7 @@ struct DevModeView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear { refresh() }
+        .onDisappear { imuProbe.stopInspection() }   // 確かめるだけなら開発者モードを開いている間だけ(走行用は止めない)
         .onReceive(tick) { _ in if autoRefresh { bridge.requestDiagnostics() } }
         .sheet(item: $shareItem) { item in
             ActivityView(items: item.items)
@@ -126,8 +129,31 @@ struct DevModeView: View {
             visibilityEvents: bridge.visibilityLog.events,
             diagnostics: bridge.diagnostics.map { (key: $0.key, value: $0.value) },
             power: PowerMonitor.shared.lastRun,
-            currentPower: PowerMonitor.shared.sample()
+            currentPower: PowerMonitor.shared.sample(),
+            glassImu: glassImuReport
         ).markdown()
+    }
+
+    /// グラスのIMU(XREAL One)の受信状況。動かしていなければ nil(レポートには「受信していない」)
+    private var glassImuReport: FieldTestReport.GlassImu? {
+        guard imuProbe.isRunning || imuProbe.status != .off else { return nil }
+        let s = imuProbe.snapshot
+        let status: String
+        switch imuProbe.status {
+        case .off: status = "停止"
+        case .connecting: status = "接続中"
+        case .connected: status = "接続・未受信"
+        case .streaming: status = "受信中"
+        case .waiting(let message): status = "待機: \(message)"
+        case .failed(let message): status = "失敗: \(message)"
+        }
+        return .init(status: status,
+                     rateHz: s.rateHz,
+                     imuRecords: s.imuRecords,
+                     skippedBytes: s.skippedBytes,
+                     temperatureCelsius: s.temperatureCelsius,
+                     forRun: imuProbe.isForRun,
+                     accelSamplesPushed: s.accelSamplesPushed)
     }
 
     /// 準備画面と同じ判定(開発者モードは日本語のみなので文言はここで持つ)
@@ -321,6 +347,84 @@ struct DevModeView: View {
             }
             .padding(14)
             .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    // MARK: - XREAL One のIMU(試験用プローブ)
+
+    /// グラスが USBネットワーク越しに流している生のIMU(TCP 169.254.2.1:52998)を iPhone で受け取れるか確かめる。
+    /// ここで入れたときは画面に出すだけ。走行で使う(頭のヨー・CSV)のは準備画面のグラスIMU行で「接続」したとき
+    private var xrealImuSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("XREAL One の IMU(試験)",
+                          subtitle: "TCP \(XrealImuStream.host):\(XrealImuStream.port) を読むだけ。準備画面で接続していなければ画面を閉じると切れる")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(
+                    get: { imuProbe.isRunning },
+                    set: { $0 ? imuProbe.startForInspection() : imuProbe.stop() }
+                )) {
+                    Text("グラスの IMU を読む")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .tint(accent)
+
+                Text(imuProbeStatusText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(imuProbeStatusColor)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+
+                if imuProbe.status == .streaming {
+                    let s = imuProbe.snapshot
+                    VStack(alignment: .leading, spacing: 4) {
+                        imuRow("レート", s.rateHz.map { String(format: "%.0f Hz", $0) } ?? "測定中")
+                        imuRow("ヨー角速度", s.yawRateDegreesPerSecond.map { String(format: "%+.1f °/s(右が正)", $0) } ?? "-")
+                        imuRow("頭のヨー", s.yawDegrees.map { String(format: "%+.1f °(基準は任意)", $0) } ?? "-")
+                        imuRow("温度", s.temperatureCelsius.map { String(format: "%.1f °C", $0) } ?? "-")
+                        imuRow("受信", "IMU \(s.imuRecords) ・ 地磁気など \(s.otherRecords) ・ 読み飛ばし \(s.skippedBytes) B")
+                        imuRow("走行用", imuProbe.isForRun
+                               ? "ON — 頭のヨーを Unity へ・CSVへ \(s.accelSamplesPushed) 件"
+                               : "OFF(画面に出すだけ)")
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(14)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var imuProbeStatusText: String {
+        switch imuProbe.status {
+        case .off: return "OFF(既定)。グラスを USB-C でつないでから入れる。設定アプリに「Ethernet」が出ていれば USBネットワークは上がっている"
+        case .connecting: return "接続中…(初回はローカルネットワークの許可を尋ねます)"
+        case .connected: return "接続しました。IMU を待っています"
+        case .streaming: return "受信中 — 頭を右へ回すとヨー角速度が正になる"
+        case .waiting(let message): return "待機中: \(message) — USBネットワークが上がっていないか、ローカルネットワークの許可が無い(設定 > プライバシー > ローカルネットワーク)"
+        case .failed(let message): return "失敗: \(message)"
+        }
+    }
+
+    private var imuProbeStatusColor: Color {
+        switch imuProbe.status {
+        case .streaming: return accent
+        case .waiting, .failed: return .orange
+        default: return secondaryText
+        }
+    }
+
+    private func imuRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(label)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(secondaryText)
+                .frame(width: 90, alignment: .leading)
+            Text(value)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

@@ -12,7 +12,7 @@ using UnityEngine;
 ///   UpdateGlassPose {yaw, pitch, roll, timestamp}
 ///                      — グラス実機の頭部姿勢(将来用。iOSでは現状供給元が無い)
 ///   UpdateHeadYaw {yaw}
-///                      — AirPods の頭のヨー(度・基準は任意・右が正)。進行方向との差を首振りとして
+///                      — 頭のヨー(度・基準は任意・右が正)。AirPods か XREAL One 自身のIMU(Swift の XrealImuReceiver)。進行方向との差を首振りとして
 ///                        グラスの描画の向きへ足し、首を振ってもアバターが進行方向の3m先に留まって見える
 /// </summary>
 public class DeviceManagerBridge : MonoBehaviour
