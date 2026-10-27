@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-27 (3) — UniVRM を導入し .vrm の取り込みを有効化
+- `Packages/manifest.json` に UniVRM v0.131.3(`com.vrmc.gltf` / `com.vrmc.univrm`、新しい `/Packages/` 配置)、`UNIVRM` を Android / Standalone / iPhone に定義。
+- `VrmAvatarLoader` の `Load()` を拡張メソッドとして明示呼び出しに。compile-check は VRM.dll があれば `UNIVRM` 付きで検証。ライセンス同意の導線は未実装(チーム判断)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 477/477、compile-check は UNIVRM 付き、E2E 332/332)。実物の .vrm での読み込みは未確認(同梱モデル無し)。
+
 ### 2026-10-27 (2) — XREAL One の IMU を走行で使う(頭のヨー・CSV の加速度・レポート)
 - 準備画面に「グラスのセンサー」行(既定OFF)。`XrealImuFusion` が上向きへ射影したジャイロを積分して `UpdateHeadYaw` へ(AirPods より優先)、重力を除いた100Hz加速度を `ARV_PushGlassImuSample` で CSV の imu_accel 列へ(`csv.imuSource=glasses100hz`)。
 - 開発者モードの実地テスト書き出しにグラスIMUの節。プローブは `XrealImuReceiver` に改名。較正キャプチャで右80°→+79.8°を検算。

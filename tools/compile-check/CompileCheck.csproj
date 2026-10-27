@@ -41,6 +41,15 @@
     <OutputPath>bin\editor\</OutputPath>
   </PropertyGroup>
 
+  <!--
+    UniVRM(Packages/manifest.json の com.vrmc.univrm)が Library に取り込まれていれば、プロジェクトと同じく
+    UNIVRM を定義して VrmAvatarLoader の .vrm 読み込み(#if UNIVRM)もコンパイルする。
+    まだ取り込まれていない(Unity で一度も開いていない)環境では従来どおり UNIVRM なしで検証する。
+  -->
+  <PropertyGroup Condition="Exists('$(RepoRoot)Library/ScriptAssemblies/VRM.dll')">
+    <DefineConstants>$(DefineConstants);UNIVRM</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <Compile Include="$(RepoRoot)Assets/_Project/Scripts/**/*.cs" />
     <Reference Include="$(UnityManagedDir)/*.dll" Private="false" />

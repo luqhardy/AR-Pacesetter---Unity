@@ -390,10 +390,17 @@ public class E2EScenarioBehaviour : MonoBehaviour
         Check(vrmLoader != null, "bootstrap: VrmAvatarLoader auto-created");
         if (vrmLoader != null)
         {
+#if UNIVRM
+            Check(VrmAvatarLoader.IsRuntimeLoadAvailable,
+                "vrm: runtime .vrm loading is available with UniVRM (Packages/manifest.json + UNIVRM)");
+            Check(!vrmLoader.TryLoadFromFile("nonexistent.vrm", out VrmRejectReason _),
+                "vrm: a missing .vrm file fails cleanly (no exception escapes)");
+#else
             Check(!VrmAvatarLoader.IsRuntimeLoadAvailable,
                 "vrm: runtime .vrm loading is dormant without UniVRM");
             Check(!vrmLoader.TryLoadFromFile("nonexistent.vrm", out VrmRejectReason _),
                 "vrm: loading refuses cleanly when UniVRM is absent");
+#endif
 
             // 現在表示中のモデルを実測できること(計測はUniVRMに依存しない)
             Animator shownRig = AvatarRigLocator.FindBestAnimator(engine.transform);
