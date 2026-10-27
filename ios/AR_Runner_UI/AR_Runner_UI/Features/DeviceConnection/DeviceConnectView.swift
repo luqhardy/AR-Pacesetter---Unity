@@ -21,6 +21,8 @@ struct DeviceConnectView: View {
     @ObservedObject private var external = ExternalDisplayManager.shared
     /// AirPods の頭の向き(任意。首を振ってもアバターを進行方向に保つ)
     @ObservedObject private var headTracker = HeadphoneHeadTracker.shared
+    /// グラス(XREAL One)自身のIMU(任意。AirPods より優先して頭の向きに使う)
+    @ObservedObject private var glassImu = XrealImuReceiver.shared
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
     /// 開発者モード「ARグラスなしで走行を始める」(既定 OFF)
@@ -108,6 +110,13 @@ struct DeviceConnectView: View {
                         onRetry: { headTracker.retry() },
                         onOpenSettings: openAppSettings
                     )
+                    // グラス自身のIMU(USBネットワーク越し)。届いている間は AirPods より優先して頭のヨーに使い、
+                    // 走行ログCSVの imu_accel 列もグラスの値で埋める。任意・既定OFF
+                    GlassImuRow(
+                        status: glassImu.runStatus,
+                        onConnect: { glassImu.startForRun() },
+                        onRetry: { glassImu.retryForRun() }
+                    )
                 }
                 .padding(.horizontal, 24)
 
@@ -176,6 +185,7 @@ struct DeviceConnectView: View {
     /// 「戻る」。AirPods を探している途中でも止めてから離れる(タスク表 S4「接続処理中の戻る」)
     private func goBack() {
         headTracker.stop()
+        glassImu.stop()
         onBack()
     }
 
@@ -497,6 +507,99 @@ private struct HeadTrackingRow: View {
                 pill(AppStrings.Common.openSettings, action: onOpenSettings)
             case .unsupported:
                 EmptyView()
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .background(Color.arCard)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(status == .off ? Color.arBorder : tint.opacity(0.35), lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.2), value: status)
+    }
+
+    private func pill(_ title: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.arYellow)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.arYellow.opacity(0.12))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.arYellow.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - グラスのIMU(頭の向き)行
+
+/// 任意。押すとグラス(XREAL One)自身のIMUを USBネットワーク越しに受け取り、頭の向きと CSV の加速度に使う。
+/// 届かなくても走行は止めない(AirPods と同じ扱い — タスク表 S4)
+private struct GlassImuRow: View {
+    let status: GlassImuStatus
+    let onConnect: () -> Void
+    let onRetry: () -> Void
+
+    private var tint: Color {
+        switch status {
+        case .active: return .arYellow
+        case .searching: return .white
+        case .notFound: return .orange
+        case .off: return .arGrayText
+        }
+    }
+
+    private var detail: LocalizedStringKey {
+        switch status {
+        case .off: return AppStrings.Devices.glassImuSubtitle
+        case .searching: return AppStrings.Devices.glassImuSearching
+        case .active: return AppStrings.Devices.glassImuActive
+        case .notFound: return AppStrings.Devices.glassImuNotFound
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.arBG)
+                    .frame(width: 56, height: 56)
+                    .overlay(Circle().stroke(status == .off ? Color.arBorder : tint.opacity(0.6), lineWidth: 1))
+                Image(systemName: "gyroscope")
+                    .font(.system(size: 24))
+                    .foregroundColor(status == .off ? .arGrayText : tint)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(AppStrings.Devices.glassImuName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundColor(status == .off ? .arGrayText : tint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            switch status {
+            case .off:
+                pill(AppStrings.Devices.connect, action: onConnect)
+            case .searching:
+                ProgressView().tint(.white)
+            case .active:
+                Image(systemName: "checkmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.black)
+                    .frame(width: 28, height: 28)
+                    .background(Color.arYellow)
+                    .clipShape(Circle())
+            case .notFound:
+                pill(AppStrings.Devices.reconnect, action: onRetry)
             }
         }
         .padding(.horizontal, 18)

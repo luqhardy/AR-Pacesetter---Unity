@@ -15,6 +15,7 @@ using UnityEngine;
 /// GPS緯度経度は Swift の UpdateMetrics → GpsSignalMonitor → SetGpsCoordinates で入る。
 /// IMU加速度は実機では端末IMU(Input.gyro.userAcceleration)を直接読み、エディタでは
 /// カメラ速度差分で近似する。SetImuAcceleration は C# 側の受け口で、Swift からの経路は無い。
+/// グラス(XREAL One)の加速度が流れている間は、端末より優先してそれを書く(SensorTimingBridge.IsGlassImuStreaming)。
 /// <b>AvatarEngine とは別のGameObjectに置く</b>(Bootstrapが自動生成)。スタンバイは
 /// アバターのGameObjectを非アクティブにするので、同居するとその間ログが止まる。
 /// </summary>
@@ -128,11 +129,15 @@ public class RunTelemetryLogger : MonoBehaviour
     /// <summary>IMUの取得元。CSVの信頼性判断とE2E検証に使う。</summary>
     public string ImuSource =>
         _imuExternal ? "external"
+        : (sensorTiming != null && sensorTiming.IsGlassImuStreaming) ? "glasses100hz"
         : (sensorTiming != null && sensorTiming.IsImuStreaming) ? "native100hz"
         : (_deviceImuActive ? "device" : "approximated");
 
     /// <summary>ネイティブ100Hzサンプルから書いた行数(0ならフレーム同期の擬似100Hz)。</summary>
     public long NativeImuRowCount { get; private set; }
+
+    /// <summary>そのうちグラス(XREAL One)の加速度で書いた行数。</summary>
+    public long GlassImuRowCount { get; private set; }
 
     /// <summary>現在のCSVへ書いたデータ行数(ヘッダ除く)。ログが本当に進んでいるかの検証用。</summary>
     public long WrittenRowCount { get; private set; }
@@ -254,7 +259,8 @@ public class RunTelemetryLogger : MonoBehaviour
 
     /// <summary>ネイティブ100Hz IMU(実機のみ)が使えるか。時刻の基準が取れていることも条件。</summary>
     private bool IsNativeImuAvailable()
-        => sensorTiming != null && sensorTiming.IsImuStreaming && _mediaTimeAtLogStart > 0.0;
+        => sensorTiming != null && (sensorTiming.IsImuStreaming || sensorTiming.IsGlassImuStreaming)
+           && _mediaTimeAtLogStart > 0.0;
 
     /// <summary>
     /// ネイティブ(CoreMotion)に貯まった100Hzサンプルを引き取り、1件1行で書く。
@@ -262,7 +268,19 @@ public class RunTelemetryLogger : MonoBehaviour
     /// </summary>
     private int AppendNativeImuRows()
     {
-        int count = sensorTiming.DrainImuSamples(_imuSampleTimes, _imuSampleXyz);
+        // グラスの加速度が流れていればそれを書く。端末の分はリングに溜めっぱなしにしない
+        // (グラスが途切れて端末へ戻ったとき、古いサンプルが一度に流れ込まないように捨てる)
+        bool glasses = sensorTiming.IsGlassImuStreaming;
+        int count;
+        if (glasses)
+        {
+            sensorTiming.DrainImuSamples(_imuSampleTimes, _imuSampleXyz);
+            count = sensorTiming.DrainGlassImuSamples(_imuSampleTimes, _imuSampleXyz);
+        }
+        else
+        {
+            count = sensorTiming.DrainImuSamples(_imuSampleTimes, _imuSampleXyz);
+        }
 
         for (int i = 0; i < count; i++)
         {
@@ -281,6 +299,7 @@ public class RunTelemetryLogger : MonoBehaviour
 
             AppendRowAt(tsMs);
             NativeImuRowCount++;
+            if (glasses) GlassImuRowCount++;
         }
 
         return count;
@@ -360,13 +379,18 @@ public class RunTelemetryLogger : MonoBehaviour
         _timeline.Reset(_logStartEpochMs);
         _lastNativeSampleRealtime = Time.realtimeSinceStartup; // 最初のサンプルが届くまでは待つ
         NativeImuRowCount = 0;
+        GlassImuRowCount = 0;
         WrittenRowCount = 0;
 
         // ネイティブのサンプル時刻(端末起動からの秒)をepochへ写すための基準点。
         // 実機以外では0が返り、ネイティブ経路は使われない
         _mediaTimeAtLogStart = sensorTiming != null ? sensorTiming.CurrentMediaTime : 0.0;
         if (_mediaTimeAtLogStart > 0.0)
-            sensorTiming.DrainImuSamples(_imuSampleTimes, _imuSampleXyz); // 開始前の滞留を捨てる
+        {
+            // 開始前の滞留を捨てる
+            sensorTiming.DrainImuSamples(_imuSampleTimes, _imuSampleXyz);
+            sensorTiming.DrainGlassImuSamples(_imuSampleTimes, _imuSampleXyz);
+        }
         _camInit = false;
         _logging = true;
 

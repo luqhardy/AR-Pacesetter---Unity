@@ -42,6 +42,12 @@ public class SensorTimingBridge : MonoBehaviour
     private static bool   NativeImuStreaming()     => ARV_IsImuStreaming() != 0;
     private static int    NativeDrainImu(double[] ts, float[] xyz, int max)
         => ARV_DrainImuSamples(ts, xyz, max);
+    [DllImport("__Internal")] private static extern int    ARV_IsGlassImuStreaming();
+    [DllImport("__Internal")] private static extern int    ARV_DrainGlassImuSamples(
+        double[] outTimestamps, float[] outXyz, int maxSamples);
+    private static bool   NativeGlassImuStreaming() => ARV_IsGlassImuStreaming() != 0;
+    private static int    NativeDrainGlassImu(double[] ts, float[] xyz, int max)
+        => ARV_DrainGlassImuSamples(ts, xyz, max);
 
     /// <summary>ネイティブ計測が使える環境か(iOS実機のみ true)。</summary>
     public const bool NativeAvailable = true;
@@ -52,6 +58,8 @@ public class SensorTimingBridge : MonoBehaviour
     private static double NativeTargetTimestamp() => 0.0;
     private static bool   NativeImuStreaming()    => false;
     private static int    NativeDrainImu(double[] ts, float[] xyz, int max) => 0;
+    private static bool   NativeGlassImuStreaming() => false;
+    private static int    NativeDrainGlassImu(double[] ts, float[] xyz, int max) => 0;
 
     /// <summary>ネイティブ計測が使える環境か(iOS実機のみ true)。</summary>
     public const bool NativeAvailable = false;
@@ -81,6 +89,12 @@ public class SensorTimingBridge : MonoBehaviour
 
     /// <summary>100Hz IMU がネイティブから流れているか。</summary>
     public bool IsImuStreaming => _measuring && NativeImuStreaming();
+
+    /// <summary>
+    /// グラス(XREAL One)の加速度が Swift から流れているか。流れている間は CSV の imu_accel 列を
+    /// 端末の IMU ではなくグラスの値で埋める(重力除去・m/s²・軸はグラスの x=右・y=下・z=前)。
+    /// </summary>
+    public bool IsGlassImuStreaming => _measuring && NativeGlassImuStreaming();
 
     /// <summary>
     /// 直近のM2P実測(ms)。<b>実測できていなければ false</b> を返し、
@@ -137,6 +151,19 @@ public class SensorTimingBridge : MonoBehaviour
         if (max <= 0) return 0;
 
         return NativeDrainImu(timestampsSeconds, xyz, max);
+    }
+
+    /// <summary>
+    /// 貯まったグラスの100Hz加速度を古い順に引き取る(時刻は端末IMUと同じ CACurrentMediaTime 軸)。
+    /// </summary>
+    public int DrainGlassImuSamples(double[] timestampsSeconds, float[] xyz)
+    {
+        if (!_measuring || timestampsSeconds == null || xyz == null) return 0;
+
+        int max = Mathf.Min(timestampsSeconds.Length, xyz.Length / 3);
+        if (max <= 0) return 0;
+
+        return NativeDrainGlassImu(timestampsSeconds, xyz, max);
     }
 
     private void OnDisable()

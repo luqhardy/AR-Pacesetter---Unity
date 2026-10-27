@@ -1446,6 +1446,91 @@
         }
       }
     },
+    "devices.glassImu.active" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Using head direction from the glasses"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グラスの頭の向きを使っています"
+          }
+        }
+      }
+    },
+    "devices.glassImu.name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glasses sensor"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グラスのセンサー"
+          }
+        }
+      }
+    },
+    "devices.glassImu.notFound" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No data. Replug the glasses, or allow Local Network in Settings"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "届きません。グラスを挿し直すか、設定でローカルネットワークを許可してください"
+          }
+        }
+      }
+    },
+    "devices.glassImu.searching" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the glasses' sensor…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グラスのセンサーを待っています…"
+          }
+        }
+      }
+    },
+    "devices.glassImu.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional — head direction from the XREAL One itself (faster than AirPods)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任意 — XREAL One 自身の頭の向き(AirPods より速い)"
+          }
+        }
+      }
+    },
     "devices.hint.connected" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -41,7 +41,9 @@ final class HeadphoneHeadTracker: NSObject, ObservableObject, CMHeadphoneMotionM
                 guard let self, let motion, self.requestedAt != nil else { return }
                 self.lastSampleAt = Date()
                 let now = ProcessInfo.processInfo.systemUptime
-                if HeadYawSample.shouldSend(now: now, lastSent: self.lastSentUptime),
+                // グラス自身のIMUで頭のヨーを送っている間は AirPods の分を送らない(基準の違う2つがぶつかる)
+                if !XrealImuReceiver.shared.isDrivingHeadYaw,
+                   HeadYawSample.shouldSend(now: now, lastSent: self.lastSentUptime),
                    let yaw = HeadYawSample.unityYawDegrees(attitudeYawRadians: motion.attitude.yaw) {
                     self.lastSentUptime = now
                     UnityBridge.shared.updateHeadYaw(degrees: yaw)

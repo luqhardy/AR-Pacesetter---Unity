@@ -1027,6 +1027,8 @@ final class ARSessionManager: ObservableObject {
         PowerMonitor.shared.runEnded()
         // AirPods の頭の向きは走行のためだけに使う(準備画面で「接続」を押したときから終了まで)
         HeadphoneHeadTracker.shared.stop()
+        // グラスのIMU(頭のヨー・CSV の加速度)も同じ — 走行のためだけに使う
+        XrealImuReceiver.shared.stop()
         RunInterruption.markEnded(in: .standard)
     }
 }
