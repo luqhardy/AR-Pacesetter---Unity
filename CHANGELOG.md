@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-27 — UniVRM を導入し .vrm の取り込みを有効化
+- `Packages/manifest.json` に UniVRM v0.131.3(`com.vrmc.gltf` / `com.vrmc.univrm`、新しい `/Packages/` 配置)、`UNIVRM` を Android / Standalone / iPhone に定義。
+- `VrmAvatarLoader` の `Load()` を拡張メソッドとして明示呼び出しに。compile-check は VRM.dll があれば `UNIVRM` 付きで検証。ライセンス同意の導線は未実装(チーム判断)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 477/477、compile-check は UNIVRM 付き、E2E 332/332)。実物の .vrm での読み込みは未確認(同梱モデル無し)。
+
 ### 2026-10-26 (3) — チーム向けの実機ビルド手順を vrbuild.luqmanhadi.com で公開
 - `site/index.html`(日本語の手順書)を GitHub Pages へ。`pages.yml` が master の `site/**` 変更でデプロイ。`Docs/` と `/docs` が大文字小文字で衝突するため Actions で `site/` を直接出す。
 - Pages(build_type=workflow)と独自ドメインはリポジトリ設定で有効化済み。DNS(Cloudflare の CNAME vrbuild → luqhardy.github.io)は未設定。

@@ -186,7 +186,8 @@ public sealed class VrmAvatarLoader : MonoBehaviour
             var data = new UniGLTF.GlbBinaryParser(bytes, path).Parse();
             using (var loader = new VRM.VRMImporterContext(new VRM.VRMData(data)))
             {
-                UniGLTF.RuntimeGltfInstance instance = loader.Load();
+                // Load は UniGLTF の拡張メソッド(このファイルは UniGLTF を using しないので明示して呼ぶ)
+                UniGLTF.RuntimeGltfInstance instance = UniGLTF.ImporterContextExtensions.Load(loader);
                 instance.ShowMeshes();
                 return TryAdopt(instance.Root, VrmAvatarCatalog.DisplayName(path), out reason);
             }

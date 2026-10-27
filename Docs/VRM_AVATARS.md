@@ -36,7 +36,7 @@ VRMはアプリ間で持ち運ぶことを目的に設計された人型アバ�
 | `VrmAvatarLoader.Measure` — モデルの実測(三角形・マテリアル・発光・素の身長) | **実装済み**(UniVRM不要) |
 | `VrmAvatarLoader.TryAdopt` — 判定して差し替え、Animator/IK/レンダラー/身長を再配線 | **実装済み**(E2Eで常時検証) |
 | `VrmAvatarCatalog` — 同梱 `.vrm` の一覧 | **実装済み** |
-| `.vrm` のパース(UniVRM) | **`#if UNIVRM` の中。既定は休眠** |
+| `.vrm` のパース(UniVRM) | **導入済み(2026-10-27)** — UniVRM v0.131.3・`UNIVRM` 定義済み(Android / Standalone / iPhone) |
 | ユーザーによるファイル取り込みUI(`AvatarLibraryView`) | **実装済み** — ホーム右上メニュー → アバター |
 | ライセンス同意の導線 | **未実装** |
 
@@ -64,19 +64,21 @@ VRMはアプリ間で持ち運ぶことを目的に設計された人型アバ�
 ## 4. 同梱アバターの追加手順
 
 1. `.vrm` を **`Assets/StreamingAssets/Avatars/`** へ置く(ファイル名がそのまま表示名)
-2. UniVRM を導入する — Package Manager → Add package from git URL:
+2. 再生して、ログの `[VRM] アバターを差し替えました — …` に実測値が出ることを確認
 
-   ```
-   https://github.com/vrm-c/UniVRM.git?path=/Assets/VRMShaders
-   https://github.com/vrm-c/UniVRM.git?path=/Assets/UniGLTF
-   https://github.com/vrm-c/UniVRM.git?path=/Assets/VRM
-   ```
+UniVRM は `Packages/manifest.json` に入っている(2026-10-27):
 
-   (VRM 0.x 系。順序どおりに入れる)
-3. Player Settings → Scripting Define Symbols へ **`UNIVRM`** を追加
-4. 再生して、ログの `[VRM] アバターを差し替えました — …` に実測値が出ることを確認
+```
+"com.vrmc.gltf":   "https://github.com/vrm-c/UniVRM.git?path=/Packages/UniGLTF#v0.131.3"
+"com.vrmc.univrm": "https://github.com/vrm-c/UniVRM.git?path=/Packages/VRM#v0.131.3"
+```
 
-**`UNIVRM` を外せば即座に元の状態へ戻る。** 既定アバターの動作には一切影響しない。
+- VRM 0.x 系(`VRM.VRMImporterContext`)。v0.110 以降はパッケージが `/Packages/` の下に移り、VRMShaders は UniGLTF に統合された
+  (旧手順の `?path=/Assets/...` は使えない)。版はタグで固定している — 上げるときは `VrmAvatarLoader.TryLoadFromFile` の API を確かめる
+- 初回は Unity が GitHub から取得するので **git とネット接続が要る**(以後は `Library/PackageCache`)
+- Player Settings の Scripting Define Symbols に **`UNIVRM`**(Android / Standalone / iPhone)。
+  `tools/compile-check` は `Library/ScriptAssemblies/VRM.dll` があれば同じく `UNIVRM` を定義して検証する
+- 外すときは manifest の2行と `UNIVRM` を消す。既定アバターの動作には影響しない
 
 ---
 
