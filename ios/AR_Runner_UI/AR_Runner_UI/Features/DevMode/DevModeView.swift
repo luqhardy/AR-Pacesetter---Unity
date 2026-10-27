@@ -22,6 +22,7 @@ struct DevModeView: View {
 
     @ObservedObject private var bridge = UnityBridge.shared
     @ObservedObject private var external = ExternalDisplayManager.shared
+    @ObservedObject private var imuProbe = XrealImuProbe.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var shareItem: ShareItem?
@@ -45,6 +46,7 @@ struct DevModeView: View {
                     logSection
                     visibilitySection
                     indoorTestSection
+                    xrealImuSection
                     statsSection
                 }
                 .padding(.horizontal, 20)
@@ -64,6 +66,7 @@ struct DevModeView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear { refresh() }
+        .onDisappear { imuProbe.stop() }   // プローブは開発者モードを開いている間だけ
         .onReceive(tick) { _ in if autoRefresh { bridge.requestDiagnostics() } }
         .sheet(item: $shareItem) { item in
             ActivityView(items: item.items)
@@ -321,6 +324,80 @@ struct DevModeView: View {
             }
             .padding(14)
             .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    // MARK: - XREAL One のIMU(試験用プローブ)
+
+    /// グラスが USBネットワーク越しに流している生のIMU(TCP 169.254.2.1:52998)を iPhone で受け取れるか確かめる。
+    /// 読むだけで、値は Unity へはまだ流さない(Docs/XREAL_ONE_INTEGRATION.md §2-1 の見直し材料)
+    private var xrealImuSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("XREAL One の IMU(試験)",
+                          subtitle: "TCP \(XrealImuStream.host):\(XrealImuStream.port) を読むだけ。画面を閉じると切れる")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(
+                    get: { imuProbe.isRunning },
+                    set: { $0 ? imuProbe.start() : imuProbe.stop() }
+                )) {
+                    Text("グラスの IMU を読む")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .tint(accent)
+
+                Text(imuProbeStatusText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(imuProbeStatusColor)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+
+                if imuProbe.status == .streaming {
+                    let s = imuProbe.snapshot
+                    VStack(alignment: .leading, spacing: 4) {
+                        imuRow("レート", s.rateHz.map { String(format: "%.0f Hz", $0) } ?? "測定中")
+                        imuRow("ヨー角速度", s.yawRateDegreesPerSecond.map { String(format: "%+.1f °/s(右が正)", $0) } ?? "-")
+                        imuRow("温度", s.temperatureCelsius.map { String(format: "%.1f °C", $0) } ?? "-")
+                        imuRow("受信", "IMU \(s.imuRecords) ・ 地磁気など \(s.otherRecords) ・ 読み飛ばし \(s.skippedBytes) B")
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(14)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var imuProbeStatusText: String {
+        switch imuProbe.status {
+        case .off: return "OFF(既定)。グラスを USB-C でつないでから入れる。設定アプリに「Ethernet」が出ていれば USBネットワークは上がっている"
+        case .connecting: return "接続中…(初回はローカルネットワークの許可を尋ねます)"
+        case .connected: return "接続しました。IMU を待っています"
+        case .streaming: return "受信中 — 頭を右へ回すとヨー角速度が正になる"
+        case .waiting(let message): return "待機中: \(message) — USBネットワークが上がっていないか、ローカルネットワークの許可が無い(設定 > プライバシー > ローカルネットワーク)"
+        case .failed(let message): return "失敗: \(message)"
+        }
+    }
+
+    private var imuProbeStatusColor: Color {
+        switch imuProbe.status {
+        case .streaming: return accent
+        case .waiting, .failed: return .orange
+        default: return secondaryText
+        }
+    }
+
+    private func imuRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(label)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(secondaryText)
+                .frame(width: 90, alignment: .leading)
+            Text(value)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

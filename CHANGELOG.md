@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-10-27 — 開発者モードに XREAL One の IMU プローブ(試験・既定OFF)
+- base One は USB-NCM 越しに TCP 169.254.2.1:52998 で生IMU(134B・1kHz・ジャイロ/加速度/温度)を流している(Mac・Windows で取得し形式と軸を解析)。iPhone で届くかを確かめるため、読むだけのプローブとレート・ヨー角速度(+gyro y)の表示を追加。
+- 純ロジック `XrealImuStream`(切り出し・再同期・レート)とテスト。`NSLocalNetworkUsageDescription`(日英)を追加。Unity へはまだ流さない。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 477/477、Swift 構文 86 ファイル、E2E 332/332)。Swift の型検査と `swift test` は Mac / CI 待ち。iPhone 実機では未確認。
+
 ### 2026-10-26 (3) — チーム向けの実機ビルド手順を vrbuild.luqmanhadi.com で公開
 - `site/index.html`(日本語の手順書)を GitHub Pages へ。`pages.yml` が master の `site/**` 変更でデプロイ。`Docs/` と `/docs` が大文字小文字で衝突するため Actions で `site/` を直接出す。
 - Pages(build_type=workflow)と独自ドメインはリポジトリ設定で有効化済み。DNS(Cloudflare の CNAME vrbuild → luqhardy.github.io)は未設定。
