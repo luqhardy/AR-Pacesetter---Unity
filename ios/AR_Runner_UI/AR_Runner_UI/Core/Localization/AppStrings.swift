@@ -134,6 +134,12 @@ enum AppStrings {
         static let airpodsNoHeadMotion: LocalizedStringKey = "devices.airpods.noHeadMotion"
         static let airpodsUnsupported: LocalizedStringKey = "devices.airpods.unsupported"
         static let airpodsDenied: LocalizedStringKey = "devices.airpods.denied"
+        // グラス(XREAL One)のIMU(頭の向き・任意)
+        static let glassImuName: LocalizedStringKey = "devices.glassImu.name"
+        static let glassImuSubtitle: LocalizedStringKey = "devices.glassImu.subtitle"
+        static let glassImuSearching: LocalizedStringKey = "devices.glassImu.searching"
+        static let glassImuActive: LocalizedStringKey = "devices.glassImu.active"
+        static let glassImuNotFound: LocalizedStringKey = "devices.glassImu.notFound"
     }
 
     /// ランニング設定(S5)

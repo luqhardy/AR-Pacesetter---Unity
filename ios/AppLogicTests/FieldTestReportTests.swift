@@ -37,6 +37,19 @@ final class FieldTestReportTests: XCTestCase {
         XCTAssertTrue(md.contains("| 未計測 | 未計測 | 未計測 | 0 |"))
     }
 
+    func testGlassImuSection() {
+        XCTAssertTrue(report().contains("### グラスのIMU(XREAL One・USBネットワーク)\n\n(受信していない)"))
+
+        var r = FieldTestReport(generatedAt: t0,
+                                device: .init(model: "iPhone16,2", systemVersion: "26.0", appVersion: "1.0 (12)"),
+                                glassesStatus: "接続済み",
+                                latency: .init(lastMs: 14.2, maxMs: 31, overBudgetRatio: 0.031, sampleCount: 1234),
+                                visibilityEvents: [], diagnostics: [])
+        r.glassImu = .init(status: "受信中", rateHz: 999.6, imuRecords: 12_000, skippedBytes: 0,
+                           temperatureCelsius: 34.2, forRun: true, accelSamplesPushed: 1_200)
+        XCTAssertTrue(r.markdown(timeZone: utc).contains("| 受信中 | 1000 Hz | 12000 | 0 B | 34.2 °C | ON・CSVへ 1200 件 |"))
+    }
+
     func testVisibilityHistoryIsOldestFirstWithOpenEvents() {
         // AvatarVisibilityLog は新しい順で持つ。表は時系列(古い順)で読む
         let older = AvatarVisibilityEvent(id: UUID(), hiddenAt: t0, shownAt: t0.addingTimeInterval(2.4), reason: "GPSロスト")

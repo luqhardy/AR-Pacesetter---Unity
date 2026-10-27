@@ -22,7 +22,7 @@ struct DevModeView: View {
 
     @ObservedObject private var bridge = UnityBridge.shared
     @ObservedObject private var external = ExternalDisplayManager.shared
-    @ObservedObject private var imuProbe = XrealImuProbe.shared
+    @ObservedObject private var imuProbe = XrealImuReceiver.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var shareItem: ShareItem?
@@ -66,7 +66,7 @@ struct DevModeView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear { refresh() }
-        .onDisappear { imuProbe.stop() }   // プローブは開発者モードを開いている間だけ
+        .onDisappear { imuProbe.stopInspection() }   // 確かめるだけなら開発者モードを開いている間だけ(走行用は止めない)
         .onReceive(tick) { _ in if autoRefresh { bridge.requestDiagnostics() } }
         .sheet(item: $shareItem) { item in
             ActivityView(items: item.items)
@@ -129,8 +129,31 @@ struct DevModeView: View {
             visibilityEvents: bridge.visibilityLog.events,
             diagnostics: bridge.diagnostics.map { (key: $0.key, value: $0.value) },
             power: PowerMonitor.shared.lastRun,
-            currentPower: PowerMonitor.shared.sample()
+            currentPower: PowerMonitor.shared.sample(),
+            glassImu: glassImuReport
         ).markdown()
+    }
+
+    /// グラスのIMU(XREAL One)の受信状況。動かしていなければ nil(レポートには「受信していない」)
+    private var glassImuReport: FieldTestReport.GlassImu? {
+        guard imuProbe.isRunning || imuProbe.status != .off else { return nil }
+        let s = imuProbe.snapshot
+        let status: String
+        switch imuProbe.status {
+        case .off: status = "停止"
+        case .connecting: status = "接続中"
+        case .connected: status = "接続・未受信"
+        case .streaming: status = "受信中"
+        case .waiting(let message): status = "待機: \(message)"
+        case .failed(let message): status = "失敗: \(message)"
+        }
+        return .init(status: status,
+                     rateHz: s.rateHz,
+                     imuRecords: s.imuRecords,
+                     skippedBytes: s.skippedBytes,
+                     temperatureCelsius: s.temperatureCelsius,
+                     forRun: imuProbe.isForRun,
+                     accelSamplesPushed: s.accelSamplesPushed)
     }
 
     /// 準備画面と同じ判定(開発者モードは日本語のみなので文言はここで持つ)
@@ -330,16 +353,16 @@ struct DevModeView: View {
     // MARK: - XREAL One のIMU(試験用プローブ)
 
     /// グラスが USBネットワーク越しに流している生のIMU(TCP 169.254.2.1:52998)を iPhone で受け取れるか確かめる。
-    /// 読むだけで、値は Unity へはまだ流さない(Docs/XREAL_ONE_INTEGRATION.md §2-1 の見直し材料)
+    /// ここで入れたときは画面に出すだけ。走行で使う(頭のヨー・CSV)のは準備画面のグラスIMU行で「接続」したとき
     private var xrealImuSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("XREAL One の IMU(試験)",
-                          subtitle: "TCP \(XrealImuStream.host):\(XrealImuStream.port) を読むだけ。画面を閉じると切れる")
+                          subtitle: "TCP \(XrealImuStream.host):\(XrealImuStream.port) を読むだけ。準備画面で接続していなければ画面を閉じると切れる")
 
             VStack(alignment: .leading, spacing: 8) {
                 Toggle(isOn: Binding(
                     get: { imuProbe.isRunning },
-                    set: { $0 ? imuProbe.start() : imuProbe.stop() }
+                    set: { $0 ? imuProbe.startForInspection() : imuProbe.stop() }
                 )) {
                     Text("グラスの IMU を読む")
                         .font(.system(size: 14, weight: .medium))
@@ -358,8 +381,12 @@ struct DevModeView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         imuRow("レート", s.rateHz.map { String(format: "%.0f Hz", $0) } ?? "測定中")
                         imuRow("ヨー角速度", s.yawRateDegreesPerSecond.map { String(format: "%+.1f °/s(右が正)", $0) } ?? "-")
+                        imuRow("頭のヨー", s.yawDegrees.map { String(format: "%+.1f °(基準は任意)", $0) } ?? "-")
                         imuRow("温度", s.temperatureCelsius.map { String(format: "%.1f °C", $0) } ?? "-")
                         imuRow("受信", "IMU \(s.imuRecords) ・ 地磁気など \(s.otherRecords) ・ 読み飛ばし \(s.skippedBytes) B")
+                        imuRow("走行用", imuProbe.isForRun
+                               ? "ON — 頭のヨーを Unity へ・CSVへ \(s.accelSamplesPushed) 件"
+                               : "OFF(画面に出すだけ)")
                     }
                     .padding(.top, 4)
                 }

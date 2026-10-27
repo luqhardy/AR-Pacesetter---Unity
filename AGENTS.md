@@ -239,7 +239,7 @@ stateDiagram-v2
   屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)
 - 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する
 - IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、エディタ=カメラ差分近似)。`SetImuAcceleration` はC#専用で、Swiftからは呼べない
-- グラスの画面モードは **Follow(固定)**。Anchor だと頭部補正が二重にかかる。iOSからグラスの頭部姿勢は取得できない
+- グラスの画面モードは **Follow(固定)**。Anchor だと頭部補正が二重にかかる。XREAL SDK の姿勢は iOS から取れない(XREAL One の生IMUは下の `XrealImuReceiver`)
 - 屋外路面分類(ARCore)は `#if ARCORE_EXTENSIONS` の中だけで触る。**3D面分類を画像分類で上書きしない**
 - VRMアバターの受け入れ基準(三角形70,000・マテリアル8等)は 60fps と M2P 20ms のための値。`.vrca`(VRChat)は使えない
 - **第1期スコープ外のセンサーは既定OFF**: 心拍BLE(`HeartRateReceiver.scanOnStart`)とマイクによる音量自動調整
@@ -252,6 +252,10 @@ stateDiagram-v2
 - **展示デモではアバターを一度も消さない**(GPSロスト判定OFF)。向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView`)— §4.1 Gaze Lock の**唯一の例外**で、走行には持ち込まない
 - **AirPods の頭の向き(`HeadphoneHeadTracker` → `UpdateHeadYaw`)は準備画面(S4)で「接続」を押したときだけ使う**(既定OFF・走行の終了で止める)。
   グラスは Follow(固定)なので、首振りは Unity が進行方向ヨーへ足して打ち消す(`HeadYawBaseline`)。Anchor モードでは足さない
+- **XREAL One 自身のIMU(`XrealImuReceiver`・USBネットワーク TCP 169.254.2.1:52998)も準備画面の「グラスのセンサー」で「接続」したときだけ使う**
+  (既定OFF・走行の終了で止める・**読むだけ**で 52999 の設定口は触らない)。届いている間は AirPods より優先して `UpdateHeadYaw` を送り
+  (AirPods は送らない)、重力を除いた100Hzの加速度を `ARV_PushGlassImuSample` 経由で CSV の imu_accel 列へ渡す(軸はグラスの x=右・y=下・z=前)。
+  形式・軸・変換は `AppLogic/XrealImuStream.swift` / `XrealImuFusion.swift`
 - 準備画面(S4)では **ARグラスが必須**(未接続・ミラーリングでは「次へ」を押せない — `DeviceGate`)。
   iPhone 画面だけで試すときは開発者モード「ARグラスなしで走行を始める」を使い、走者に渡す前に OFF へ戻す
 - **選んだルートからの逸脱(`RouteDeviation`)は GPS の座標のまま測る** — 経路を AR の世界へ置かない(原点・ヨーが任意で位置合わせの誤差が乗る)。

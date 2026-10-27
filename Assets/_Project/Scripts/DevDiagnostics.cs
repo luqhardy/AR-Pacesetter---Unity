@@ -60,6 +60,7 @@ public static class DevDiagnostics
             Add(rows, "csv.logging", telemetry.IsLogging ? "記録中" : "停止");
             Add(rows, "csv.imuSource", telemetry.ImuSource);
             Add(rows, "csv.nativeImuRows", telemetry.NativeImuRowCount.ToString(CultureInfo.InvariantCulture));
+            Add(rows, "csv.glassImuRows", telemetry.GlassImuRowCount.ToString(CultureInfo.InvariantCulture));
             Add(rows, "csv.droppedRows", telemetry.DroppedRowCount.ToString(CultureInfo.InvariantCulture));
             Add(rows, "csv.timeline", telemetry.TimelineSource);
             Add(rows, "csv.loggedSpanSec", Num(telemetry.LoggedSpanSeconds));

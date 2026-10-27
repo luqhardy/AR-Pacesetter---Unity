@@ -45,7 +45,11 @@ XREALは軸を明記しないが、One Pro を「4mで171インチ相当」と�
   base One を Mac / Windows で取得: 134バイトのレコード、IMU 1000Hz(ジャイロ rad/s・加速度 m/s²・温度)+地磁気 400Hz、
   軸は右手系 x=右・y=下・z=前(右を向くと gyro y が正)。形式は `AppLogic/XrealImuStream.swift`。
   iPhone で届くかは開発者モード「XREAL One の IMU(試験)」で確かめる(既定OFF・読むだけ・52999 の設定口は触らない)。
-  届いても §2-3 の二重補正の扱いと、AirPods の代わりに使うかはチーム判断
+  **走行での使い方(2026-10-27)**: 準備画面(S4)の「グラスのセンサー」で「接続」すると、`XrealImuReceiver` が
+  ジャイロを重力から求めた上向きへ射影・積分した頭のヨーを `UpdateHeadYaw` へ送る(AirPods より優先・届かなければ AirPods)。
+  重力を除いた加速度を 100Hz に平均して CSV の imu_accel 列へ(`ARV_PushGlassImuSample` → `RunTelemetryLogger`、
+  `csv.imuSource` = `glasses100hz`)。Follow(固定)なので §2-3 の二重補正は起きない(ヨーだけを足す・Anchor では足さない)。
+  較正キャプチャでの検算: 右へ約80°向いて戻る → +79.8° / −80.8°、うなずき・首かしげの漏れは 7〜20°
 - したがって第1期の空間トラッキングは**iPhoneのARKitが単独で担う**。
   これは既に確定している胸マウント運用(README 2026-09-02)の前提と一致する。
 - **首振りだけは AirPods で補える(2026-10-19・タスク表「首を振り向けた時に想定する場所を走る」)**。
