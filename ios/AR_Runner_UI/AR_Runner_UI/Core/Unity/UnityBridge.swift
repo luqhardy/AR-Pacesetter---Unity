@@ -302,6 +302,9 @@ final class UnityBridge: NSObject, ObservableObject {
 
     /// End the session and request result data from Unity.
     func endSession() {
+#if DEBUG
+        print("[ResultDebug] EndSession を送信します")
+#endif
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand",
                     payload: ["command": "EndSession"])
     }
@@ -493,6 +496,9 @@ final class UnityBridge: NSObject, ObservableObject {
     // MARK: Unity → Swift Callbacks
 
     @objc func onUnityMessage(_ jsonString: String) {
+#if DEBUG
+        Self.debugLogIncomingUnityMessage(jsonString)
+#endif
         guard
             let data = jsonString.data(using: .utf8),
             let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -572,6 +578,9 @@ final class UnityBridge: NSObject, ObservableObject {
                             modifiedIso: $0["modifiedIso"] as? String ?? "")
                 }
             case "SessionEnded":
+#if DEBUG
+                Self.debugLogSessionEndedFields(dict)
+#endif
                 let result = SessionResult(
                     grade: dict["grade"] as? String ?? "D",
                     rank: dict["rank"] as? String ?? "TRY AGAIN",
@@ -584,6 +593,9 @@ final class UnityBridge: NSObject, ObservableObject {
                     fatigue: (dict["fatigue"] as? NSNumber)?.doubleValue
                 )
                 self.lastResult = result
+#if DEBUG
+                print("[ResultDebug] lastResult に入れました")
+#endif
 
                 // デュアル・データ保存(企画書§4): HealthKitへワークアウト書き込み
                 HealthKitWorkoutSaver.shared.saveWorkout(
@@ -775,6 +787,51 @@ final class UnityBridge: NSObject, ObservableObject {
             }
         }
     }
+
+#if DEBUG
+    /// 通知が届いたことと、読めなければその理由だけ出す。本処理の guard はそのまま。
+    private static func debugLogIncomingUnityMessage(_ jsonString: String) {
+        guard let data = jsonString.data(using: .utf8) else {
+            print("[ResultDebug] 受信を捨てます reason=UTF-8にできない raw=\(debugRawPrefix(jsonString))")
+            return
+        }
+        guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            print("[ResultDebug] 受信を捨てます reason=JSONとして読めない raw=\(debugRawPrefix(jsonString))")
+            return
+        }
+        guard let event = dict["event"] as? String else {
+            print("[ResultDebug] 受信を捨てます reason=eventが文字列でない raw=\(debugRawPrefix(jsonString))")
+            return
+        }
+        print("[ResultDebug] 受信 event=\(event)")
+        if event == "SessionEnded" {
+            print("[ResultDebug] SessionEnded raw=\(jsonString)")
+        }
+    }
+
+    private static func debugRawPrefix(_ jsonString: String) -> String {
+        let limit = 120
+        if jsonString.count <= limit { return jsonString }
+        return String(jsonString.prefix(limit)) + "…"
+    }
+
+    /// SessionEnded の各項目が、既存の as? で取れるかを出す。代入はしない。
+    private static func debugLogSessionEndedFields(_ dict: [String: Any]) {
+        func line(_ key: String, castOK: Bool) {
+            let value = dict[key]
+            let typeName = value.map { String(describing: type(of: $0)) } ?? "nil"
+            let shown = value.map { String(describing: $0) } ?? "nil"
+            print("[ResultDebug] \(key) type=\(typeName) castOK=\(castOK) value=\(shown)")
+        }
+        line("grade", castOK: dict["grade"] as? String != nil)
+        line("rank", castOK: dict["rank"] as? String != nil)
+        line("averageSync", castOK: dict["averageSync"] as? Double != nil)
+        line("distanceKm", castOK: dict["distanceKm"] as? Double != nil)
+        line("elapsedSeconds", castOK: dict["elapsedSeconds"] as? Double != nil)
+        line("calories", castOK: dict["calories"] as? Double != nil)
+        line("saved", castOK: dict["saved"] as? Bool != nil)
+    }
+#endif
 }
 
 // MARK: - AR Session Manager (coordinates Unity + sensors)
