@@ -1,6 +1,52 @@
 {
   "sourceLanguage" : "ja",
   "strings" : {
+    "" : {
+
+    },
+    "-" : {
+
+    },
+    "--" : {
+
+    },
+    "—" : {
+
+    },
+    "%@ ・ %@" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ ・ %2$@"
+          }
+        }
+      }
+    },
+    "%lld" : {
+
+    },
+    "%lld%%" : {
+
+    },
+    "3・2・1・START のあと台本が始まります" : {
+
+    },
+    "3・2・1・START のあと歩き始めてください" : {
+
+    },
+    "5秒" : {
+
+    },
+    "10秒" : {
+
+    },
+    "15秒" : {
+
+    },
+    "Apple Watch" : {
+
+    },
     "arSettings.avatar" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -256,6 +302,12 @@
         }
       }
     },
+    "ARグラスなしで走行を始める" : {
+
+    },
+    "AR環境を準備しています" : {
+
+    },
     "avatar.applied %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -426,23 +478,6 @@
         }
       }
     },
-    "avatar.inUse" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In use"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用中"
-          }
-        }
-      }
-    },
     "avatar.intro" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -456,6 +491,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "VRM形式のアバターを伴走者にできます。"
+          }
+        }
+      }
+    },
+    "avatar.inUse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In use"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用中"
           }
         }
       }
@@ -885,6 +937,9 @@
         }
       }
     },
+    "bpm" : {
+
+    },
     "common.back" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1072,19 +1127,22 @@
         }
       }
     },
+    "decimal" : {
+
+    },
     "devices.airpods.active" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Using your head direction"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "頭の向きを使っています"
+            "value" : "接続済み"
           }
         }
       }
@@ -1128,14 +1186,14 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "AirPods aren't connected. Check that Bluetooth is on, Airplane Mode is off, and you're wearing them. You can run without them"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AirPodsがつながっていません。Bluetoothがオン・機内モードがオフか、AirPodsを耳に着けているか確認してください。なくても走れます"
+            "value" : "AirPodsの接続が確認できませんでした。Bluetoothがoff、または機内モードがonになっていないかを確認してください。"
           }
         }
       }
@@ -1225,23 +1283,6 @@
         }
       }
     },
-    "devices.connectManually" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connect manually"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "手動で接続"
-          }
-        }
-      }
-    },
     "devices.connected" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1289,6 +1330,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ARグラスに接続しています…"
+          }
+        }
+      }
+    },
+    "devices.connectManually" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Connect manually"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続"
           }
         }
       }
@@ -1633,6 +1691,9 @@
         }
       }
     },
+    "Edit value" : {
+
+    },
     "format.route.distance" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1666,6 +1727,15 @@
           }
         }
       }
+    },
+    "GOAL!" : {
+
+    },
+    "GPSロストでアバターを消す" : {
+
+    },
+    "h" : {
+
     },
     "history.activity.eyebrow" : {
       "extractionState" : "manual",
@@ -2211,6 +2281,18 @@
         }
       }
     },
+    "iPhoneを胸のマウントへ入れてください" : {
+
+    },
+    "km" : {
+
+    },
+    "km/h" : {
+
+    },
+    "KOBE CALLING" : {
+
+    },
     "location.permission.message" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2312,6 +2394,21 @@
           }
         }
       }
+    },
+    "min" : {
+
+    },
+    "OFF — 屋内テスト用。トラックでは必ずONに戻すこと(GPSが切れても警告が出ない)。アプリを再起動するとONに戻ります" : {
+
+    },
+    "OFF(仕様どおり)。グラスがつながるまで準備画面から先へ進めない" : {
+
+    },
+    "ON — 準備画面でグラスが未接続でも「次へ」を押せます(iPhone の画面で走る)。走者に渡す前に OFF に戻すこと" : {
+
+    },
+    "ON(仕様どおり)。屋内で走ってアバターが消えるときだけOFFにする" : {
+
     },
     "onboarding.page.avatar.body" : {
       "extractionState" : "manual",
@@ -3826,6 +3923,9 @@
         }
       }
     },
+    "sec" : {
+
+    },
     "settings.distance" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4046,6 +4146,84 @@
           }
         }
       }
+    },
+    "Unityから応答がありません(UnityFramework未リンクの可能性)" : {
+
+    },
+    "Unity未起動、またはまだ一度も走行していません" : {
+
+    },
+    "XREAL One" : {
+
+    },
+    "いまの区間" : {
+
+    },
+    "グラスでカウントダウン中" : {
+
+    },
+    "グラスの IMU を読む" : {
+
+    },
+    "コピーしました" : {
+
+    },
+    "すぐ" : {
+
+    },
+    "まだ一度も消えていません" : {
+
+    },
+    "モード" : {
+
+    },
+    "レポートをコピー" : {
+
+    },
+    "ログがありません (%@)" : {
+
+    },
+    "体験モード" : {
+
+    },
+    "体験モードを終了しますか？" : {
+
+    },
+    "体験中の場合は中断します。" : {
+
+    },
+    "数歩あるく" : {
+
+    },
+    "次の方を開始" : {
+
+    },
+    "残り %lld 秒" : {
+
+    },
+    "消去" : {
+
+    },
+    "立ったまま" : {
+
+    },
+    "終了" : {
+
+    },
+    "続ける" : {
+
+    },
+    "閉じる" : {
+
+    },
+    "開始" : {
+
+    },
+    "開始までの猶予" : {
+
+    },
+    "開発者モード" : {
+
     }
   },
   "version" : "1.0"
