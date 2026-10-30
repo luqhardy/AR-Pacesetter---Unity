@@ -2,20 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- バックグラウンド走行: 画面ロック中もCoreLocationの距離計測を継続する。
-	     GENERATE_INFOPLIST_FILE=YES と併用時、このファイルの内容は生成キーとマージされる -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-	</array>
-
-	<!-- ARグラス(XREAL)を「専用の画面」として受け取るためのシーン定義。
-	     これが無いと iOS はグラスへ iPhone の画面をミラーリングするだけで、
-	     ExternalSceneDelegate が呼ばれない(=グラス未接続扱い・パススルー映像がグラスに出る)。
-	     2026-10-07 実機でミラーリングを確認。AppDelegate の configurationForConnecting だけに
-	     頼っていたのをやめ、外部ディスプレイの役割を静的にも宣言する。
-	     自動生成(INFOPLIST_KEY_UIApplicationSceneManifest_Generation)は NO にしてある —
-	     生成されたマニフェストがこの定義を上書きしないように -->
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -33,5 +19,9 @@
 			</array>
 		</dict>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 </dict>
 </plist>
