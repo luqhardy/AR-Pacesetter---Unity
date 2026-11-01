@@ -3,28 +3,39 @@ import SwiftUI
 // MARK: - Running Settings Screen
 struct RunningSettingsView: View {
     // 値はこの画面のローカル状態で持ち、「次へ」で RunSettings.shared へ確定する。
-    // hsu/main は RunConfiguration という別の器を導入していたが、Unityへ引き渡す
-    // 共有ストアが既に RunSettings.shared にあるため、同じ3値の置き場を2つ作らない
     @State private var timeSeconds: Int
     @State private var distanceKm: Double
     @State private var paceKmh: Double
     let onNext: () -> Void
     let onBack: () -> Void
 
-    /// 画面を開くたびに**前回「次へ」で確定した値**から始める(タスク表 S5。アプリを閉じても残る)。
-    /// 以前は毎回 60分・10km・8km/h に戻っていた。「戻る」で離れた未確定の変更は捨てる
+    /// 画面を開くたびに前回「次へ」で確定した値から始める(タスク表 S5)。
     init(onNext: @escaping () -> Void, onBack: @escaping () -> Void) {
         self.onNext = onNext
         self.onBack = onBack
         let confirmed = RunSettings.shared
-        // 3値は相互依存(タスク表 S5)。保存値のつじつまが合っていなければ、距離とペース(目標)を保って時間を揃える
         let linked = RunTargetLink.keepingPace(distanceKm: confirmed.distanceKm, paceKmH: confirmed.paceKmH)
         _timeSeconds = State(initialValue: linked.timeSeconds)
         _distanceKm = State(initialValue: linked.distanceKm)
         _paceKmh = State(initialValue: linked.paceKmH)
     }
 
-    /// 今の3値(相互依存の判断に渡す)
+    // MARK: State
+
+    /// 「次へ」の最終チェックで引っかかった理由(タスク表 S5)。nil なら出さない
+    @State private var targetIssue: RunTargetIssue?
+
+    /// ホイールを開いているカード(同時に1枚だけ)
+    @State private var expanded: Part?
+    enum Part { case time, distance, pace }
+
+    private let timeRange = RunSettingRanges.timeSeconds
+    private let distanceRange = RunSettingRanges.distanceKm
+    private let paceRange = RunSettingRanges.paceKmH
+
+    // MARK: 3値の相互依存(RunTargetLink)
+    // 距離は自動では変えない。距離・ペースを動かしたら時間を、時間を動かしたらペースを合わせる
+
     private var current: RunTargetSettings {
         RunTargetSettings(paceKmH: paceKmh, distanceKm: distanceKm, timeSeconds: timeSeconds)
     }
@@ -35,57 +46,56 @@ struct RunningSettingsView: View {
         paceKmh = linked.paceKmH
     }
 
-    // 3値の相互依存(RunTargetLink): 距離は自動では変えない。
-    // 距離・ペースを動かしたら時間を、時間を動かしたらペースを合わせる
     private func setTime(_ seconds: Int) { apply(RunTargetLink.keepingTime(distanceKm: distanceKm, timeSeconds: seconds)) }
     private func setDistance(_ km: Double) { apply(RunTargetLink.keepingPace(distanceKm: km, paceKmH: paceKmh)) }
     private func setPace(_ kmh: Double) { apply(RunTargetLink.keepingPace(distanceKm: distanceKm, paceKmH: kmh)) }
 
-    /// 「次へ」の最終チェックで引っかかった理由(タスク表 S5)。nil なら出さない
-    @State private var targetIssue: RunTargetIssue?
+    // MARK: 値を桁ごとに分解(表示の丸めと同じ基準で分ける)
 
-    private let timeRange = RunSettingRanges.timeSeconds
-    private let distanceRange = RunSettingRanges.distanceKm
-    private let paceRange = RunSettingRanges.paceKmH
+    // 時間: 時 / 分 / 秒
+    private var hours: Int { min(23, timeSeconds / 3600) }
+    private var minutes: Int { (timeSeconds % 3600) / 60 }
+    private var seconds: Int { timeSeconds % 60 }
 
-    @State private var editingTime = false
-    @State private var editingDistance = false
-    @State private var editingPace = false
+    // 距離: 整数部 / 小数部(0.01 km 単位。表示は %.2f)
+    private var distanceHundredths: Int { Int((distanceKm * 100).rounded()) }
+    private var distanceWhole: Int { min(99, distanceHundredths / 100) }
+    private var distanceFraction: Int { distanceHundredths % 100 }
 
-    // ドラムロール(ホイール)入力: 4.0〜16.0 km/h を0.5刻み
-    private var paceWheelValues: [Double] {
-        stride(from: 4.0, through: 16.0, by: 0.5).map { $0 }
+    // ペース: 整数部 / 小数部(0.1 km/h 単位。表示は %.1f)
+    private var paceTenths: Int { Int((paceKmh * 10).rounded()) }
+    private var paceWhole: Int { min(30, paceTenths / 10) }
+    private var paceFraction: Int { paceTenths % 10 }
+
+    // MARK: 1つの桁だけ変えて、他の桁はそのまま組み立て直す
+    // (範囲外になった場合だけ clamped で丸められる)
+
+    private func setTimeParts(h: Int, m: Int, s: Int) {
+        let total = h * 3600 + m * 60 + s
+        setTime(Int(timeRange.clamped(Double(total))))
     }
 
-    // ±/直接入力とホイールを双方向同期(0.5刻みへ丸めて選択位置を決める)
-    private var paceWheelBinding: Binding<Double> {
-        Binding(
-            get: { min(16.0, max(4.0, (paceKmh * 2).rounded() / 2)) },
-            set: { setPace($0) }
-        )
+    private func setDistanceParts(whole: Int, fraction: Int) {
+        let km = Double(whole) + Double(fraction) / 100.0
+        setDistance(distanceRange.clamped(km))
     }
 
-    private func paceLabel(kmh: Double) -> String {
-        guard kmh > 0 else { return "--'--\"" }
-        let minPerKm = 60.0 / kmh
-        let minutes = Int(minPerKm)
-        let seconds = Int((minPerKm - Double(minutes)) * 60.0)
-        return String(format: "%d'%02d\"", minutes, seconds)
+    private func setPaceParts(whole: Int, fraction: Int) {
+        let kmh = Double(whole) + Double(fraction) / 10.0
+        setPace(paceRange.clamped(kmh))
     }
 
-    @State private var timeInput = ""
-    @State private var distanceInput = ""
-    @State private var paceInput = ""
-
-    @FocusState private var focusedField: Field?
-    enum Field { case time, distance, pace }
+    private func toggle(_ part: Part) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            expanded = (expanded == part) ? nil : part
+        }
+    }
 
     var timeDisplay: String {
-        let h = timeSeconds / 3600
-        let m = (timeSeconds % 3600) / 60
-        let s = timeSeconds % 60
-        return String(format: "%02d:%02d:%02d", h, m, s)
+        String(format: "%02d:%02d:%02d", timeSeconds / 3600, (timeSeconds % 3600) / 60, timeSeconds % 60)
     }
+
+    // MARK: Body
 
     var body: some View {
         ARScreen {
@@ -114,126 +124,77 @@ struct RunningSettingsView: View {
                 .padding(.horizontal, 28)
                 .padding(.bottom, 28)
 
-                // Settings cards
-                VStack(spacing: 14) {
-                    // Time
-                    SettingCard(
-                        icon: "clock",
-                        label: AppStrings.Settings.duration,
-                        displayValue: timeDisplay,
-                        inputText: $timeInput,
-                        isEditing: $editingTime,
-                        isFocused: focusedField == .time,
-                        canMinus: RunTargetLink.canDecreaseTime(current),
-                        canPlus: RunTargetLink.canIncreaseTime(current),
-                        onMinus: { setTime(Int(timeRange.decremented(Double(timeSeconds)))) },
-                        onPlus: { setTime(Int(timeRange.incremented(Double(timeSeconds)))) },
-                        onTapValue: {
-                            timeInput = timeDisplay
-                            editingTime = true
-                            editingDistance = false
-                            editingPace = false
-                            focusedField = .time
-                        },
-                        onCommit: {
-                            applyTimeInput()
-                            editingTime = false
-                            focusedField = nil
+                // Settings cards(ホイールを開くと縦に伸びるので、小さい画面用にスクロール可能にする)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 14) {
+                        // Time: h / min / sec
+                        WheelSettingCard(
+                            icon: "clock",
+                            label: AppStrings.Settings.duration,
+                            displayValue: timeDisplay,
+                            isExpanded: expanded == .time,
+                            onToggle: { toggle(.time) }
+                        ) {
+                            WheelColumn(title: "h", range: 0...23,
+                                        selection: Binding(get: { hours },
+                                                           set: { setTimeParts(h: $0, m: minutes, s: seconds) }))
+                            WheelSeparator(text: ":")
+                            WheelColumn(title: "min", range: 0...59,
+                                        selection: Binding(get: { minutes },
+                                                           set: { setTimeParts(h: hours, m: $0, s: seconds) }))
+                            WheelSeparator(text: ":")
+                            WheelColumn(title: "sec", range: 0...59,
+                                        selection: Binding(get: { seconds },
+                                                           set: { setTimeParts(h: hours, m: minutes, s: $0) }))
                         }
-                    )
 
-                    // Distance
-                    SettingCard(
-                        icon: "mappin.and.ellipse",
-                        label: AppStrings.Settings.distance,
-                        displayValue: String(format: "%.2f km", distanceKm),
-                        inputText: $distanceInput,
-                        isEditing: $editingDistance,
-                        isFocused: focusedField == .distance,
-                        canMinus: RunTargetLink.canDecreaseDistance(current),
-                        canPlus: RunTargetLink.canIncreaseDistance(current),
-                        onMinus: { setDistance(distanceRange.decremented(distanceKm)) },
-                        onPlus: { setDistance(distanceRange.incremented(distanceKm)) },
-                        onTapValue: {
-                            distanceInput = String(format: "%.2f", distanceKm)
-                            editingDistance = true
-                            editingTime = false
-                            editingPace = false
-                            focusedField = .distance
-                        },
-                        onCommit: {
-                            applyDistanceInput()
-                            editingDistance = false
-                            focusedField = nil
+                        // Distance: 整数部 . 小数部(0.01 km)
+                        WheelSettingCard(
+                            icon: "mappin.and.ellipse",
+                            label: AppStrings.Settings.distance,
+                            displayValue: String(format: "%.2f km", distanceKm),
+                            isExpanded: expanded == .distance,
+                            onToggle: { toggle(.distance) }
+                        ) {
+                            WheelColumn(title: "km", range: 0...99,
+                                        selection: Binding(get: { distanceWhole },
+                                                           set: { setDistanceParts(whole: $0, fraction: distanceFraction) }))
+                            WheelSeparator(text: ".")
+                            WheelColumn(title: "decimal", range: 0...99, digits: 2,
+                                        selection: Binding(get: { distanceFraction },
+                                                           set: { setDistanceParts(whole: distanceWhole, fraction: $0) }))
                         }
-                    )
 
-                    // Pace
-                    SettingCard(
-                        icon: "speedometer",
-                        label: AppStrings.Settings.pace,
-                        displayValue: String(format: "%.1f km/h", paceKmh),
-                        inputText: $paceInput,
-                        isEditing: $editingPace,
-                        isFocused: focusedField == .pace,
-                        canMinus: RunTargetLink.canDecreasePace(current),
-                        canPlus: RunTargetLink.canIncreasePace(current),
-                        onMinus: { setPace(paceRange.decremented(paceKmh)) },
-                        onPlus: { setPace(paceRange.incremented(paceKmh)) },
-                        onTapValue: {
-                            paceInput = String(format: "%.1f", paceKmh)
-                            editingPace = true
-                            editingTime = false
-                            editingDistance = false
-                            focusedField = .pace
-                        },
-                        onCommit: {
-                            applyPaceInput()
-                            editingPace = false
-                            focusedField = nil
+                        // Pace: 整数部 . 小数部(0.1 km/h)
+                        WheelSettingCard(
+                            icon: "speedometer",
+                            label: AppStrings.Settings.pace,
+                            displayValue: String(format: "%.1f km/h", paceKmh),
+                            isExpanded: expanded == .pace,
+                            onToggle: { toggle(.pace) }
+                        ) {
+                            WheelColumn(title: "km/h", range: 0...30,
+                                        selection: Binding(get: { paceWhole },
+                                                           set: { setPaceParts(whole: $0, fraction: paceFraction) }))
+                            WheelSeparator(text: ".")
+                            WheelColumn(title: "decimal", range: 0...9, digits: 1,
+                                        selection: Binding(get: { paceFraction },
+                                                           set: { setPaceParts(whole: paceWhole, fraction: $0) }))
                         }
-                    )
-
-                    // ドラムロール入力 (企画書§5 ハイブリッド入力: ドラムロール・±・直接入力)
-                    // スワイプで直感的にペースを選ぶホイールピッカー
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(AppStrings.Settings.wheel)
-                            .font(.system(size: 12))
-                            .foregroundColor(.arGrayText)
-                            .padding(.leading, 4)
-                        Picker(AppStrings.Settings.wheelLabel, selection: paceWheelBinding) {
-                            ForEach(paceWheelValues, id: \.self) { value in
-                                Text(AppStrings.Formats.paceWheel(value, paceLabel(kmh: value)))
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.white)
-                                    .tag(value)
-                            }
-                        }
-                        .pickerStyle(.wheel)
-                        .frame(height: 96)
-                        .clipped()
-                        .background(Color.arCard)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.arBorder, lineWidth: 1))
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 24)
-
-                Spacer()
 
                 // Next button
                 Button {
-                    // 入力中の値を先に確定する。キーボードを開いたまま「次へ」を押すと
-                    // 打ち込んだ数値が捨てられていた(hsu/main 由来の修正)
-                    finishEditing()
-
                     // 最終チェック(タスク表 S5): 走れない値ではルート選択へ進まず、理由をダイアログで出す
                     if let issue = RunTargetIssue.check(current) {
                         targetIssue = issue
                         return
                     }
 
-                    // 確定後の値を共有ストアへ反映（RunningViewがUnityへ引き渡す・端末にも保存）。
+                    // 確定後の値を共有ストアへ反映(RunningViewがUnityへ引き渡す・端末にも保存)。
                     // 順序が逆だと確定前の古い値がUnityへ流れる
                     RunSettings.shared.confirm(paceKmH: paceKmh, distanceKm: distanceKm,
                                                timeSeconds: timeSeconds)
@@ -249,19 +210,12 @@ struct RunningSettingsView: View {
                             .foregroundColor(.black)
                     }
                 }
+                .padding(.top, 8)
                 .padding(.bottom, 52)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                editingTime = false
-                editingDistance = false
-                editingPace = false
-                focusedField = nil
             }
         }
         // 初回起動の待ち時間を、ユーザーが数値を入力しているこの画面へ前倒しする。
-        // 既定では何もしない（UnityLauncher.prewarmEnabled = false）。
-        // 有効化の判断材料と確認事項は UnityLauncher.prewarmEnabled のコメントに記載
+        // 既定では何もしない(UnityLauncher.prewarmEnabled = false)。
         .onAppear { UnityLauncher.shared.prewarm() }
         .alert(targetIssueTitle, isPresented: Binding(
             get: { targetIssue != nil },
@@ -284,62 +238,30 @@ struct RunningSettingsView: View {
         case .inconsistent, nil: return AppStrings.Settings.inconsistent
         }
     }
-
-    private func finishEditing() {
-        switch focusedField {
-        case .time:
-            applyTimeInput()
-        case .distance:
-            applyDistanceInput()
-        case .pace:
-            applyPaceInput()
-        case nil:
-            break
-        }
-
-        editingTime = false
-        editingDistance = false
-        editingPace = false
-        focusedField = nil
-    }
-
-    // 直接入力は半角・全角のどちらでも読む(NumericInput — 以前は全角の「５」が黙って捨てられていた)。
-    // 読めない入力は今の値のまま(エラー表示はタスク表 S5「不正な文字列」の行で別途)
-
-    private func applyTimeInput() {
-        if let seconds = NumericInput.parseDuration(timeInput) {
-            setTime(Int(timeRange.clamped(Double(seconds))))
-        }
-    }
-
-    private func applyDistanceInput() {
-        if let value = NumericInput.parseDecimal(distanceInput) {
-            setDistance(distanceRange.clamped(value))
-        }
-    }
-
-    private func applyPaceInput() {
-        if let value = NumericInput.parseDecimal(paceInput) {
-            setPace(paceRange.clamped(value))
-        }
-    }
 }
 
-// MARK: - Setting Card Component
-struct SettingCard: View {
+// MARK: - Setting Card (value + up/down button, expands to wheels)
+struct WheelSettingCard<Wheels: View>: View {
     let icon: String
     let label: LocalizedStringKey
     let displayValue: String
-    @Binding var inputText: String
-    @Binding var isEditing: Bool
-    let isFocused: Bool
-    /// 境界値に達したら押せなくする(タスク表 S5)
-    var canMinus: Bool = true
-    var canPlus: Bool = true
-    let onMinus: () -> Void
-    let onPlus: () -> Void
-    let onTapValue: () -> Void
-    let onCommit: () -> Void
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    let wheels: Wheels
+
+    init(icon: String,
+         label: LocalizedStringKey,
+         displayValue: String,
+         isExpanded: Bool,
+         onToggle: @escaping () -> Void,
+         @ViewBuilder wheels: () -> Wheels) {
+        self.icon = icon
+        self.label = label
+        self.displayValue = displayValue
+        self.isExpanded = isExpanded
+        self.onToggle = onToggle
+        self.wheels = wheels()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -353,43 +275,36 @@ struct SettingCard: View {
             }
 
             HStack(spacing: 10) {
-                ZStack(alignment: .leading) {
-                    if isEditing {
-                        TextField("", text: $inputText)
-                            .keyboardType(.decimalPad)
-                            .font(.system(size: 22, weight: .bold, design: .monospaced))
-                            .foregroundColor(.arYellow)
-                            .onSubmit { onCommit() }
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 14)
-                            .frame(height: 48)
-                            .background(Color.arBG)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.arYellow, lineWidth: 1.5)
-                            )
-                    } else {
-                        Button(action: onTapValue) {
-                            Text(displayValue)
-                                .font(.system(size: 22, weight: .bold, design: .monospaced))
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 14)
-                                .frame(height: 48)
-                                .background(Color.arBG)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.arBorder, lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
+                Button(action: onToggle) {
+                    Text(displayValue)
+                        .font(.system(size: 22, weight: .bold, design: .monospaced))
+                        .foregroundColor(isExpanded ? .arYellow : .white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .frame(height: 48)
+                        .background(Color.arBG)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(isExpanded ? Color.arYellow : Color.arBorder,
+                                        lineWidth: isExpanded ? 1.5 : 1)
+                        )
                 }
+                .buttonStyle(.plain)
 
-                StepButton(icon: "minus", isEnabled: canMinus, action: onMinus)
-                StepButton(icon: "plus", isEnabled: canPlus, action: onPlus)
+                UpDownButton(isActive: isExpanded, action: onToggle)
+            }
+
+            if isExpanded {
+                HStack(spacing: 0) {
+                    wheels
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.arBG)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.arBorder, lineWidth: 1))
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(.horizontal, 16)
@@ -398,33 +313,96 @@ struct SettingCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(
             RoundedRectangle(cornerRadius: 18)
-                .stroke(isEditing ? Color.arYellow.opacity(0.4) : Color.arBorder, lineWidth: 1)
+                .stroke(isExpanded ? Color.arYellow.opacity(0.4) : Color.arBorder, lineWidth: 1)
         )
-        .animation(.easeInOut(duration: 0.15), value: isEditing)
     }
 }
 
-// MARK: - Step Button (+/-)
-struct StepButton: View {
-    let icon: String
-    var isEnabled: Bool = true
+// MARK: - Up/Down button (参考画像の ⌃⌄ 丸ボタン)
+struct UpDownButton: View {
+    var isActive: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(isEnabled ? .arYellow : .arGrayText.opacity(0.5))
-                .frame(width: 48, height: 48)
-                .background(Color.arBG)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(isEnabled ? Color.arYellow.opacity(0.5) : Color.arBorder, lineWidth: 1.5)
-                )
+            ZStack {
+                Circle()
+                    .fill(Color.arYellow.opacity(isActive ? 0.28 : 0.15))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.arYellow)
+            }
+            .frame(width: 48, height: 48)
         }
         .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .animation(.easeInOut(duration: 0.15), value: isEnabled)
+        .accessibilityLabel("Edit value")
+        .animation(.easeInOut(duration: 0.15), value: isActive)
+    }
+}
+
+// MARK: - One drum-roll column (1桁ぶん)
+struct WheelColumn: View {
+    /// 列の上に出す単位ラベル(必要なら AppStrings へ移してローカライズ)
+    let title: LocalizedStringKey
+    let range: ClosedRange<Int>
+    /// ゼロ埋めの桁数(0 なら埋めない)
+    var digits: Int = 2
+    @Binding var selection: Int
+
+    init(title: LocalizedStringKey,
+         range: ClosedRange<Int>,
+         digits: Int = 2,
+         selection: Binding<Int>) {
+        self.title = title
+        self.range = range
+        self.digits = digits
+        self._selection = selection
+    }
+
+    private func label(_ value: Int) -> String {
+        let s = String(value)
+        return String(repeating: "0", count: max(0, digits - s.count)) + s
+    }
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.arGrayText)
+
+            Picker(title, selection: $selection) {
+                ForEach(range, id: \.self) { value in
+                    Text(label(value))
+                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .tag(value)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.wheel)
+            .environment(\.colorScheme, .dark)   // ホイールの文字を白で表示
+            .frame(height: 120)
+            .clipped()
+            .overlay(
+                // 選択中の行をライムの枠で強調
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.arYellow.opacity(0.6), lineWidth: 1.5)
+                    .frame(height: 36)
+                    .allowsHitTesting(false)
+            )
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Separator between columns (":" or ".")
+struct WheelSeparator: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 22, weight: .bold, design: .monospaced))
+            .foregroundColor(.arGrayText)
+            .padding(.top, 18)   // 列タイトルの分だけ下げて、ホイールの中央に合わせる
     }
 }

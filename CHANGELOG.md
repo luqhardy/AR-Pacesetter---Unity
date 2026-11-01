@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-01 — ar-ui(Hsu の走行条件設定・ホイール入力)を master へ取り込み
+- `RunningSettingsView.swift` と `Localizable.xcstrings` は ar-ui のまま(UIは変更しない)。scheme の version 1.8 も取り込む。
+- 個人の署名(DEVELOPMENT_TEAM・Bundle ID)と `UIApplicationSceneManifest_Generation = NO`・Info.plist は master のまま — 外したらグラスがミラーリングに戻るため。InfoPlist.xcstrings の衝突は master 側(#17 の NSLocalNetworkUsageDescription と同じ文言)で解消。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 477/477、Swift 構文 88 ファイル、E2E 332/332)。Swift の型検査・`swift test` は CI、実機の見た目は未確認。
+
 ### 2026-10-27 (3) — UniVRM を導入し .vrm の取り込みを有効化
 - `Packages/manifest.json` に UniVRM v0.131.3(`com.vrmc.gltf` / `com.vrmc.univrm`、新しい `/Packages/` 配置)、`UNIVRM` を Android / Standalone / iPhone に定義。
 - `VrmAvatarLoader` の `Load()` を拡張メソッドとして明示呼び出しに。compile-check は VRM.dll があれば `UNIVRM` 付きで検証。ライセンス同意の導線は未実装(チーム判断)。
