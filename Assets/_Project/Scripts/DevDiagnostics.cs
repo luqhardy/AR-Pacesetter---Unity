@@ -70,6 +70,10 @@ public static class DevDiagnostics
         }
 
         // ── GPS (F-09/F-10) ──────────────────────────────────────────
+        var arFallback = UnityEngine.Object.FindFirstObjectByType<ArTrackingFallback>(FindObjectsInactive.Include);
+        if (arFallback != null)
+            Add(rows, "ar.gpsFallback", (arFallback.IsActive ? "GPSで追従中" : "ARKit") + $"(この走行で{arFallback.FreezeCount}回停止)");
+
         var gps = UnityEngine.Object.FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
         if (gps != null)
         {

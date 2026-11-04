@@ -443,6 +443,9 @@ public class ARSessionManagerBridge : MonoBehaviour
     /// </summary>
     public bool IsPresentationSession => _presentationSession;
 
+    /// <summary>Swift から届いた GPS の累積距離(m)。ARKit の計測を含まない</summary>
+    public double LatestRawDistanceMeters => _latestRawDistanceMeters;
+
     /// <summary>
     /// 展示デモ(<see cref="BoothDemoController"/>)専用の入口。Swift と同じコマンドを同じ経路で
     /// 処理するが、ここから始めた StartSession は展示デモとして扱われ、ここから送った

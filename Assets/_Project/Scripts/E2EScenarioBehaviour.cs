@@ -698,10 +698,19 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 Check(phoneCamera == null || phoneCamera.cullingMask == 0,
                     "glass: AR camera stops drawing but stays enabled for ARKit tracking");
 
-                Check(glassRig.OrientationSource == HeadOrientationSource.TravelHeading,
-                    $"glass: orientation comes from the smoothed travel heading (got {glassRig.OrientationSource})");
-                Check(glassRig.AppliedDownPitchDegrees > 1f && glassRig.AppliedDownPitchDegrees <= 15f,
-                    $"glass: camera pitches down to fit the avatar into the narrow FoV ({glassRig.AppliedDownPitchDegrees:F1}°)");
+                // 頭マウント: 描画の位置と向きは ARKit カメラ(頭)のまま。ロールだけ足さない
+                Check(glassRig.Mount == CameraMount.Head, "glass: the iPhone is head-mounted by default");
+                Check(glassRig.OrientationSource == HeadOrientationSource.HeadMountedCamera,
+                    $"glass: orientation comes from the head-mounted camera (got {glassRig.OrientationSource})");
+                if (outCam != null && phoneCamera != null)
+                {
+                    Check(Vector3.Distance(outCam.transform.position, phoneCamera.transform.position) < 0.001f,
+                        "glass: the view stays at the head-mounted camera position (no chest-to-eye lift)");
+                    Check(Vector3.Angle(outCam.transform.forward, phoneCamera.transform.forward) < 0.5f,
+                        "glass: the view looks where the head-mounted camera looks");
+                    Check(Vector3.Angle(outCam.transform.right, Vector3.ProjectOnPlane(outCam.transform.right, Vector3.up)) < 0.5f,
+                        "glass: the view has no roll");
+                }
 
                 // §7-1(2026-10-13 チーム判断): 3.0m前方(F-03)は保ち、グラスの画角に全身が収まる身長へ縮める。
                 // 以前は「175cmは収まらない・足元は視野外」をここで固定していた
@@ -1581,6 +1590,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         // ── Step 6a: 首振り(AirPods の頭の向き)— 本走行のシンクロ率を乱さないよう走行の外で ──
         yield return StartCoroutine(RunHeadTurnTest());
+        yield return StartCoroutine(RunArFreezeTest(bridge, engine));
 
         // ── Step 6a'': 自走モード(タスク表「指定した速さで走る」)— GPS を送る前に(カメラの移動だけでペースを測る) ──
         yield return StartCoroutine(RunSelfPacedTest(bridge, engine));
@@ -1619,6 +1629,40 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return null;
         Check(glassRig.IsGlassOutputActive, "head: glass output is on for the head-turn checks");
 
+        // 頭マウント(既定): AirPods の向きは足さない — ARKitカメラの向きに首振りが含まれている
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
+        yield return null;
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+        yield return null;
+        Check(glassRig.OrientationSource == HeadOrientationSource.HeadMountedCamera
+              && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
+            $"head: a head-mounted camera ignores AirPods yaw ({glassRig.AppliedHeadYawDegrees:F1}°)");
+
+        // 頭を向けた先を描く: ヨーとピッチは ARKitカメラのまま、ロールだけ足さない
+        Camera headCamera = Camera.main;
+        if (headCamera != null && glassRig.OutputCamera != null)
+        {
+            Quaternion savedHead = headCamera.transform.rotation;
+            Quaternion headPose = Quaternion.Euler(10f, 40f, 25f);
+            headCamera.transform.rotation = headPose;
+            yield return null;
+            Transform view = glassRig.OutputCamera.transform;
+            float viewError = Vector3.Angle(view.forward, headPose * Vector3.forward);
+            Check(viewError < 0.5f,
+                $"head: the glass view follows the head-mounted camera's yaw and pitch ({viewError:F1}° off)");
+            Check(Mathf.Abs(glassRig.AppliedDownPitchDegrees - 10f) < 0.5f,
+                $"head: the view pitch is the real head pitch ({glassRig.AppliedDownPitchDegrees:F1}°)");
+            Check(Mathf.Abs(view.right.y) < 0.01f, "head: head roll is not added to the view");
+            headCamera.transform.rotation = savedHead;
+            yield return null;
+        }
+
+        // 以下は胸マウントの経路
+        glassRig.SetCameraMount(CameraMount.Chest);
+        yield return WaitScaled(HeadPoseMath.DefaultHeadYawMaxAgeSeconds + 0.2f);
+        Check(glassRig.AppliedDownPitchDegrees > 1f && glassRig.AppliedDownPitchDegrees <= 15f,
+            $"head: a chest mount pitches the view down to fit the avatar ({glassRig.AppliedDownPitchDegrees:F1}°)");
+
         // 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」): AirPods の頭の向きを
         // 進行方向との差にして描画の向きへ足す。最初のサンプルを「まっすぐ前」とみなす
         deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
@@ -1643,6 +1687,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return WaitScaled(HeadPoseMath.DefaultHeadYawMaxAgeSeconds + 0.2f);
         Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
             "head: the view falls back to the travel heading when AirPods stop sending");
+        glassRig.SetCameraMount(CameraMount.Head);
 
         deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
         yield return null;
@@ -1656,6 +1701,61 @@ public class E2EScenarioBehaviour : MonoBehaviour
     /// 自走モード(タスク表「指定した速さで走る」・既定OFF): アバターは目標ペースで走ったときの位置にいる。
     /// 遅れると前へ離れ(9.5m まで — 離隔待機には入らない)、速ければ近づく。既定の走行は「走者+3m」のまま
     /// </summary>
+    /// <summary>
+    /// 走っているのに ARKit の位置が止まっても、アバターは GPS の距離で進み続ける。
+    /// 以前は同じ場所に留まった(GPS 9m に対して 0.00m — 2026-11-04 再現)
+    /// </summary>
+    private IEnumerator RunArFreezeTest(ARSessionManagerBridge bridge, AvatarEngine engine)
+    {
+        var fallback = FindFirstObjectByType<ArTrackingFallback>(FindObjectsInactive.Include);
+        Check(fallback != null, "ar-freeze: ArTrackingFallback auto-created by bootstrap");
+        if (fallback == null) yield break;
+
+        const string Start = "{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":5.0," +
+                             "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0}";
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand(Start);
+        yield return null;
+        float wait = 0f;
+        while (!engine.IsRunMotionActive && wait < 8f) { wait += Time.deltaTime; yield return null; }
+        Check(engine.IsRunMotionActive, "ar-freeze: the run starts");
+
+        // 立っているだけでは反応しない
+        for (float t = 0f; t < 1f; t += Time.deltaTime) yield return null;
+        Check(!fallback.IsActive, "ar-freeze: standing still is not a frozen ARKit");
+
+        // カメラは動かさず、GPS だけ 3.6m/s で進める
+        Vector3 before = engine.transform.position;
+        double gpsMeters = 0.0;
+        for (float t = 0f; t < 6f; t += 0.5f)
+        {
+            gpsMeters += 1.8;
+            string km = (gpsMeters / 1000.0).ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+            bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":13.0,\"heartRate\":150,\"distanceKm\":" + km + "}");
+            for (float w = 0f; w < 0.5f; w += Time.deltaTime) yield return null;
+        }
+        for (float t = 0f; t < 2f; t += Time.deltaTime) yield return null;
+        float moved = Vector3.Distance(before, engine.transform.position);
+        Check(fallback.IsActive, "ar-freeze: GPS advancing with a still camera is detected");
+        Check(moved > 8f, $"ar-freeze: the avatar keeps moving on GPS distance ({moved:F1}m of {gpsMeters:F1}m)");
+        Check(!engine.IsWaitingForUser, "ar-freeze: the avatar does not fall into the 10m wait");
+        Check(fallback.FreezeCount == 1, $"ar-freeze: one freeze counted ({fallback.FreezeCount})");
+        // 既存の走行シナリオの GPS の飛び(1回で20m)には反応していないこと
+        Check(fallback.TotalFreezeCount == 1, $"ar-freeze: a single GPS jump never triggered it ({fallback.TotalFreezeCount})");
+
+        // ARKit が戻る: カメラが動き出したら GPS の追従を止める
+        for (float t = 0f; t < 0.5f; t += Time.deltaTime)
+        {
+            MoveRig(Vector3.forward * 3.6f * Time.deltaTime);
+            yield return null;
+        }
+        Check(!fallback.IsActive, "ar-freeze: the fallback ends when ARKit moves again");
+
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+    }
+
     private IEnumerator RunSelfPacedTest(ARSessionManagerBridge bridge, AvatarEngine engine)
     {
         bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
@@ -1978,7 +2078,6 @@ public class E2EScenarioBehaviour : MonoBehaviour
               $"({engine.MeasuredAvatarHeightMeters:F2}m)");
         bool glassActive = glassRig != null && glassRig.IsGlassOutputActive && glassRig.OutputCamera != null;
         Check(glassActive, "booth: the glasses output view is active for the booth checks");
-        float pitchAt3m = glassActive ? glassRig.AppliedDownPitchDegrees : 0f;
 
         // 立ったまま体の向きを90°変えても、アバターは1秒以内に正面へ回り込む(部屋に置き去りにしない)。
         // 以前は 不感帯12°・45°/s で90°に約2.5秒かかり「すぐ反応しない」と言われた(2026-10-09 実機)
@@ -2028,13 +2127,6 @@ public class E2EScenarioBehaviour : MonoBehaviour
               "booth: HUD pace turns red while behind");
         Check(hud == null || (hud.CurrentDistanceText != "0.00 km" && hud.CurrentDistanceText.EndsWith("km")),
               $"booth: HUD distance counts up while standing still ({(hud != null ? hud.CurrentDistanceText : "-")})");
-        if (glassActive)
-        {
-            // 9m先へ離れたら視点の俯角を浅くする(3m前提のままだと頭が視野の上へ切れる)
-            float pitchAt9m = glassRig.AppliedDownPitchDegrees;
-            Check(pitchAt9m < pitchAt3m - 5f,
-                  $"booth: the glasses view tilts up when the avatar is ~9m ahead ({pitchAt3m:F1}° → {pitchAt9m:F1}°)");
-        }
 
         // ── 追い抜き: 寄って緑→青、HUDペース緑 ──
         yield return WaitForDemoTime(demo, 33f);

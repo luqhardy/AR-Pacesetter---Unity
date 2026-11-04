@@ -18,6 +18,16 @@ public enum GlassScreenMode
     Unknown,
 }
 
+/// <summary>iPhone(=ARKitカメラ)をどこに付けているか。**既定は頭**(2026-11-04 チームの運用)。</summary>
+public enum CameraMount
+{
+    /// <summary>頭のマウント。ARKitカメラの向き=頭の向きで、高さは眼とほぼ同じ。</summary>
+    Head,
+
+    /// <summary>胸のマウント(以前の運用)。カメラの向きは頭と別物なので描画へ使えない。</summary>
+    Chest,
+}
+
 /// <summary>描画カメラの向きを何から作るか。</summary>
 public enum HeadOrientationSource
 {
@@ -26,6 +36,9 @@ public enum HeadOrientationSource
 
     /// <summary>§4.1の移動平均済み進行方向(ヨーのみ)。胸マウントの揺れ・ロールを持ち込まない。</summary>
     TravelHeading,
+
+    /// <summary>頭に付けたARKitカメラの向き(ヨー・ピッチ)。アバターとカメラ映像が現実と揃う。</summary>
+    HeadMountedCamera,
 
     /// <summary>グラス実機から供給された頭部姿勢(将来用。iOSでは現状供給元が無い)。</summary>
     ExternalGlassPose,
@@ -43,10 +56,12 @@ public enum HeadOrientationSource
 /// そこへUnity側でも頭部回転を適用すると補正が2回かかり、首を振るたびに
 /// 映像が逆方向へ流れる。<b>Unityが姿勢を持つならグラスはFollow(固定)であること</b>。</para>
 ///
-/// <para><b>第1期の帰結</b>: iOSにはグラスの頭部姿勢を取る手段が無い
-/// (XREAL SDKはAndroid専用、USB-HIDはiOSアプリから触れない)。したがって
-/// Follow(固定) × <see cref="HeadOrientationSource.TravelHeading"/> が唯一成立する組み合わせで、
-/// これは §4.1 が要求する「グラスのコンパスではなくiPhoneの移動平均を使う」と一致する。</para>
+/// <para><b>頭マウントの帰結</b>: iOSにはグラスの頭部姿勢を取る手段が無いが
+/// (XREAL SDKはAndroid専用、USB-HIDはiOSアプリから触れない)、iPhoneを頭に付ければ
+/// ARKitカメラの向きがそのまま頭の向きになる。Follow(固定) ×
+/// <see cref="HeadOrientationSource.HeadMountedCamera"/> で描く。§4.1 が禁じているのは
+/// <b>アバターの位置・進行方向</b>に視線を使うことで、描画の向きはこれに当たらない。
+/// 胸マウントでは <see cref="HeadOrientationSource.TravelHeading"/> が唯一の組み合わせだった。</para>
 /// </summary>
 public static class HeadPoseMath
 {
@@ -64,7 +79,8 @@ public static class HeadPoseMath
     /// グラス非接続ならiPhone画面に出しているのでARKitカメラそのまま。
     /// </summary>
     public static HeadOrientationSource ResolveOrientationSource(bool glassConnected, GlassScreenMode screenMode,
-                                                                 bool hasFreshExternalPose)
+                                                                 bool hasFreshExternalPose,
+                                                                 CameraMount mount = CameraMount.Head)
     {
         if (!glassConnected) return HeadOrientationSource.PhoneCamera;
 
@@ -74,7 +90,9 @@ public static class HeadPoseMath
 
         if (hasFreshExternalPose) return HeadOrientationSource.ExternalGlassPose;
 
-        return HeadOrientationSource.TravelHeading;
+        return mount == CameraMount.Head
+            ? HeadOrientationSource.HeadMountedCamera
+            : HeadOrientationSource.TravelHeading;
     }
 
     /// <summary>
@@ -82,7 +100,8 @@ public static class HeadPoseMath
     /// グラスの画面モードをFollow(固定)へ変えてもらう以外に回避手段は無い。
     /// </summary>
     public static bool IsDoubleCompensationRisk(GlassScreenMode screenMode, HeadOrientationSource source)
-        => screenMode == GlassScreenMode.Anchor && source == HeadOrientationSource.ExternalGlassPose;
+        => screenMode == GlassScreenMode.Anchor
+           && (source == HeadOrientationSource.ExternalGlassPose || source == HeadOrientationSource.HeadMountedCamera);
 
     // ── 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」2026-10-19) ──
     // グラスは Follow(固定) なので、首を振ると画面ごと顔に付いて回り、アバターも視線の先へ付いてくる。
@@ -139,12 +158,12 @@ public static class HeadPoseMath
     }
 
     /// <summary>
-    /// 胸マウントのARKitカメラ高から眼の高さへ持ち上げる量(m)。
-    /// グラスは目の位置にあるので、視点をカメラ位置のままにすると地面が近く見え、
+    /// ARKitカメラ高から眼の高さへ持ち上げる量(m)。頭マウントは眼とほぼ同じ高さなので0。
+    /// 胸マウントで視点をカメラ位置のままにすると地面が近く見え、
     /// 3.0m前方のアバターの見かけの俯角がずれる。
     /// </summary>
-    public static float ChestToEyeOffsetMeters(float chestMountHeightMeters, float eyeHeightMeters)
-        => eyeHeightMeters - chestMountHeightMeters;
+    public static float MountToEyeOffsetMeters(CameraMount mount, float chestMountHeightMeters, float eyeHeightMeters)
+        => mount == CameraMount.Head ? 0f : eyeHeightMeters - chestMountHeightMeters;
 
     /// <summary>
     /// グラスのFoVは狭いので、光軸を水平のままにするとアバターの足元が視野の下に落ちる。

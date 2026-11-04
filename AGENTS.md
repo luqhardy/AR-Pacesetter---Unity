@@ -211,6 +211,7 @@ stateDiagram-v2
 - **`AvatarEngine.IsHalted` は `GroundSnap` が毎フレーム上書きする**。恒久的な停止には `IsSessionEnded` を使う
 - **距離の単一ソース原則**: Swift主導中(`ARSessionManagerBridge.ExternalMetricsActive`)はUnity内部計測をスプリット判定へ流さない。記録・ゴール判定は `RunSessionController.AuthoritativeDistanceMeters`(新鮮なGPS優先・5秒でUnity計測へフォールバック)を共用
 - **アバターは常時「ユーザー+3m」アンカー追従**(自走ではない)。10m離隔待機は「アバター停止中にユーザーが離れる」場合にのみ発生する。
+  ARKit の位置が走行中に止まると一緒に止まるので、`ArTrackingFallback` が GPS の距離でカメラのリグごと進める(判定は `ArTrackingWatch`・診断は `ar.gpsFallback`)。
   例外は**自走モード**(AR設定のスイッチ・既定OFF・StartSession の `selfPaced`): 前方距離を「3m − 遅れ」にずらす(0.8〜9.5m)。
   遅れは START からの正規の距離 − 目標ペースの距離(`SelfPacedTarget`)で取り、シンクロ率の距離偏差(速さの積分)は使わない
   (平滑化した速さの立ち上がりの偏りが数mの一定の遅れとして残る)
@@ -253,8 +254,11 @@ stateDiagram-v2
 - **アバターの身長は `AvatarEngine.ApplyHeightCm` / `SetHeightLimitCm` だけで変える**(モデルの `localScale` を直接書かない)。
   適用されるのは要求身長と上限の小さい方(`EffectiveHeightCm`)— グラス出力中の上限が §7-1 の決定を実現している
 - **展示デモではアバターを一度も消さない**(GPSロスト判定OFF)。向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView`)— §4.1 Gaze Lock の**唯一の例外**で、走行には持ち込まない
+- **iPhone は頭のマウントに付ける(`CameraMount.Head`・既定)**。グラスの描画は ARKit カメラの位置・ヨー・ピッチのまま(`HeadMountedCamera`)で、
+  ロールは足さない(マウントの縦横で90°変わるため)。§4.1 が禁じているのはアバターの位置・進行方向に視線を使うことで、描画の向きは別。
+  `GroundSnap.assumedCameraHeightMeters` も眼高(1.55m)。胸マウントの経路(`CameraMount.Chest` = 進行方向ヨー+俯角+`UpdateHeadYaw`)は残してある
 - **AirPods の頭の向き(`HeadphoneHeadTracker` → `UpdateHeadYaw`)は準備画面(S4)で「接続」を押したときだけ使う**(既定OFF・走行の終了で止める)。
-  グラスは Follow(固定)なので、首振りは Unity が進行方向ヨーへ足して打ち消す(`HeadYawBaseline`)。Anchor モードでは足さない
+  足すのは胸マウントのときだけ(`HeadYawBaseline`)。頭マウントではカメラの向きに首振りが含まれているので Unity は使わない。Anchor モードでは足さない
 - **XREAL One 自身のIMU(`XrealImuReceiver`・USBネットワーク TCP 169.254.2.1:52998)も準備画面の「グラスのセンサー」で「接続」したときだけ使う**
   (既定OFF・走行の終了で止める・**読むだけ**で 52999 の設定口は触らない)。届いている間は AirPods より優先して `UpdateHeadYaw` を送り
   (AirPods は送らない)、重力を除いた100Hzの加速度を `ARV_PushGlassImuSample` 経由で CSV の imu_accel 列へ渡す(軸はグラスの x=右・y=下・z=前)。
@@ -276,7 +280,8 @@ Swift⇄ブリッジ境界は km/h、Unity内部は 分/km(変換: 分/km = 60 �
 1. ~~**3.0m前方と画角の両立(F-03 × グラス)**~~ → **決定(2026-10-13 チーム判断)**: 3.0m前方は保ち、**大きさを譲る**。
    ARグラスへ出力している間は `GlassViewRig` が「その画角で頭から足元まで収まる身長」を `AvatarEngine.SetHeightLimitCm` で
    上限にする(XREAL One で約144cm。画角の広い One Pro では高い)。iPhone画面では要求どおり(175cm)。
-   展示デモは固定の145cm(`BoothDemoScript.AvatarHeightCm`)。経緯: 175cmは3.0mで垂直31.1°を占め、垂直25.7°に収まらなかった
+   展示デモは固定の145cm(`BoothDemoScript.AvatarHeightCm`)。経緯: 175cmは3.0mで垂直31.1°を占め、垂直25.7°に収まらなかった。
+   頭マウント(2026-11-04)では視点を人工的に傾けないので、全身が入るのは**目線を下げたとき**(約12°)。水平を見ている間は足元が視野の下に出る
 2. **`SafetyAndSystemController`(TTC警告・低バッテリー退避)は休眠中**: 実行時に生成されない。有効化には
    (a)障害物検知ソースの接続 (b)非検出時にTTCを `ttcScanRange` で計算する誤りの修正が要る —
    そのまま配線すると19.2km/h超で誤警報が出る。詳細は HANDOVER.md §5

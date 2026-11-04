@@ -73,6 +73,7 @@ public static class ARVisionSystemsBootstrap
         Ensure<ReadyCheckController>();
         Ensure<GhostPaceDriver>();
         Ensure<GpsSignalMonitor>(); // F-09 GPSロスト自動判定(§8.1)
+        Ensure<ArTrackingFallback>(); // ARKitの位置が止まったらGPSの距離でリグを進める
         Ensure<CountdownDisplay>(); // 走行開始カウントダウンのAR表示(音のカウントと同期)
         Ensure<ARPassthroughController>(); // 光学シースルー時のカメラ映像抑止
         Ensure<GlassViewRig>(); // ARグラス接続中の描画をグラスの画角・眼の位置へ切り替える

@@ -4,6 +4,16 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-04 (2) — ARKit の位置が止まっても GPS の距離でアバターを進める
+- 走行中に ARKit が止まるとアバターが同じ場所に留まった(E2E で GPS 9m に対して 0.00m)。`ArTrackingWatch` が GPS とカメラの食い違いで検知し、`ArTrackingFallback` がカメラのリグごと進める。復帰時の飛びは吸収する。
+- 立っているだけ・GPSの飛び1回・GPSロスト中・展示デモでは動かない。開発者モードの診断に `ar.gpsFallback`。実機で止まった原因そのものは未確認。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。実機は未確認。
+
+### 2026-11-04 — グラスの描画と接地を頭マウントへ(`CameraMount.Head`・既定)
+- iPhone は頭に付ける運用なので、描画は ARKit カメラの位置・ヨー・ピッチのまま(`HeadMountedCamera`)。アバターとカメラ映像が揃う。ロールは足さず、AirPods / グラスIMU のヨーも足さない。
+- 人工の俯角をやめたので、全身が入るのは目線を約12°下げたとき。`GroundSnap` の想定カメラ高は 1.55m。胸マウントの経路は `CameraMount.Chest` に残す。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 489/489、Swift 構文 88 ファイル、E2E 343/343)。Swift の型検査・`swift test` は CI、実機は未確認。
+
 ### 2026-11-01 (2) — ARグラスの背景に iPhone のカメラ映像を出す(既定ON・開発者モードで切替)
 - 頭に付けた iPhone の映像を `GlassPassthroughLayer` がグラスの出力カメラの最背面へ(YCbCr→RenderTexture、遮蔽キーワードは切る)。中央をグラスの垂直画角ぶん切り出す(`GlassPassthroughMath`)。
 - 開発者モード「グラスにカメラ映像を出す」→ `SetGlassPassthrough`(接続のたびにも送る)。以前は光学シースルーの二重像を避けて出していなかった。

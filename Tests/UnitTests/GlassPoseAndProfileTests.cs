@@ -103,10 +103,13 @@ public class GlassPoseAndProfileTests
     [Test]
     public void グラス接続で外部姿勢が無ければ進行方向ヨーを使う()
     {
-        Assert.AreEqual(HeadOrientationSource.TravelHeading,
+        Assert.AreEqual(HeadOrientationSource.HeadMountedCamera,
             HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.FollowLocked, false));
-        Assert.AreEqual(HeadOrientationSource.TravelHeading,
+        Assert.AreEqual(HeadOrientationSource.HeadMountedCamera,
             HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.Unknown, false));
+        // 胸マウントのカメラの向きは頭の向きではないので、進行方向から作る
+        Assert.AreEqual(HeadOrientationSource.TravelHeading,
+            HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.FollowLocked, false, CameraMount.Chest));
     }
 
     [Test]
@@ -125,6 +128,11 @@ public class GlassPoseAndProfileTests
     {
         Assert.AreEqual(HeadOrientationSource.TravelHeading,
             HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.Anchor, true));
+        Assert.AreEqual(HeadOrientationSource.TravelHeading,
+            HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.Anchor, false),
+            "頭マウントのカメラの向きも Anchor では足さない(二重補正)");
+        Assert.IsTrue(HeadPoseMath.IsDoubleCompensationRisk(
+            GlassScreenMode.Anchor, HeadOrientationSource.HeadMountedCamera));
     }
 
     [Test]
@@ -148,10 +156,17 @@ public class GlassPoseAndProfileTests
     }
 
     [Test]
+    public void 頭マウントは視点を持ち上げない()
+    {
+        Assert.AreEqual(0f, HeadPoseMath.MountToEyeOffsetMeters(CameraMount.Head,
+            HeadPoseMath.DefaultChestMountHeightMeters, HeadPoseMath.DefaultEyeHeightMeters));
+    }
+
+    [Test]
     public void 胸マウントから眼までの持ち上げ量()
     {
         Assert.AreEqual(0.35f,
-            HeadPoseMath.ChestToEyeOffsetMeters(HeadPoseMath.DefaultChestMountHeightMeters,
+            HeadPoseMath.MountToEyeOffsetMeters(CameraMount.Chest, HeadPoseMath.DefaultChestMountHeightMeters,
                                                 HeadPoseMath.DefaultEyeHeightMeters), 1e-5f);
     }
 

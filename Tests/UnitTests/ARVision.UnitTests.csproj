@@ -34,6 +34,7 @@
     <Compile Include="..\..\Assets\_Project\Scripts\VrmAvatarPolicy.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GlassOpticsMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GlassPassthroughMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\ArTrackingWatch.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GlassDisplayProfile.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\HeadPoseMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\SurfaceSemanticMath.cs" />

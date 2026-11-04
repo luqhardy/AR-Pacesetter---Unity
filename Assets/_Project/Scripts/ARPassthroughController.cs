@@ -12,7 +12,7 @@ using UnityEngine.XR.ARFoundation;
 /// パススルーを有効に保つ(ビデオシースルー)。
 ///
 /// カメラのトラッキング自体は常に動き続ける — 消すのは表示だけで、ARKitは
-/// 変わらずカメラを使って自己位置推定を行う(胸マウント運用の前提)。
+/// 変わらずカメラを使って自己位置推定を行う(頭マウント運用の前提)。
 /// </summary>
 public class ARPassthroughController : MonoBehaviour
 {
