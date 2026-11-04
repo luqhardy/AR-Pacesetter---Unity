@@ -139,6 +139,15 @@ iPhone画面用の「隅から100px」のままでは時間・ペースが読め
 (エディタでは Build → Capture HUD Preview)。`Builds/HudPreview/` に5状態(維持・遅れ・スプリット・GPS喪失・GPS待ちのHUDのみ)×2枚 —
 `*_glass.png` はグラスが出す光そのもの(黒=透明)、`*_seethrough.png` は晴れたトラックに重ねた近似。
 
+### 3-5. グラスの背景のカメラ映像(パススルー・2026-11-01〜・既定ON)
+- iPhone は**頭に付ける**運用。そのカメラ映像を `GlassPassthroughLayer` が出力カメラの最背面に出す。
+  ARCameraBackground は ARKit カメラにしか描けないため、YCbCr を AR Foundation のカメラ用マテリアルで
+  RenderTexture へ変換して張る(描画面の半分の解像度)。遮蔽のキーワードは切る(映像でアバターを隠さない)。
+- 映像はグラスより広いので**中央をグラスの垂直画角ぶんだけ切り出す**(`GlassPassthroughMath`。割合は ARKit の投影行列から毎フレーム求める)。
+- 加算表示なので映像はレンズ越しの現実に重なる。見やすさは調光しだい。
+- 切替は開発者モード「グラスにカメラ映像を出す」(`SetGlassPassthrough {enabled}`・接続のたびに送る)。
+  **実機では未確認**(色・縮尺・重なり方・M2P への影響)。
+
 ---
 
 ## 4. 発見した仕様上の衝突(チーム判断が要る)

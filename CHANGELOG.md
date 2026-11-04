@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-01 (2) — ARグラスの背景に iPhone のカメラ映像を出す(既定ON・開発者モードで切替)
+- 頭に付けた iPhone の映像を `GlassPassthroughLayer` がグラスの出力カメラの最背面へ(YCbCr→RenderTexture、遮蔽キーワードは切る)。中央をグラスの垂直画角ぶん切り出す(`GlassPassthroughMath`)。
+- 開発者モード「グラスにカメラ映像を出す」→ `SetGlassPassthrough`(接続のたびにも送る)。以前は光学シースルーの二重像を避けて出していなかった。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 488/488、Swift 構文 88 ファイル、E2E 336/336)。Swift の型検査・`swift test` は CI、実機(色・縮尺・M2P)は未確認。
+
 ### 2026-11-01 — ar-ui(Hsu の走行条件設定・ホイール入力)を master へ取り込み
 - `RunningSettingsView.swift` と `Localizable.xcstrings` は ar-ui のまま(UIは変更しない)。scheme の version 1.8 も取り込む。
 - 個人の署名(DEVELOPMENT_TEAM・Bundle ID)と `UIApplicationSceneManifest_Generation = NO`・Info.plist は master のまま — 外したらグラスがミラーリングに戻るため。InfoPlist.xcstrings の衝突は master 側(#17 の NSLocalNetworkUsageDescription と同じ文言)で解消。

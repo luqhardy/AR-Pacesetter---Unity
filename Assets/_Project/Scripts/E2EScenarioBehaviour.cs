@@ -658,6 +658,16 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 Check(GlassViewRig.VerificationDefaultGlassOutput,
                     "verification: glass output rig is enabled by default");
                 Check(glassRig.IsGlassOutputActive, "glass: output rig takes over rendering on connect");
+
+                // グラスの背景のカメラ映像: 既定ON、開発者モードの SetGlassPassthrough で接続中に切り替わる
+                Check(glassRig.CameraPassthroughOnGlass && glassRig.IsCameraPassthroughShowing,
+                    "glass-passthrough: camera feed shown on the glasses by default");
+                deviceBridge.OnSwiftCommand("{\"command\":\"SetGlassPassthrough\",\"enabled\":false}");
+                Check(!glassRig.IsCameraPassthroughShowing,
+                    "glass-passthrough: SetGlassPassthrough(false) hides the camera feed while connected");
+                deviceBridge.OnSwiftCommand("{\"command\":\"SetGlassPassthrough\",\"enabled\":true}");
+                Check(glassRig.IsCameraPassthroughShowing,
+                    "glass-passthrough: SetGlassPassthrough(true) shows it again");
                 Check(glassRig.ActiveProfile != null && glassRig.ActiveProfile.Model == "XREAL One",
                     $"glass: 1920x1080 resolves to the XREAL One profile (got {glassRig.ActiveProfile?.Model})");
 
@@ -726,6 +736,8 @@ public class E2EScenarioBehaviour : MonoBehaviour
             if (glassRig != null)
             {
                 Check(!glassRig.IsGlassOutputActive, "glass: output rig stops on disconnect");
+                Check(!glassRig.IsCameraPassthroughShowing && glassRig.CameraPassthroughOnGlass,
+                    "glass-passthrough: feed stops on disconnect but the setting is kept");
                 Check(glassRig.OutputCamera == null || !glassRig.OutputCamera.enabled,
                     "glass: output camera disabled on disconnect");
                 Check(phoneCamera == null || phoneCamera.cullingMask == phoneCullingMask,

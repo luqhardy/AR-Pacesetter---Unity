@@ -42,8 +42,11 @@ public sealed class GlassViewRig : MonoBehaviour
     [SerializeField] private GlassScreenMode screenMode = GlassScreenMode.FollowLocked;
     [Tooltip("狭いFoVへアバターを収めるための下向き俯角の上限(度)")]
     [SerializeField] private float maxDownPitchDegrees = 15f;
+    [Tooltip("グラスの背景にiPhoneのカメラ映像を出す(既定ON)。開発者モードの SetGlassPassthrough で切替")]
+    [SerializeField] private bool cameraPassthroughOnGlass = true;
 
     private Camera _outputCamera;
+    private GlassPassthroughLayer _passthroughLayer;
     private Quaternion _externalPose = Quaternion.identity;
     private float _externalPoseTime = -1f;
     // 首振り。AirPods の頭のヨー(基準は任意・右が正)を進行方向との差にして足す(HeadPoseMath 参照)
@@ -62,6 +65,10 @@ public sealed class GlassViewRig : MonoBehaviour
     public GlassDisplayProfile ActiveProfile { get; private set; } = GlassDisplayProfile.PhoneScreen;
     public HeadOrientationSource OrientationSource { get; private set; } = HeadOrientationSource.PhoneCamera;
     public Camera OutputCamera => _outputCamera;
+    /// <summary>グラスへカメラ映像を出す設定(グラス未接続でも保持する)。</summary>
+    public bool CameraPassthroughOnGlass => cameraPassthroughOnGlass;
+    /// <summary>今グラスへカメラ映像を出しているか(フレーム到着前でも true)。</summary>
+    public bool IsCameraPassthroughShowing => _passthroughLayer != null && _passthroughLayer.IsShowing;
     public float AppliedDownPitchDegrees { get; private set; }
     public bool FullBodyFitsInFov { get; private set; } = true;
 
@@ -128,6 +135,7 @@ public sealed class GlassViewRig : MonoBehaviour
         ReportOpticalFit();
         ApplyHudSafeArea();
         UpdateOutputCamera();
+        ApplyCameraPassthrough();
 
         Debug.Log($"[GLASS] 出力リグ起動: {profile} / 描画面 {Screen.width}x{Screen.height} " +
                  $"(アスペクト {ViewportAspect:F3} 期待 {profile.Aspect:F3} " +
@@ -146,6 +154,7 @@ public sealed class GlassViewRig : MonoBehaviour
         OrientationSource = HeadOrientationSource.PhoneCamera;
         AppliedDownPitchDegrees = 0f;
 
+        if (_passthroughLayer != null) _passthroughLayer.SetShowing(false);
         if (_outputCamera != null) _outputCamera.enabled = false;
         RestoreArCamera();
         RestoreHudSafeArea();
@@ -355,6 +364,25 @@ public sealed class GlassViewRig : MonoBehaviour
         _outputCamera.depth = arCamera != null ? arCamera.depth + 1f : 1f;
         _outputCamera.allowHDR = false;
         _outputCamera.allowMSAA = false;
+
+        _passthroughLayer = go.AddComponent<GlassPassthroughLayer>();
+        _passthroughLayer.Initialize(_outputCamera, arCamera);
+    }
+
+    /// <summary>
+    /// グラスの背景にカメラ映像を出すかを切り替える(開発者モード)。接続中ならすぐ反映し、
+    /// 未接続なら次の接続で使う。
+    /// </summary>
+    public void SetCameraPassthroughOnGlass(bool enabled)
+    {
+        cameraPassthroughOnGlass = enabled;
+        if (IsGlassOutputActive) ApplyCameraPassthrough();
+        Debug.Log($"[GLASS] グラスのカメラ映像を{(enabled ? "ON" : "OFF")}に設定");
+    }
+
+    private void ApplyCameraPassthrough()
+    {
+        if (_passthroughLayer != null) _passthroughLayer.SetShowing(cameraPassthroughOnGlass);
     }
 
     /// <summary>

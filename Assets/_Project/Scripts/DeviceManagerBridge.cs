@@ -35,6 +35,9 @@ public class DeviceManagerBridge : MonoBehaviour
         public float pitch;
         public float roll;
         public float timestamp;
+
+        // SetGlassPassthrough(開発者モード): グラスの背景にカメラ映像を出すか
+        public bool enabled;
     }
 
     [SerializeField] private ReadyCheckController readyCheck;
@@ -73,8 +76,8 @@ public class DeviceManagerBridge : MonoBehaviour
                     readyCheck.SetDeviceState("glass", ReadyCheckController.DeviceState.Connected);
                 IsGlassDisconnected = false;
 
-                // 光学シースルーのグラスへ出す間はカメラ映像を描かない。
-                // 現実の上に「現実の動画」を重ねると二重像になり全体が濁るため
+                // ARKitカメラの背景は止める(グラス出力中は何も描かないカメラになる)。
+                // グラスへのカメラ映像は出力リグが出す(既定ON・SetGlassPassthrough で切替)
                 SetPassthrough(false);
 
                 // グラスの画角・眼の位置で描く出力リグへ切り替える。
@@ -110,6 +113,14 @@ public class DeviceManagerBridge : MonoBehaviour
                 // AirPods の頭のヨー(基準は任意・右が正)
                 ApplyHeadYaw(cmd);
                 break;
+
+            case "SetGlassPassthrough":
+            {
+                var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+                if (rig != null) rig.SetCameraPassthroughOnGlass(cmd.enabled);
+                else Debug.LogWarning("[SWIFT BRIDGE] SetGlassPassthrough ignored — GlassViewRig not found.");
+                break;
+            }
 
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown device command: {cmd.command}");

@@ -324,7 +324,16 @@ final class UnityBridge: NSObject, ObservableObject {
         if pixelHeight > 0 { payload["pixelHeight"] = pixelHeight }
         if refreshHz > 0 { payload["refreshHz"] = refreshHz }
 
+        // グラスの背景のカメラ映像(開発者モード・既定ON)。接続より先に届くよう、その直前に送る
+        setGlassPassthrough(enabled: GlassPassthroughSetting.read(.standard))
         sendToUnity(object: "DeviceManager", method: "OnSwiftCommand", payload: payload)
+    }
+
+    /// 開発者モード: ARグラスの背景に iPhone のカメラ映像を出すか(既定ON)。
+    /// 接続中なら Unity はすぐ切り替え、未接続なら次の接続で使う
+    func setGlassPassthrough(enabled: Bool) {
+        sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
+                    payload: ["command": "SetGlassPassthrough", "enabled": enabled])
     }
 
     /// グラス実機の頭部姿勢をUnityへ渡す(度)。
@@ -702,6 +711,7 @@ final class UnityBridge: NSObject, ObservableObject {
     /// - 測位・頭部姿勢の連続ストリーム(UpdateMetrics / UpdateGlassPose / UpdateHeadYaw)は溜めない。
     ///   古い測位をまとめて流すと、Unity側はそれを「今届いた新鮮な測位」として扱ってしまう
     /// - グラスの接続/切断は状態なので最新の1件だけ残す
+    /// - グラスのカメラ映像の設定も状態なので最新の1件だけ
     /// - 履歴の要求も1件で足りる(ホーム・ルート選択・履歴画面が開くたびに要求し、応答は経路つきで約100KB)
     private func enqueueUntilReady(object: String, method: String, command: String, json: String) {
         switch command {
@@ -711,6 +721,8 @@ final class UnityBridge: NSObject, ObservableObject {
             pendingCommands.removeAll { $0.command == "ConnectXREAL" || $0.command == "DisconnectXREAL" }
         case "RequestHistory":
             pendingCommands.removeAll { $0.command == "RequestHistory" }
+        case "SetGlassPassthrough":
+            pendingCommands.removeAll { $0.command == "SetGlassPassthrough" }
         default:
             break
         }

@@ -29,6 +29,8 @@ struct DevModeView: View {
     @State private var autoRefresh = true
     /// 準備画面(S4)で ARグラスなしでも「次へ」を押せるようにする(既定 OFF — 仕様ではグラスは必須)
     @AppStorage(DeviceGate.allowRunWithoutGlassesKey) private var allowRunWithoutGlasses = false
+    /// ARグラスの背景に iPhone のカメラ映像を出す(既定 ON)
+    @AppStorage(GlassPassthroughSetting.key) private var glassPassthrough = GlassPassthroughSetting.defaultValue
     @State private var reportCopied = false
 
     private let accent = Color(red: 199.0 / 255.0, green: 242.0 / 255.0, blue: 25.0 / 255.0)
@@ -343,6 +345,27 @@ struct DevModeView: View {
                      : "OFF(仕様どおり)。グラスがつながるまで準備画面から先へ進めない")
                     .font(.system(size: 12))
                     .foregroundStyle(allowRunWithoutGlasses ? Color.orange : secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+
+            // グラスの背景のカメラ映像。設定はアプリに残り、接続のたびに Unity へ送る
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: $glassPassthrough) {
+                    Text("グラスにカメラ映像を出す")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .tint(accent)
+                .onChange(of: glassPassthrough) { _, on in
+                    bridge.setGlassPassthrough(enabled: on)
+                }
+                Text(glassPassthrough
+                     ? "ON(既定)。頭に付けた iPhone の映像をグラスの画角で背景に出す"
+                     : "OFF — グラスにはアバターとHUDだけ(レンズ越しの現実だけを見る)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(14)
