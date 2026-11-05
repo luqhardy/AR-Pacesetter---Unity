@@ -60,6 +60,8 @@
     <Compile Include="..\..\Assets\_Project\Scripts\RouteRecorder.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\RunSummaryText.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\RouteDeviation.cs" />
-    <Compile Include="..\..\Assets\_Project\Scripts\SelfPacedLead.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\PacesetterModel.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\PacesetterSound.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\StartLineCheckpoint.cs" />
   </ItemGroup>
 </Project>

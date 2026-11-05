@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-04 (3) — 自走モードをペースセッター仕様 v0.6 へ(`Docs/PACESETTER_BEHAVIOR_SPEC.md`)
+- アバターが `set_speed` で自分で走り、10m で待ち 3m で数歩かけて走り出す。遅れは取り戻さず(`lag` を残す)、抜かれると走者の後ろを走り続けて足音と呼吸だけで伝える。判定は `PacesetterModel`、音は `PacesetterSound`。既定の「走者+3m」は変えない。
+- GPS の1秒ごとの段差で gap が脈打つので `RunnerDistanceEstimator` でならす。ルート選択に「400mトラック 第1レーン」、iPhone の HUD に周回数と「あと◯m」。周の補正は `StartLineCheckpoint`(スタートラインの検知は U-07 が未決なので仮)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 525/525、Swift 構文 90 ファイル、E2E 368/368)。Swift の型検査・`swift test` は CI、実機は未確認。
+
 ### 2026-11-04 (2) — ARKit の位置が止まっても GPS の距離でアバターを進める
 - 走行中に ARKit が止まるとアバターが同じ場所に留まった(E2E で GPS 9m に対して 0.00m)。`ArTrackingWatch` が GPS とカメラの食い違いで検知し、`ArTrackingFallback` がカメラのリグごと進める。復帰時の飛びは吸収する。
 - 立っているだけ・GPSの飛び1回・GPSロスト中・展示デモでは動かない。開発者モードの診断に `ar.gpsFallback`。実機で止まった原因そのものは未確認。

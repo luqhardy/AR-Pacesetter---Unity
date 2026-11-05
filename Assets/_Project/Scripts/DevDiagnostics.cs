@@ -153,7 +153,9 @@ public static class DevDiagnostics
                     : "骨からの概算(メッシュを読めない — FBXのRead/Writeを確認)");
 
             Add(rows, "avatar.pacing", engine.IsSelfPaced
-                ? $"自走(目標ペース)— 前方 {Num(engine.DisplayedLeadDistanceMeters)}m"
+                ? (engine.IsPacesetterActive
+                    ? $"自走 {engine.PacesetterCurrentState} — gap {Num(engine.PacesetterGapMeters)}m / lag {Num(engine.PacesetterLagSeconds)}秒"
+                    : "自走(START 待ち)")
                 : "走者+3m(既定)");
 
             // 選んだルート(GPS)からの逸脱。実機で「案内された/されない」を確かめる

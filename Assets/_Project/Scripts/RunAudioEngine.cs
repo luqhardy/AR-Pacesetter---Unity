@@ -56,6 +56,10 @@ public class RunAudioEngine : MonoBehaviour
     private bool _stepAlternate = false;
     private float _breathPhase = 0f;
     private float _masterVolume;
+    // 距離に応じた音量の倍率(自走モード — PacesetterSound)。既定の走行では 1 のまま
+    private float _footstepGain = 1f;
+    private float _breathGain = 1f;
+    private const float GainSmoothing = 4f; // 急に変えない(時定数0.25秒)
     private bool _ambientLoud = false;
     private bool _startSignalPlayed = false;
     private bool _goalPlayed = false;
@@ -107,6 +111,7 @@ public class RunAudioEngine : MonoBehaviour
         if (avatarTransform == null) return;
 
         UpdateAmbientAdaptation();
+        UpdatePacesetterGains();
         UpdateFootsteps();
         UpdateBreathing();
         UpdateSystemCues();
@@ -183,6 +188,21 @@ public class RunAudioEngine : MonoBehaviour
         }
     }
 
+    // ── ペースセッターの距離と音（Docs/PACESETTER_BEHAVIOR_SPEC.md §6）──────────
+    // 音源はアバターの子なので、抜かれたあとは後方から聞こえる(R-32)。ここで決めるのは大きさだけ
+
+    private void UpdatePacesetterGains()
+    {
+        bool pacer = avatarEngine != null && avatarEngine.IsPacesetterActive;
+        PacesetterSoundMix mix = pacer
+            ? PacesetterSound.Evaluate(avatarEngine.PacesetterCurrentState, avatarEngine.PacesetterGapMeters)
+            : new PacesetterSoundMix(1f, 1f);
+
+        float factor = FrameSmoothing.Factor(Time.deltaTime, GainSmoothing);
+        _footstepGain = Mathf.Lerp(_footstepGain, mix.Footstep, factor);
+        _breathGain = Mathf.Lerp(_breathGain, mix.Breath, factor);
+    }
+
     // ── 足音（路面連動・速度連動・3D距離減衰）─────────────────────────────────
 
     private void UpdateFootsteps()
@@ -193,11 +213,13 @@ public class RunAudioEngine : MonoBehaviour
         _lastAvatarPos = avatarTransform.position;
 
         if (avatarEngine != null && !avatarEngine.IsRunMotionActive) return;
+        // 自走モードの足音はアバター自身の速さのテンポ(R-33)。走り出しはゆっくりから上がる
+        if (avatarEngine != null && avatarEngine.IsPacesetterActive)
+            speed = avatarEngine.PacesetterSpeedMetersPerSecond;
         if (speed < 0.3f) return; // standing still — no steps
 
         // Cadence rises with speed: walk ~1.8 steps/s, run ~3.0 steps/s
-        float stepsPerSecond = Mathf.Clamp(1.4f + speed * 0.35f, 1.6f, 3.2f);
-        _stepPhase += stepsPerSecond * Time.deltaTime;
+        _stepPhase += PacesetterSound.StepsPerSecond(speed) * Time.deltaTime;
 
         if (_stepPhase >= 1f)
         {
@@ -215,7 +237,7 @@ public class RunAudioEngine : MonoBehaviour
 
         // Left/right feet get slightly different pitches for realism
         _footstepSource.pitch = (_stepAlternate ? 1.0f : 0.94f) + Random.Range(-0.03f, 0.03f);
-        _footstepSource.PlayOneShot(clip, footstepLevel * _masterVolume);
+        _footstepSource.PlayOneShot(clip, footstepLevel * _masterVolume * _footstepGain);
 
         FootstepOccurred?.Invoke();
     }
@@ -262,7 +284,7 @@ public class RunAudioEngine : MonoBehaviour
 
         // Shaped inhale/exhale swell over the looping noise bed
         float swell = Mathf.Pow(Mathf.Abs(Mathf.Sin(_breathPhase * Mathf.PI)), 1.5f);
-        _breathSource.volume = breathLevel * _masterVolume * (0.25f + 0.75f * swell);
+        _breathSource.volume = breathLevel * _masterVolume * _breathGain * (0.25f + 0.75f * swell);
 
         // Faster HR -> slightly sharper (higher) breath timbre
         _breathSource.pitch = Mathf.Lerp(0.9f, 1.25f, Mathf.InverseLerp(100f, 190f, heartRate));
@@ -393,6 +415,7 @@ public class RunAudioEngine : MonoBehaviour
         if (spatial)
         {
             // Audible presence out to ~15m so the receding avatar fades naturally
+            // (PacesetterSound.SilentBehindMeters と揃えている)
             src.rolloffMode = AudioRolloffMode.Linear;
             src.minDistance = 1.0f;
             src.maxDistance = 15.0f;

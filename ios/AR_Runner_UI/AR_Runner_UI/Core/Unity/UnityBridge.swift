@@ -245,7 +245,7 @@ final class UnityBridge: NSObject, ObservableObject {
     ///   画面に適した意匠)。グラス出力中はUnityのF-07 HUDが担当する。
     func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
                       hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false,
-                      hudOnlyWithoutGps: Bool = false) {
+                      lapLengthMeters: Double? = nil, hudOnlyWithoutGps: Bool = false) {
         // 前回の走行の結果を消す。残すと、今回の SessionEnded が届かなかったときに
         // 結果画面が前回の数字を今回のものとして出す
         lastResult = nil
@@ -261,9 +261,13 @@ final class UnityBridge: NSObject, ObservableObject {
             payload["mode"] = "ghost"
             payload["ghostDateIso"] = ghost
         }
-        // アバターが目標ペースで走る(遅れると前へ離れる — AvatarPacing・既定は「走者+3m」)
+        // アバターが目標ペースで自分で走る(AvatarPacing・既定は「走者+3m」)
         if selfPaced {
             payload["selfPaced"] = true
+        }
+        // 選んだレーンの1周。周のチェックポイントに使う(TrackRoutes)
+        if let lapLengthMeters {
+            payload["lapLengthM"] = lapLengthMeters
         }
         // START の時点でGPSが使えなければHUDだけで始める(HudOnlyStart・既定はアバターを出す)
         if hudOnlyWithoutGps {
@@ -881,6 +885,9 @@ final class ARSessionManager: ObservableObject {
     /// 設定ペース(推定距離の算出に使う)
     private var configuredPaceKmH: Double = 0
 
+    /// この走行で選んだレーンの1周(m)。レーン以外は nil(グラス切断からの再スタートでも保つ)
+    private(set) var lapLengthMeters: Double?
+
     /// 速度のならし(PaceMetrics)。走行開始で作り直す
     private var speedSmoother = SpeedSmoother()
 
@@ -902,8 +909,9 @@ final class ARSessionManager: ObservableObject {
 
     func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
                hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false,
-               hudOnlyWithoutGps: Bool = false) {
+               lapLengthMeters: Double? = nil, hudOnlyWithoutGps: Bool = false) {
         isSessionActive = true
+        self.lapLengthMeters = lapLengthMeters
         startDate = Date()
         elapsedSeconds = 0
         currentDistance = 0
@@ -930,7 +938,7 @@ final class ARSessionManager: ObservableObject {
         bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm,
                             ghostDateIso: ghostDateIso, hideUnityHud: hideUnityHud,
                             routeLatLon: routeLatLon, selfPaced: selfPaced,
-                            hudOnlyWithoutGps: hudOnlyWithoutGps)
+                            lapLengthMeters: lapLengthMeters, hudOnlyWithoutGps: hudOnlyWithoutGps)
 
         // 実測が届くたびに送る — 画面ロック中もCoreLocationは動き続けるため、
         // タイマーが止まってもUnityへの供給が途切れない(M3)

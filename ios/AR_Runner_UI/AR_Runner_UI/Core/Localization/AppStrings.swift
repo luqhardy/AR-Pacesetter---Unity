@@ -173,6 +173,7 @@ enum AppStrings {
         static let estimatedTime: LocalizedStringKey = "route.estimatedTime"
         static let pace: LocalizedStringKey = "route.pace"
         static var generatedTitle: String { resolve("route.generated.title") }
+        static var trackLane1Title: String { resolve("route.track.lane1") }
         static let generatedNote: LocalizedStringKey = "route.generated.note"
         static let generatedNoLocation: LocalizedStringKey = "route.generated.noLocation"
         static let guidanceToggle: LocalizedStringKey = "route.guidance.toggle"
@@ -337,6 +338,9 @@ enum AppStrings {
     enum Formats {
         static func routeDistance(_ km: Double) -> String {
             String(format: resolve("format.route.distance"), locale: .appLanguage, km)
+        }
+        static func lapProgress(_ lap: Int, _ remainingMeters: Int) -> String {
+            String(format: resolve("format.running.lapProgress"), locale: .appLanguage, lap, remainingMeters)
         }
         static func paceWheel(_ kmh: Double, _ perKm: String) -> String {
             String(format: resolve("format.settings.paceWheel"), locale: .appLanguage, kmh, perKm)

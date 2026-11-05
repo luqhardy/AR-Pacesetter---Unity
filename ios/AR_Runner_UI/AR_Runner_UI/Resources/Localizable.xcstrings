@@ -240,13 +240,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The avatar runs at your target pace. If you fall behind it pulls ahead (up to 9.5 m), and it comes back as you speed up. Its colour, the light line and a beckoning wave show when you're behind"
+            "value" : "The avatar runs at your target pace on its own. If it gets 10 m ahead it stops and waits, and sets off again when you close to 3 m. Pass it and you'll hear its footsteps and breathing behind you"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アバターは目標ペースで走ります。遅れると前へ離れていき(最大9.5m)、速く走ると近づきます。色・光のライン・手招きで遅れを知らせます"
+            "value" : "アバターは目標ペースで自分で走ります。10m離れるとその場で待ち、3mまで近づくと走り出します。追い抜くと、後ろから足音と呼吸が聞こえます"
           }
         }
       }
@@ -1792,6 +1792,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "距離%.2fkm"
+          }
+        }
+      }
+    },
+    "format.running.lapProgress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lap %1$d · %2$d m to go"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$d周目・あと%2$dm"
           }
         }
       }
@@ -3443,6 +3460,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ルートを選択"
+          }
+        }
+      }
+    },
+    "route.track.lane1" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "400 m track, lane 1"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "400mトラック 第1レーン"
           }
         }
       }

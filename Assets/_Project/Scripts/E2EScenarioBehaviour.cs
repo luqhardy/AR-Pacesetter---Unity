@@ -1756,6 +1756,10 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return WaitScaled(0.2f);
     }
 
+    /// <summary>
+    /// 自走モード(Docs/PACESETTER_BEHAVIOR_SPEC.md)。状態遷移は Tests/UnitTests で縛っているので、
+    /// ここでは AvatarEngine へ組み込んだときに世界座標のアバターが仕様どおり動くかを見る
+    /// </summary>
     private IEnumerator RunSelfPacedTest(ARSessionManagerBridge bridge, AvatarEngine engine)
     {
         bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
@@ -1768,38 +1772,131 @@ public class E2EScenarioBehaviour : MonoBehaviour
         float startWait = 0f;
         while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
         Check(engine.IsRunMotionActive, "pace-mode: the self-paced run starts");
+        yield return null;
+        yield return null;
 
         Vector3 dir = Vector3.forward;
-        // 目標ペースどおり(13km/h ≒ 3.6m/s)— 前方距離はほぼ3m
-        for (float t = 0f; t < 3f; t += Time.deltaTime)
-        {
-            MoveRig(dir * 3.6f * Time.deltaTime);
-            yield return null;
-        }
-        float onPaceLead = engine.DisplayedLeadDistanceMeters;
-        // 遅れを速さの積分で取っていたときは、目標ペースどおりでも 8.2m に出ていた(平滑化の立ち上がりの偏り)
-        Check(onPaceLead < 4.5f, $"pace-mode: on target pace the avatar stays near 3m ({onPaceLead:F1}m)");
 
-        // 遅い(1.5m/s)— 遅れた分だけ前へ離れる。9.5m で止まり、離隔待機(10m)には入らない
-        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        // R-01: 走り出すまではその場に立って待つ
+        for (float t = 0f; t < 1f; t += Time.deltaTime) yield return null;
+        Check(engine.IsPacesetterActive && engine.PacesetterCurrentState == PacesetterState.Start,
+              $"pace-mode: the avatar stands until the runner moves ({engine.PacesetterCurrentState})");
+        Check(Mathf.Abs(engine.PacesetterGapMeters - 3f) < 0.3f,
+              $"pace-mode: the avatar starts 3m ahead ({engine.PacesetterGapMeters:F2}m)");
+
+        // T-01: 走者も数歩かけて走り出す
+        float elapsed = 0f;
+        while (engine.PacesetterCurrentState == PacesetterState.Start && elapsed < 5f)
         {
             MoveRig(dir * 1.5f * Time.deltaTime);
+            elapsed += Time.deltaTime;
             yield return null;
         }
-        float behindLead = engine.DisplayedLeadDistanceMeters;
-        Check(behindLead > onPaceLead + 3f && behindLead <= SelfPacedLead.MaxDisplayedLeadMeters + 0.01f,
-              $"pace-mode: falling behind lets the avatar pull ahead ({onPaceLead:F1}m -> {behindLead:F1}m)");
-        Check(!engine.IsWaitingForUser, "pace-mode: pulling ahead stays short of the 10m wait-for-runner");
+        Check(engine.PacesetterCurrentState == PacesetterState.Run, "pace-mode: T-01 the avatar runs when the runner moves");
+        Check(engine.PacesetterSpeedMetersPerSecond < 1.5f,
+              $"pace-mode: it accelerates over a few steps ({engine.PacesetterSpeedMetersPerSecond:F2}m/s)");
 
-        // 速い(6m/s)— 近づく
-        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        for (float t = 0f; t < 3f; t += Time.deltaTime)
         {
-            MoveRig(dir * 6f * Time.deltaTime);
+            MoveRig(dir * Mathf.Max(1.5f, engine.PacesetterSpeedMetersPerSecond) * Time.deltaTime);
             yield return null;
         }
-        float catchUpLead = engine.DisplayedLeadDistanceMeters;
-        Check(catchUpLead < behindLead - 3f,
-              $"pace-mode: running faster closes the gap ({behindLead:F1}m -> {catchUpLead:F1}m)");
+
+        // S-01: 同じ速さなら距離は変わらず、世界座標のアバターもその距離にいる
+        float onPaceGap = engine.PacesetterGapMeters;
+        for (float t = 0f; t < 3f; t += Time.deltaTime)
+        {
+            MoveRig(dir * engine.GetBaseTargetSpeed() * Time.deltaTime);
+            yield return null;
+        }
+        Check(Mathf.Abs(engine.PacesetterGapMeters - onPaceGap) < 0.5f,
+              $"pace-mode: S-01 at the set speed the gap holds ({onPaceGap:F1}m -> {engine.PacesetterGapMeters:F1}m)");
+        float worldLead = Vector3.Dot(engine.transform.position - _cameraMover.position, dir);
+        Check(Mathf.Abs(worldLead - engine.PacesetterGapMeters) < 1.0f,
+              $"pace-mode: the avatar is where the gap says ({worldLead:F1}m vs {engine.PacesetterGapMeters:F1}m)");
+
+        // S-02: 遅いと離れていき、10m で止まって待つ
+        elapsed = 0f;
+        while (engine.PacesetterCurrentState != PacesetterState.Wait && elapsed < 15f)
+        {
+            MoveRig(dir * 1.0f * Time.deltaTime);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.PacesetterCurrentState == PacesetterState.Wait && engine.IsWaitingForUser,
+              "pace-mode: S-02 the avatar waits at a 10m gap");
+        yield return null;
+        yield return null;
+        Vector3 waitingAt = engine.transform.position;
+        Check(engine.GetTargetSpeed() == 0f, "pace-mode: the wait stops the running animation");
+
+        // S-03 / R-12: 3m まで近づくと走り出す。その間アバターは動かず、遅れは取り戻さない
+        float waitLag = engine.PacesetterLagSeconds;
+        elapsed = 0f;
+        while (engine.PacesetterCurrentState == PacesetterState.Wait && elapsed < 15f)
+        {
+            MoveRig(dir * 4f * Time.deltaTime);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.PacesetterCurrentState == PacesetterState.Run,
+              $"pace-mode: S-03 the avatar runs again at a 3m gap ({engine.PacesetterGapMeters:F1}m)");
+        Vector3 moved = engine.transform.position - waitingAt;
+        moved.y = 0f;
+        Check(moved.magnitude < 0.5f, $"pace-mode: the avatar stayed put while waiting ({moved.magnitude:F2}m)");
+        Check(engine.PacesetterSpeedMetersPerSecond < engine.GetBaseTargetSpeed() * 0.5f,
+              $"pace-mode: T-03 it accelerates again ({engine.PacesetterSpeedMetersPerSecond:F2}m/s)");
+        Check(engine.PacesetterLagSeconds > 0f && waitLag > 0f, "pace-mode: S-07 the lag remains for the goal");
+
+        // S-04: 追い抜くとアバターは走者の後ろを走り続ける。抜き返したり道を譲ったりしない
+        elapsed = 0f;
+        while (engine.PacesetterCurrentState != PacesetterState.Overtaken && elapsed < 15f)
+        {
+            MoveRig(dir * 7f * Time.deltaTime);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.PacesetterCurrentState == PacesetterState.Overtaken,
+              $"pace-mode: S-04 passing the avatar leaves it behind ({engine.PacesetterGapMeters:F1}m)");
+        Check(engine.CurrentOvertakeState == AvatarEngine.OvertakeState.None, "pace-mode: no sprint or sidestep state");
+        for (float t = 0f; t < 2f; t += Time.deltaTime)
+        {
+            MoveRig(dir * 7f * Time.deltaTime);
+            yield return null;
+        }
+        float behind = Vector3.Dot(engine.transform.position - _cameraMover.position, dir);
+        Check(behind < -1f, $"pace-mode: the avatar is behind the runner, out of view ({behind:F1}m)");
+
+        // S-05: 減速するとアバターが前へ戻る
+        elapsed = 0f;
+        while (engine.PacesetterCurrentState == PacesetterState.Overtaken && elapsed < 20f)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.PacesetterCurrentState == PacesetterState.Run,
+              $"pace-mode: S-05 the avatar comes back past the runner ({engine.PacesetterGapMeters:F1}m)");
+
+        // S-08: 補正が入ってもアバターは瞬間移動しない
+        for (float t = 0f; t < 2f; t += Time.deltaTime)
+        {
+            MoveRig(dir * engine.GetBaseTargetSpeed() * Time.deltaTime);
+            yield return null;
+        }
+        float beforeCorrection = engine.PacesetterGapMeters;
+        Vector3 beforePosition = engine.transform.position;
+        Check(engine.ApplyPacesetterCorrection(5.0), "pace-mode: a large drift is corrected");
+        yield return null;
+        yield return null;
+        Check(Mathf.Abs(engine.PacesetterGapMeters - beforeCorrection) < 0.5f, "pace-mode: S-08 the correction does not jump");
+        Check((engine.transform.position - beforePosition).magnitude < 1.5f, "pace-mode: S-08 the avatar does not teleport");
+        for (float t = 0f; t < 3.5f; t += Time.deltaTime)
+        {
+            MoveRig(dir * engine.GetBaseTargetSpeed() * Time.deltaTime);
+            yield return null;
+        }
+        Check(Mathf.Abs(engine.PacesetterGapMeters - (beforeCorrection - 5f)) < 1.0f,
+              $"pace-mode: S-08 the correction arrives within seconds ({beforeCorrection:F1}m -> {engine.PacesetterGapMeters:F1}m)");
 
         // 既定に戻る(次の走行で selfPaced が無ければ「走者+3m」)
         bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
