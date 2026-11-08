@@ -4,6 +4,10 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-07 — 外部画面なしの手動「接続」で iPhone のカメラ映像が消えないようにする
+- グラス無しで準備画面の「接続」を押すと Unity がグラス扱いになり、`ARCameraBackground` が止まって iPhone にグラス用の描画が出たまま戻らなかった。未検出なら `ConnectXREAL` に `phoneDisplayOnly` を付け、Ready だけ更新して描画は iPhone のままにする(ミラーリング中の予備手段は変えない)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 525/525、Swift 構文 90 ファイル、E2E 373/373)。Swift の型検査・`swift test` は CI、実機は未確認。
+
 ### 2026-11-04 (3) — 自走モードをペースセッター仕様 v0.6 へ(`Docs/PACESETTER_BEHAVIOR_SPEC.md`)
 - アバターが `set_speed` で自分で走り、10m で待ち 3m で数歩かけて走り出す。遅れは取り戻さず(`lag` を残す)、抜かれると走者の後ろを走り続けて足音と呼吸だけで伝える。判定は `PacesetterModel`、音は `PacesetterSound`。既定の「走者+3m」は変えない。
 - GPS の1秒ごとの段差で gap が脈打つので `RunnerDistanceEstimator` でならす。ルート選択に「400mトラック 第1レーン」、iPhone の HUD に周回数と「あと◯m」。周の補正は `StartLineCheckpoint`(スタートラインの検知は U-07 が未決なので仮)。

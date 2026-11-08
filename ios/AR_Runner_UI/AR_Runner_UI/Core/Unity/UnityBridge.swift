@@ -321,8 +321,11 @@ final class UnityBridge: NSObject, ObservableObject {
     /// - Note: 画角も機種名もグラスからは取得できない(XREALのSDKはAndroid専用で、
     ///   USB-HIDもiOSアプリからは触れない)。iOSが知っているのは解像度とリフレッシュレートだけ。
     ///   1920×1080 は One / One Pro / Air2 で共通のためUnity側は XREAL One を既定に落とす。
-    func connect(model: String? = nil, pixelWidth: Int = 0, pixelHeight: Int = 0, refreshHz: Double = 0) {
+    /// - Parameter phoneDisplayOnly: 外部画面が無いときの手動接続。Unity は描画を iPhone のままにする
+    func connect(model: String? = nil, pixelWidth: Int = 0, pixelHeight: Int = 0, refreshHz: Double = 0,
+                 phoneDisplayOnly: Bool = false) {
         var payload: [String: Any] = ["command": "ConnectXREAL"]
+        if phoneDisplayOnly { payload["phoneDisplayOnly"] = true }
         if let model, !model.isEmpty { payload["model"] = model }
         if pixelWidth > 0 { payload["pixelWidth"] = pixelWidth }
         if pixelHeight > 0 { payload["pixelHeight"] = pixelHeight }

@@ -24,6 +24,8 @@ final class GlassConnectionStatusTests: XCTestCase {
         XCTAssertTrue(GlassRowStatus.mirroring.canConnectManually)
         XCTAssertFalse(GlassRowStatus.connected.canConnectManually)
         XCTAssertFalse(GlassRowStatus.manual.canConnectManually)
+        XCTAssertTrue(GlassRowStatus.notDetected.manualConnectStaysOnPhone, "外部画面が無ければ iPhone のカメラ映像を残す")
+        XCTAssertFalse(GlassRowStatus.mirroring.manualConnectStaysOnPhone, "ミラーリング中はグラスにその描画が映る")
     }
 
     func testGpsLostHandlingReadsUnitysDiagnosticsValue() {

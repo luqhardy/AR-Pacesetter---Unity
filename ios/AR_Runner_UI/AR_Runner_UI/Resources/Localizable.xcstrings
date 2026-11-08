@@ -1612,13 +1612,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No glasses detected. The glasses view was turned on manually"
+            "value" : "No glasses detected. Continuing on the iPhone screen"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "グラスは検出されていません。手動でグラス用の表示にしています"
+            "value" : "グラスは検出されていません。iPhoneの画面で続けます"
           }
         }
       }

@@ -23,6 +23,10 @@ nonisolated enum GlassRowStatus: Equatable {
 
     /// 手動の接続を押せるか(実接続も手動接続もしていないとき)
     var canConnectManually: Bool { self == .notDetected || self == .mirroring }
+
+    /// 手動の接続でも描画を iPhone に残すか。外部画面が無いのにグラス用の描画へ切り替えると、
+    /// iPhone のカメラ映像(ARCameraBackground)が止まる。ミラーリング中はグラスにその描画が映るので切り替える
+    var manualConnectStaysOnPhone: Bool { self == .notDetected }
 }
 
 // MARK: - 準備画面(S4)の「次へ」とエラー表示

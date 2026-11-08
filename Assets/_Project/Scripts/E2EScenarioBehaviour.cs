@@ -647,6 +647,27 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Camera phoneCamera = Camera.main;
             int phoneCullingMask = phoneCamera != null ? phoneCamera.cullingMask : 0;
 
+            // 外部画面が無いときの手動接続: iPhone の画面にカメラ映像を残す
+            // (以前はグラス用の描画へ切り替わり、ARCameraBackground が止まったままになった)
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"phoneDisplayOnly\":true}");
+            yield return null;
+            Check(passthrough.IsPassthroughEnabled,
+                "manual-connect: camera feed stays on the phone when there is no external screen");
+            Check(glassRig == null || !glassRig.IsGlassOutputActive,
+                "manual-connect: the glass rig does not take over the phone screen");
+            Check(phoneCamera == null || phoneCamera.cullingMask == phoneCullingMask,
+                "manual-connect: the AR camera keeps drawing");
+
+            // ミラーリング中の手動接続(メトリクスなし)はグラス用の描画のまま。抜いた後の手動接続で解ける
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");
+            yield return null;
+            Check(glassRig == null || glassRig.IsGlassOutputActive,
+                "manual-connect: while mirroring, the rig still renders for the glasses");
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"phoneDisplayOnly\":true}");
+            yield return null;
+            Check(passthrough.IsPassthroughEnabled && (glassRig == null || !glassRig.IsGlassOutputActive),
+                "manual-connect: after the glasses are gone, a manual connect returns rendering to the phone");
+
             deviceBridge.OnSwiftCommand(
                 "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
             yield return null;
