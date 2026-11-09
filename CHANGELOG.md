@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-09 — ドキュメントを実装に合わせる(自走モード・障害物検知)
+- HANDOVER §2・SWIFT_INTEGRATION の `StartSession` が廃止済みの `SelfPacedLead`/`SelfPacedTarget` を指していたので `PacesetterModel` へ(SWIFT_INTEGRATION の `lapLengthM` に混ざっていた旧文も削除)。
+- AGENTS §4.2 の障害物検知を実装どおり `CapsuleCastNonAlloc`(半径0.3m・床から0.4〜1.5m)へ。コード変更なし。
+- 検証: ドキュメントのみ(直前の verify.sh は ALL CHECKS PASSED — dotnet test 525/525、E2E 373/373)。
+
 ### 2026-11-07 — 外部画面なしの手動「接続」で iPhone のカメラ映像が消えないようにする
 - グラス無しで準備画面の「接続」を押すと Unity がグラス扱いになり、`ARCameraBackground` が止まって iPhone にグラス用の描画が出たまま戻らなかった。未検出なら `ConnectXREAL` に `phoneDisplayOnly` を付け、Ready だけ更新して描画は iPhone のままにする(ミラーリング中の予備手段は変えない)。
 - 検証: verify.sh ALL CHECKS PASSED(dotnet test 525/525、Swift 構文 90 ファイル、E2E 373/373)。Swift の型検査・`swift test` は CI、実機は未確認。

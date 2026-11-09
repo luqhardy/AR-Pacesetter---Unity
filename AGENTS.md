@@ -124,9 +124,10 @@ P_avatar = P_user + 3.0 × V_forward
 
 ### 4.2 Ground Snap & Vertical Smoothing (LiDAR Enhanced)
 - **Vertical Threshold**: 接地面の高さ変化が ±15cm を超えたら即スナップせず、**0.3秒**かけて補間
-  (`Mathf.SmoothDamp`)。垂直レイは `Physics.RaycastAll(origin, down, 20m)`。
+  (`Mathf.SmoothDamp`)。垂直レイは `Physics.RaycastNonAlloc(origin, down, 20m)`。
 - **Cliff/Obstacle Exception**: 前方 **3.0m** 以内に高さ **1.5m** 以上の崖・壁を検知したら
-  (`Physics.SphereCastAll`, 半径0.4m)前進を止め、ユーザーと向き合う「その場ジョグ」で待つ。
+  (`Physics.CapsuleCastNonAlloc`, 半径0.3m・床から0.4〜1.5mの高さ帯 — 縁石など低い障害物も拾う)
+  前進を止め、ユーザーと向き合う「その場ジョグ」で待つ。
 - **足のめり込み補正**: GroundSnap はアバターの原点を床に合わせ、`FootPlanting` が立脚期の足裏を床へ合わせる(§6)。
 
 ### 4.3 Analytics & Environmental Models
