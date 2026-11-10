@@ -218,8 +218,8 @@ public class AvatarEngine : MonoBehaviour
         // Always update speed maintenance to ensure multipliers are fresh
         UpdateSpeedMaintenance();
 
-        // 自走モード(既定OFF): 目標ペースの距離を毎フレーム進め、走った距離との差だけ前後へずらす
-        UpdateSelfPacedLead();
+        // 自走モード(既定OFF): ペースセッターの状態を進める(PacesetterModel)
+        UpdatePacesetter();
 
         // フレーム時間の基準は毎フレーム更新する(停止・慣性中のフレームも基準に含める)
         bool jitterFrame = _jitterGuard.ShouldPredict(Time.deltaTime);
@@ -362,8 +362,9 @@ public class AvatarEngine : MonoBehaviour
         else
         {
             // ── Overtake detection & state machine (Features #8 & #9) ────────────
-            // 瞬間速度(フレーム移動量÷dt)を使うので、変動フレームでは判定しない
-            UpdateOvertakeState();
+            // 瞬間速度(フレーム移動量÷dt)を使うので、変動フレームでは判定しない。
+            // 自走モードの追い抜きは PacesetterModel が持つ(道を譲らず、抜き返さない — R-06)
+            if (!IsSelfPaced) UpdateOvertakeState();
 
             // ── Compute filtered anchor position ──────────────────────────────────
             Vector3 rawAnchor = userCamera.position
@@ -432,7 +433,7 @@ public class AvatarEngine : MonoBehaviour
         else
         {
             // 直前の移動が測れない(開始直後など)ときだけ目標ペースで代用する
-            _inertialVelocity = _currentLinearDirection * GetTargetSpeed();
+            _inertialVelocity = _currentLinearDirection * GetBaseTargetSpeed();
             Debug.Log($"[PACER ENGINE] GPSロスト — 直前の移動が無いため目標ペース {_inertialVelocity.magnitude:F2}m/s で慣性移動");
         }
     }
@@ -467,6 +468,12 @@ public class AvatarEngine : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     private void UpdateWaitForUserState()
     {
+        if (IsPacesetterActive)
+        {
+            ApplyPacesetterWait();
+            return;
+        }
+
         Vector3 toAvatar = transform.position - userCamera.position;
         toAvatar.y = 0;
         float separation = toAvatar.magnitude;
@@ -610,6 +617,13 @@ public class AvatarEngine : MonoBehaviour
     // ════════════════════════════════════════════════════════════════════════
     private void UpdateSpeedMaintenance()
     {
+        // 自走モードのアバターは set_speed で走る。遅れを取り戻さず、走者に合わせて伸び縮みしない(R-12)
+        if (IsSelfPaced)
+        {
+            _effectiveSpeedMultiplier = 1.0f;
+            return;
+        }
+
         // Current real distance between user and avatar anchor
         Vector3 toAvatar         = _targetPacingPosition - userCamera.position;
         toAvatar.y               = 0;
@@ -1021,37 +1035,69 @@ public class AvatarEngine : MonoBehaviour
         _presentationLeadOffsetMeters = displayed - leadDistanceMeters;
     }
 
-    private float DisplayedLeadMeters => leadDistanceMeters + _presentationLeadOffsetMeters + _selfPacedLeadOffsetMeters;
+    private float DisplayedLeadMeters => IsPacesetterActive
+        ? (float)_pacesetter.Gap
+        : leadDistanceMeters + _presentationLeadOffsetMeters;
 
-    // ── 自走モード(タスク表「指定した速さで走る」・既定OFF — SelfPacedLead)──────────────
-    // 既定は「走者+3m」に付いていく(§6)。自走モードでは目標ペースで走ったときの位置へずらす:
-    // 遅れた分だけ前へ離れ、速ければ近づく(0.8〜9.5m)。遅れ = START から走った距離(RunSessionController の
-    // 正規の距離)− 目標ペースで進んだ距離(HUD のタイムで積算 — SelfPacedTarget)
-    private float _selfPacedLeadOffsetMeters;
-    private readonly SelfPacedTarget _selfPacedTarget = new SelfPacedTarget();
+    // ── 自走モード(Docs/PACESETTER_BEHAVIOR_SPEC.md・既定OFF — PacesetterModel)──────────────
+    // 既定は「走者+3m」に付いていく(§6)。自走モードのアバターは set_speed で自分で走り、
+    // 前方距離は gap そのもの。10m 離れたらその場で待ち、抜かれたら走者の後ろを走り続ける(負の前方距離 =
+    // 走者の後ろなのでグラスの視野に入らず、振り返ればそこにいる — R-30)
+    private readonly PacesetterModel _pacesetter = new PacesetterModel();
+    private readonly RunnerDistanceEstimator _runnerDistance = new RunnerDistanceEstimator();
+    private StartLineCheckpoint _startLine;
+    private double _lapLengthMeters;
+    private bool _pacesetterBegun;
+    private Vector3 _pacesetterLastCamera;
     private RunSessionController _runSession;
     private System.DateTime _selfPacedLastUtc = System.DateTime.MinValue;
 
     /// <summary>自走モードか(StartSession の selfPaced。走行ごとに決め直す)</summary>
     public bool IsSelfPaced { get; private set; }
 
-    /// <summary>自走モードの切り替え。ずらしは0から始める</summary>
+    /// <summary>自走モードで走行が始まっているか(START 後)</summary>
+    public bool IsPacesetterActive => IsSelfPaced && _pacesetterBegun;
+
+    public PacesetterState PacesetterCurrentState => _pacesetter.State;
+    /// <summary>gap(m)。正 = アバターが前。抜かれていると負</summary>
+    public float PacesetterGapMeters => (float)_pacesetter.Gap;
+    /// <summary>今のアバターの速さ(m/s)。加速中は set_speed より遅く、待っている間は 0</summary>
+    public float PacesetterSpeedMetersPerSecond => (float)_pacesetter.CurrentSpeedMetersPerSecond;
+    /// <summary>「◯秒遅れ」の元(R-13)。表示形式は U-06 で未決</summary>
+    public float PacesetterLagSeconds => (float)_pacesetter.LagSeconds;
+    /// <summary>チェックポイントの補正を入れる(GPS の通過検知と E2E が使う)</summary>
+    public bool ApplyPacesetterCorrection(double deltaMeters) => _pacesetter.ApplyCheckpointCorrection(deltaMeters);
+
+    /// <summary>自走モードの切り替え</summary>
     public void SetSelfPaced(bool selfPaced)
     {
         IsSelfPaced = selfPaced;
-        _selfPacedLeadOffsetMeters = 0f;
-        _selfPacedTarget.Reset();
+        _pacesetterBegun = false;
         _selfPacedLastUtc = System.DateTime.MinValue;
     }
 
-    /// <summary>自走モードの遅れ(m・遅れは負)。診断・E2E 用</summary>
-    public float SelfPacedDeviationMeters { get; private set; }
+    /// <summary>選んだレーンの1周(m)。トラック以外は 0 で、チェックポイントを使わない</summary>
+    public void SetLapLength(double lapLengthMeters)
+    {
+        _lapLengthMeters = lapLengthMeters > 0.0 ? lapLengthMeters : 0.0;
+    }
+
+    /// <summary>新鮮な測位を受ける。周の境目を通ったら距離を補正する(R-20)</summary>
+    public void ReportStartLineFix(double latitude, double longitude, float accuracyMeters)
+    {
+        if (!IsPacesetterActive || _startLine == null) return;
+        if (!_startLine.Report(latitude, longitude, accuracyMeters, _pacesetter.UserPos, out double correction)) return;
+
+        bool applied = ApplyPacesetterCorrection(correction);
+        Debug.Log($"[PACER ENGINE] スタートライン通過 — 距離の差 {correction:F1}m" +
+                  (applied ? "(数秒かけて補正)" : "(小さいので補正しない)"));
+    }
 
     /// <summary>
-    /// START 後〜終了前の毎フレーム、目標ペースの距離を進め、走った距離との差からずらしを取り直す。
-    /// 慣性移動・ルート案内・停止の間も目標は進む(アバターは目標ペースで走り続けている扱い)
+    /// START 後〜終了前の毎フレーム、状態を進める。
+    /// 慣性移動・ルート案内・停止の間も止めない(アバターは走り続けている扱い)
     /// </summary>
-    private void UpdateSelfPacedLead()
+    private void UpdatePacesetter()
     {
         if (!IsSelfPaced || !_hasStarted || !_runMotionActive || IsSessionEnded)
         {
@@ -1061,23 +1107,61 @@ public class AvatarEngine : MonoBehaviour
         if (_runSession == null) _runSession = FindFirstObjectByType<RunSessionController>(FindObjectsInactive.Include);
         if (_runSession == null) return;
 
+        double authoritative = _runSession.AuthoritativeDistanceMeters;
+        if (!_pacesetterBegun)
+        {
+            _pacesetterBegun = true;
+            _pacesetter.Begin(_calculatedTargetSpeedMetersPerSecond, authoritative, leadDistanceMeters);
+            _runnerDistance.Reset(authoritative);
+            _startLine = _lapLengthMeters > 0.0 ? new StartLineCheckpoint(_lapLengthMeters) : null;
+            _pacesetterLastCamera = userCamera.position;
+        }
+
         System.DateTime now = System.DateTime.UtcNow;
         double seconds = Time.deltaTime;
         if (_selfPacedLastUtc != System.DateTime.MinValue)
-            seconds += SelfPacedTarget.MissedSeconds((now - _selfPacedLastUtc).TotalSeconds, Time.deltaTime, Time.timeScale);
+            seconds += PacesetterModel.MissedSeconds((now - _selfPacedLastUtc).TotalSeconds, Time.deltaTime, Time.timeScale);
         _selfPacedLastUtc = now;
 
-        _selfPacedTarget.Add(seconds, PaceSynchronicityMath.PaceToMetersPerSecond(TargetPaceMinutesPerKm));
-        SelfPacedDeviationMeters = _selfPacedTarget.DeviationMeters(_runSession.AuthoritativeDistanceMeters);
-        _selfPacedLeadOffsetMeters = SelfPacedLead.LeadOffset(leadDistanceMeters, SelfPacedDeviationMeters);
+        Vector3 moved = userCamera.position - _pacesetterLastCamera;
+        moved.y = 0f;
+        _pacesetterLastCamera = userCamera.position;
+
+        double userPos = _runnerDistance.Update(seconds, Vector3.Dot(moved, _currentLinearDirection), authoritative);
+        _pacesetter.Tick(seconds, userPos, PaceSynchronicityMath.PaceToMetersPerSecond(TargetPaceMinutesPerKm));
+
+        // 通過のときは走者の横を抜ける(§6)
+        float lateral = (float)PacesetterModel.PassingLateralMeters(_pacesetter.Gap, overtakenSidestepMeters);
+        _sidestepOffset = Vector3.Cross(Vector3.up, _currentLinearDirection).normalized * lateral;
+    }
+
+    /// <summary>WAIT の出入りをアバターの動きへ写す。判定は PacesetterModel(10m で待ち、3m で走り出す)</summary>
+    private void ApplyPacesetterWait()
+    {
+        bool waiting = _pacesetter.State == PacesetterState.Wait;
+        if (waiting == _isWaitingForUser) return;
+
+        _isWaitingForUser = waiting;
+        if (waiting)
+        {
+            SendSafeAnimatorTrigger("Beckon");
+            Debug.Log($"[PACER ENGINE] gap {_pacesetter.Gap:F1}m — その場で待つ(T-02)");
+        }
+        else
+        {
+            ResyncAfterPause();
+            SendSafeAnimatorTrigger("RunResume");
+            Debug.Log($"[PACER ENGINE] gap {_pacesetter.Gap:F1}m — 走り出す(T-03)");
+        }
     }
 
     /// <summary>
-    /// 実際にアバターを置いている前方距離(m)= 目標リード + 展示デモのずらし + 自走モードのずらし。
-    /// 既定の本番走行では目標リードと同じ。
+    /// 実際にアバターを置いている前方距離(m)。既定の本番走行では目標リードと同じ。
     /// グラスの俯角はこの距離で決める(9m先へ離れたとき頭が視野の上へ切れないように)。
+    /// 自走モードで走者の横や後ろにいるときは <see cref="MinDisplayedLeadMeters"/> で頭打ち — 俯角の計算に負の距離を渡さない
     /// </summary>
-    public float DisplayedLeadDistanceMeters => DisplayedLeadMeters;
+    public float DisplayedLeadDistanceMeters =>
+        IsPacesetterActive ? Mathf.Max(DisplayedLeadMeters, MinDisplayedLeadMeters) : DisplayedLeadMeters;
 
     // ── 展示デモ: アバターを来場者の正面に保つ ───────────────────────────────
     // §4.1 の Gaze Lock(視線を進行方向に使わない)は**走行中の**酔い防止のための約束で、
@@ -1192,8 +1276,9 @@ public class AvatarEngine : MonoBehaviour
         _sprintTimer = 0f;
         _sidestepOffset = Vector3.zero;
         _presentationLeadOffsetMeters = 0f;
-        _selfPacedLeadOffsetMeters = 0f;
-        _selfPacedTarget.Reset();
+        _pacesetterBegun = false;
+        _startLine = null;
+        _selfPacedLastUtc = System.DateTime.MinValue;
         _presentationFollowsView = false;
         _presentationTurning = false;
         _effectiveSpeedMultiplier = 1.0f;
@@ -1217,7 +1302,10 @@ public class AvatarEngine : MonoBehaviour
         Debug.Log("[PACER ENGINE] Session reset — waiting for next Start command.");
     }
 
-    public float GetTargetSpeed() => _calculatedTargetSpeedMetersPerSecond * _effectiveSpeedMultiplier;
+    /// <summary>アバターの今の速さの目安(アニメーションの基準)。自走モードでは加速・待ちを含む実際の速さ</summary>
+    public float GetTargetSpeed() => IsPacesetterActive
+        ? PacesetterSpeedMetersPerSecond
+        : _calculatedTargetSpeedMetersPerSecond * _effectiveSpeedMultiplier;
 
     public float GetBaseTargetSpeed() => _calculatedTargetSpeedMetersPerSecond;
 
@@ -1352,6 +1440,8 @@ public class AvatarEngine : MonoBehaviour
 
         // 進行方向に沿った成分だけを使う(横揺れ・後退は先回りにしない)
         float alongHeading = Vector3.Dot(_smoothedAnchorVelocity, _currentLinearDirection);
+        // 自走モードで動いているのは走者ではなくアバター自身
+        if (IsPacesetterActive) alongHeading = PacesetterSpeedMetersPerSecond;
         if (alongHeading < 0.3f) return Vector3.zero; // 立ち止まり・手ブレ域では補正しない
 
         float meters = TrackingLagMath.FeedForwardMeters(alongHeading, lerpSpeed);

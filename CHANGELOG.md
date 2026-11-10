@@ -9,10 +9,24 @@
 - `SessionDataStore.LoadAllSessions` をファイル名順に揃える(iOS は名前順に返さず、履歴の「新しい順20件」が別の20件になり得た)。カウントダウン中は中断の控えを書かない(START 前にアプリを終了すると 0m の走行が履歴に入った)。
 - 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。実機でのフレーム時間・GC の改善量は未計測。
 
+### 2026-11-09 — ドキュメントを実装に合わせる(自走モード・障害物検知)
+- HANDOVER §2・SWIFT_INTEGRATION の `StartSession` が廃止済みの `SelfPacedLead`/`SelfPacedTarget` を指していたので `PacesetterModel` へ(SWIFT_INTEGRATION の `lapLengthM` に混ざっていた旧文も削除)。
+- AGENTS §4.2 の障害物検知を実装どおり `CapsuleCastNonAlloc`(半径0.3m・床から0.4〜1.5m)へ。コード変更なし。
+- 検証: ドキュメントのみ(直前の verify.sh は ALL CHECKS PASSED — dotnet test 525/525、E2E 373/373)。
+
 ### 2026-11-09 — アバターの走る姿を連番 PNG に書き出すエディタツール(展示ループ動画の素材)
 - `Assets/Editor/AvatarClipCapture.cs`(Build → Capture Avatar Run Clip / `-executeMethod AvatarClipCapture.Run`)。目線 1.6m から 3.0m 先の Y Bot(145cm)を黒背景で、ペースの4色ぶん書き出す。動画側で加算合成する前提。
 - 空のシーンで描くのでプロジェクトのシーンは変えない。出力は `Builds/AvatarClip/`(git 管理外)。アプリの実行時コードは変更なし。
 - 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。書き出しそのものは手元で実行済みの前提で、この検証では走らせていない。
+
+### 2026-11-07 — 外部画面なしの手動「接続」で iPhone のカメラ映像が消えないようにする
+- グラス無しで準備画面の「接続」を押すと Unity がグラス扱いになり、`ARCameraBackground` が止まって iPhone にグラス用の描画が出たまま戻らなかった。未検出なら `ConnectXREAL` に `phoneDisplayOnly` を付け、Ready だけ更新して描画は iPhone のままにする(ミラーリング中の予備手段は変えない)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 525/525、Swift 構文 90 ファイル、E2E 373/373)。Swift の型検査・`swift test` は CI、実機は未確認。
+
+### 2026-11-04 (3) — 自走モードをペースセッター仕様 v0.6 へ(`Docs/PACESETTER_BEHAVIOR_SPEC.md`)
+- アバターが `set_speed` で自分で走り、10m で待ち 3m で数歩かけて走り出す。遅れは取り戻さず(`lag` を残す)、抜かれると走者の後ろを走り続けて足音と呼吸だけで伝える。判定は `PacesetterModel`、音は `PacesetterSound`。既定の「走者+3m」は変えない。
+- GPS の1秒ごとの段差で gap が脈打つので `RunnerDistanceEstimator` でならす。ルート選択に「400mトラック 第1レーン」、iPhone の HUD に周回数と「あと◯m」。周の補正は `StartLineCheckpoint`(スタートラインの検知は U-07 が未決なので仮)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 525/525、Swift 構文 90 ファイル、E2E 368/368)。Swift の型検査・`swift test` は CI、実機は未確認。
 
 ### 2026-11-04 (2) — ARKit の位置が止まっても GPS の距離でアバターを進める
 - 走行中に ARKit が止まるとアバターが同じ場所に留まった(E2E で GPS 9m に対して 0.00m)。`ArTrackingWatch` が GPS とカメラの食い違いで検知し、`ArTrackingFallback` がカメラのリグごと進める。復帰時の飛びは吸収する。

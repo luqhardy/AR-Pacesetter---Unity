@@ -121,6 +121,13 @@ struct RunningView: View {
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundColor(.arGrayText)
                             }
+                            // トラックでは周回数と「あと◯m」(選んだレーンの距離で計算する)
+                            if let lap = LapProgress(distanceMeters: session.currentDistance * 1000,
+                                                     lapLengthMeters: session.lapLengthMeters) {
+                                Text(AppStrings.Formats.lapProgress(lap.currentLap, lap.remainingMeters))
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.arGrayText)
+                            }
                         }
                     }
                     .padding(.horizontal, 24)
@@ -394,6 +401,8 @@ struct RunningView: View {
                         routeLatLon: RunSettings.shared.guidanceRoute,
                         // AR設定「アバターが目標ペースで走る」(既定 OFF = 走者+3m)
                         selfPaced: AvatarPacing.isSelfPaced(in: .standard),
+                        // S8 で選んだレーンの1周(レーン以外は nil)
+                        lapLengthMeters: RunSettings.shared.lapLengthMeters,
                         // AR設定「GPSが使えないとき HUDだけで走り始める」(既定 OFF = アバターを出す)
                         hudOnlyWithoutGps: HudOnlyStart.isEnabled(in: .standard)
                     )
@@ -414,6 +423,7 @@ struct RunningView: View {
                 // ゴースト指定・選んだルートは1走行限り
                 RunSettings.shared.ghostDateIso = nil
                 RunSettings.shared.guidanceRoute = nil
+                RunSettings.shared.lapLengthMeters = nil
                 // 自動スリープの無効化はこの画面の間だけ(タスク表 S6「画面破棄時に解除」)
                 UIApplication.shared.isIdleTimerDisabled = false
             }

@@ -4,9 +4,10 @@ using UnityEngine;
 /// <summary>
 /// Swift → Unity デバイス管理ブリッジ (AR-runner の UnityBridge.swift 契約)。
 /// GameObject名は必ず "DeviceManager"。
-///   ConnectXREAL {model?, pixelWidth?, pixelHeight?, refreshHz?}
+///   ConnectXREAL {model?, pixelWidth?, pixelHeight?, refreshHz?, phoneDisplayOnly?}
 ///                      — XREALグラス接続 → ReadyチェックをConnectedへ。
-///                        表示メトリクスがあればグラスの画角で描くプロファイルを選ぶ
+///                        表示メトリクスがあればグラスの画角で描くプロファイルを選ぶ。
+///                        phoneDisplayOnly は外部画面が無いときの手動接続で、描画はiPhoneのまま
 ///   DisconnectXREAL {} — グラス切断(§8.3) → スタンバイ移行(アバター消去)。
 ///                        走行セッションは終了させず、CSVログ書き出しは継続する
 ///   UpdateGlassPose {yaw, pitch, roll, timestamp}
@@ -29,6 +30,10 @@ public class DeviceManagerBridge : MonoBehaviour
         public int pixelWidth;
         public int pixelHeight;
         public float refreshHz;
+
+        // 外部画面が無いときの手動接続(ミラーリングの予備手段とは別)。iPhone の画面には
+        // グラス用の描画を出さない — ARCameraBackground を止めるとカメラ映像が消える
+        public bool phoneDisplayOnly;
 
         // UpdateGlassPose (度)。UpdateHeadYaw は yaw だけを使う(AirPods の頭のヨー・右が正)
         public float yaw;
@@ -75,6 +80,13 @@ public class DeviceManagerBridge : MonoBehaviour
                 if (readyCheck != null)
                     readyCheck.SetDeviceState("glass", ReadyCheckController.DeviceState.Connected);
                 IsGlassDisconnected = false;
+
+                if (cmd.phoneDisplayOnly)
+                {
+                    EnsureRenderingOnPhone();
+                    Debug.Log("[SWIFT BRIDGE] ConnectXREAL — 外部画面なしの手動接続。描画はiPhoneのまま。");
+                    break;
+                }
 
                 // ARKitカメラの背景は止める(グラス出力中は何も描かないカメラになる)。
                 // グラスへのカメラ映像は出力リグが出す(既定ON・SetGlassPassthrough で切替)
@@ -141,6 +153,20 @@ public class DeviceManagerBridge : MonoBehaviour
         var passthrough = FindFirstObjectByType<ARPassthroughController>(FindObjectsInactive.Include);
         if (passthrough != null)
             passthrough.SetPassthroughEnabled(enabled);
+    }
+
+    /// <summary>
+    /// 出力リグが動いていればiPhoneの描画へ戻す。ミラーリング中に手動接続してから
+    /// グラスを抜いた場合は DisconnectXREAL が来ないので、ここで解く。
+    /// 動いていないときは何もしない(描画中の ARCameraBackground の設定を崩さない)
+    /// </summary>
+    private void EnsureRenderingOnPhone()
+    {
+        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (rig == null || !rig.IsGlassOutputActive) return;
+
+        SetPassthrough(true);
+        rig.DisableGlassOutput();
     }
 
     /// <summary>
