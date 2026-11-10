@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-10 (2) — 使っていない LilLeo アバター(FBX・テクスチャ・マテリアル)を削除
+- `Assets/Avatar.fbx`(11MB)・`T_LilLeo_Quest.png`・`M_LilLeo_Quest.mat`・`Mamehinata_LilLeo_Quest.mat` を削除。どのシーン・プレハブからも参照されておらず、第三者のアバターを公開リポジトリに置く根拠(ライセンス・出典)も無かった。
+- `AvatarAnimatorControllerGenerator` が再生成のたびに `Assets/Avatar.fbx` をヒューマノイドへ直す呼び出しも外した。過去のコミットには残る(履歴の書き換えはしていない)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。E2E のログに削除したファイルの参照切れは出ていない。
+
 ### 2026-11-10 — フレーム時間を乱す毎フレームの確保を減らし、履歴の並びと中断の控えを直す
 - インクリメンタルGCを有効化(`gcIncremental`)。`Animator.parameters` を毎フレーム4回読むのをやめて一覧を持つ。HUD の文字列は表示が変わるときだけ作る。頭の向き(約30Hz)のたびに `GlassViewRig` をシーン全体から探すのをやめる — いずれも §3 の ±5ms を GC で乱さないため。
 - `SessionDataStore.LoadAllSessions` をファイル名順に揃える(iOS は名前順に返さず、履歴の「新しい順20件」が別の20件になり得た)。カウントダウン中は中断の控えを書かない(START 前にアプリを終了すると 0m の走行が履歴に入った)。
