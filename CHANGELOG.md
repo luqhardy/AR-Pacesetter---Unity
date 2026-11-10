@@ -4,6 +4,16 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-10 — フレーム時間を乱す毎フレームの確保を減らし、履歴の並びと中断の控えを直す
+- インクリメンタルGCを有効化(`gcIncremental`)。`Animator.parameters` を毎フレーム4回読むのをやめて一覧を持つ。HUD の文字列は表示が変わるときだけ作る。頭の向き(約30Hz)のたびに `GlassViewRig` をシーン全体から探すのをやめる — いずれも §3 の ±5ms を GC で乱さないため。
+- `SessionDataStore.LoadAllSessions` をファイル名順に揃える(iOS は名前順に返さず、履歴の「新しい順20件」が別の20件になり得た)。カウントダウン中は中断の控えを書かない(START 前にアプリを終了すると 0m の走行が履歴に入った)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。実機でのフレーム時間・GC の改善量は未計測。
+
+### 2026-11-09 — アバターの走る姿を連番 PNG に書き出すエディタツール(展示ループ動画の素材)
+- `Assets/Editor/AvatarClipCapture.cs`(Build → Capture Avatar Run Clip / `-executeMethod AvatarClipCapture.Run`)。目線 1.6m から 3.0m 先の Y Bot(145cm)を黒背景で、ペースの4色ぶん書き出す。動画側で加算合成する前提。
+- 空のシーンで描くのでプロジェクトのシーンは変えない。出力は `Builds/AvatarClip/`(git 管理外)。アプリの実行時コードは変更なし。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。書き出しそのものは手元で実行済みの前提で、この検証では走らせていない。
+
 ### 2026-11-04 (2) — ARKit の位置が止まっても GPS の距離でアバターを進める
 - 走行中に ARKit が止まるとアバターが同じ場所に留まった(E2E で GPS 9m に対して 0.00m)。`ArTrackingWatch` が GPS とカメラの食い違いで検知し、`ArTrackingFallback` がカメラのリグごと進める。復帰時の飛びは吸収する。
 - 立っているだけ・GPSの飛び1回・GPSロスト中・展示デモでは動かない。開発者モードの診断に `ar.gpsFallback`。実機で止まった原因そのものは未確認。

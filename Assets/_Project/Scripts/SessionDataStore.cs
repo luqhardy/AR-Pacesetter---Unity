@@ -159,7 +159,12 @@ public static class SessionDataStore
         var records = new List<RunSessionRecord>();
         if (!Directory.Exists(SessionDirectory)) return records;
 
-        foreach (string file in Directory.GetFiles(SessionDirectory, "run_*.json"))
+        // Directory.GetFiles の並びは保証されない(iOS のファイルシステムは名前順に返さない)。
+        // 呼び出し側(履歴の「新しい順・最大20件」)は古い順を前提にしているので、ここで揃える
+        string[] files = Directory.GetFiles(SessionDirectory, "run_*.json");
+        Array.Sort(files, StringComparer.Ordinal); // ファイル名は日時なので名前順 = 古い順
+
+        foreach (string file in files)
         {
             try
             {
