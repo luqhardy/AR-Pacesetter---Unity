@@ -179,7 +179,7 @@ public class DeviceManagerBridge : MonoBehaviour
     /// </summary>
     private void ApplyGlassPose(SwiftCommand cmd)
     {
-        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        var rig = ResolveGlassRig();
         if (rig == null) return;
 
         // 鮮度判定はUnityの時間軸で行う。Swiftの timestamp は CACurrentMediaTime 系で
@@ -193,8 +193,23 @@ public class DeviceManagerBridge : MonoBehaviour
     /// </summary>
     private void ApplyHeadYaw(SwiftCommand cmd)
     {
-        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        var rig = ResolveGlassRig();
         if (rig != null) rig.SetHeadYaw(cmd.yaw);
+    }
+
+    // 頭の向きは約30Hzで届く。届くたびにシーン全体を探さない — 見つけたものを持ち、
+    // 見つからない間も探し直すのは1秒に1回まで
+    private GlassViewRig _glassRig;
+    private float _nextGlassRigLookupTime;
+
+    private GlassViewRig ResolveGlassRig()
+    {
+        if (_glassRig == null && Time.unscaledTime >= _nextGlassRigLookupTime)
+        {
+            _nextGlassRigLookupTime = Time.unscaledTime + 1f;
+            _glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        }
+        return _glassRig;
     }
 
     /// <summary>
