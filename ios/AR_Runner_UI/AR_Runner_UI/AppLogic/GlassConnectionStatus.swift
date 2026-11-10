@@ -94,6 +94,20 @@ nonisolated enum GlassPassthroughSetting {
     }
 }
 
+// MARK: - 開発者モード「iPhoneにカメラ映像を出す」
+
+/// iPhone の画面にカメラ映像を出すか(**既定 ON** — 映像が無いと iPhone の画面は AR にならない)。
+/// OFF にすると背景は黒で、アバターとHUDだけが出る(グラスの見え方を iPhone で確かめるとき)。
+/// 値は走行の開始のたびに Unity へ送る(`SetPhonePassthrough`)。未設定は ON として読む
+nonisolated enum PhonePassthroughSetting {
+    static let key = "devPhonePassthrough"
+    static let defaultValue = true
+
+    static func read(_ defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? defaultValue
+    }
+}
+
 // MARK: - 開発者モード「屋内テスト」
 
 /// Unity の Diagnostics の `gps.autoLostHandling` の値("ON(仕様どおり)" / "OFF(手動で無効化中)")を読む。

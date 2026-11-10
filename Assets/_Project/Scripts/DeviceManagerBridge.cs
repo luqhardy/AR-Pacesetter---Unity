@@ -12,6 +12,8 @@ using UnityEngine;
 ///                        走行セッションは終了させず、CSVログ書き出しは継続する
 ///   UpdateGlassPose {yaw, pitch, roll, timestamp}
 ///                      — グラス実機の頭部姿勢(将来用。iOSでは現状供給元が無い)
+///   SetGlassPassthrough {enabled} / SetPhonePassthrough {enabled}
+///                      — グラスの背景 / iPhone の画面にカメラ映像を出すか(開発者モード・どちらも既定ON)
 ///   UpdateHeadYaw {yaw}
 ///                      — 頭のヨー(度・基準は任意・右が正)。AirPods か XREAL One 自身のIMU(Swift の XrealImuReceiver)。進行方向との差を首振りとして
 ///                        グラスの描画の向きへ足し、首を振ってもアバターが進行方向の3m先に留まって見える
@@ -41,7 +43,7 @@ public class DeviceManagerBridge : MonoBehaviour
         public float roll;
         public float timestamp;
 
-        // SetGlassPassthrough(開発者モード): グラスの背景にカメラ映像を出すか
+        // SetGlassPassthrough / SetPhonePassthrough(開発者モード): グラスの背景 / iPhone の画面にカメラ映像を出すか
         public bool enabled;
     }
 
@@ -131,6 +133,15 @@ public class DeviceManagerBridge : MonoBehaviour
                 var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
                 if (rig != null) rig.SetCameraPassthroughOnGlass(cmd.enabled);
                 else Debug.LogWarning("[SWIFT BRIDGE] SetGlassPassthrough ignored — GlassViewRig not found.");
+                break;
+            }
+
+            case "SetPhonePassthrough":
+            {
+                // iPhone の画面のカメラ映像(開発者モード)。グラス出力中は設定だけ覚え、iPhone へ戻ったときに使う
+                var passthrough = FindFirstObjectByType<ARPassthroughController>(FindObjectsInactive.Include);
+                if (passthrough != null) passthrough.SetPhoneCameraWanted(cmd.enabled);
+                else Debug.LogWarning("[SWIFT BRIDGE] SetPhonePassthrough ignored — ARPassthroughController not found.");
                 break;
             }
 

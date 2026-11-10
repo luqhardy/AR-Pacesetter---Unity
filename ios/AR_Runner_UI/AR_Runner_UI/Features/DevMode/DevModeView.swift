@@ -31,6 +31,8 @@ struct DevModeView: View {
     @AppStorage(DeviceGate.allowRunWithoutGlassesKey) private var allowRunWithoutGlasses = false
     /// ARグラスの背景に iPhone のカメラ映像を出す(既定 ON)
     @AppStorage(GlassPassthroughSetting.key) private var glassPassthrough = GlassPassthroughSetting.defaultValue
+    /// iPhone の画面にカメラ映像を出す(既定 ON)
+    @AppStorage(PhonePassthroughSetting.key) private var phonePassthrough = PhonePassthroughSetting.defaultValue
     @State private var reportCopied = false
 
     private let accent = Color(red: 199.0 / 255.0, green: 242.0 / 255.0, blue: 25.0 / 255.0)
@@ -365,6 +367,31 @@ struct DevModeView: View {
                      ? "ON(既定)。頭に付けた iPhone の映像をグラスの画角で背景に出す"
                      : "OFF — グラスにはアバターとHUDだけ(レンズ越しの現実だけを見る)")
                     .font(.system(size: 12))
+                    .foregroundStyle(secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+
+            // iPhone の画面のカメラ映像。設定はアプリに残り、走行の開始のたびに Unity へ送る
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: $phonePassthrough) {
+                    Text("iPhoneにカメラ映像を出す")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .tint(accent)
+                .onChange(of: phonePassthrough) { _, on in
+                    bridge.setPhonePassthrough(enabled: on)
+                }
+                Text(phonePassthrough
+                     ? "ON(既定)。iPhone の画面にカメラ映像とアバターを重ねて出す"
+                     : "OFF — iPhone の画面は黒い背景にアバターとHUDだけ(位置の計測は続く)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("映っているかは下の診断の phone.cameraFeed / glass.cameraFeed で確かめられる")
+                    .font(.system(size: 11))
                     .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }

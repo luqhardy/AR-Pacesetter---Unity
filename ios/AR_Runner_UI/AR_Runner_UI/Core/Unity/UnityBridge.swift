@@ -277,6 +277,8 @@ final class UnityBridge: NSObject, ObservableObject {
         if let route = routeLatLon, route.count >= 4 {
             payload["routeLatLon"] = route
         }
+        // iPhone の画面のカメラ映像(開発者モード・既定ON)。Unity は設定を覚えないので走行のたびに送る
+        setPhonePassthrough(enabled: PhonePassthroughSetting.read(.standard))
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand", payload: payload)
     }
 
@@ -341,6 +343,13 @@ final class UnityBridge: NSObject, ObservableObject {
     func setGlassPassthrough(enabled: Bool) {
         sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
                     payload: ["command": "SetGlassPassthrough", "enabled": enabled])
+    }
+
+    /// 開発者モード: iPhone の画面にカメラ映像を出すか(既定ON)。
+    /// iPhone に描いている間はすぐ切り替わり、グラスへ出している間は iPhone へ戻ったときに使われる
+    func setPhonePassthrough(enabled: Bool) {
+        sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
+                    payload: ["command": "SetPhonePassthrough", "enabled": enabled])
     }
 
     /// グラス実機の頭部姿勢をUnityへ渡す(度)。
@@ -494,6 +503,7 @@ final class UnityBridge: NSObject, ObservableObject {
         lastBoothDemoEnd = nil
         var payload: [String: Any] = ["command": "StartBoothDemo", "mode": mode.rawValue]
         if targetPaceKmH > 0 { payload["targetPaceKmH"] = targetPaceKmH }
+        setPhonePassthrough(enabled: PhonePassthroughSetting.read(.standard))
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand", payload: payload)
     }
 
@@ -728,8 +738,8 @@ final class UnityBridge: NSObject, ObservableObject {
             pendingCommands.removeAll { $0.command == "ConnectXREAL" || $0.command == "DisconnectXREAL" }
         case "RequestHistory":
             pendingCommands.removeAll { $0.command == "RequestHistory" }
-        case "SetGlassPassthrough":
-            pendingCommands.removeAll { $0.command == "SetGlassPassthrough" }
+        case "SetGlassPassthrough", "SetPhonePassthrough":
+            pendingCommands.removeAll { $0.command == command }
         default:
             break
         }

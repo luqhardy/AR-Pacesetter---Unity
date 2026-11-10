@@ -104,6 +104,24 @@ public static class DevDiagnostics
                 : "-");
             if (!string.IsNullOrEmpty(glass.LastFitReport))
                 Add(rows, "glass.fit", glass.LastFitReport);
+
+            // グラスの背景のカメラ映像: 設定・出しているか・実際に1枚描けたか。
+            // 「設定はONなのに映らない」をどの段で止まっているかまで読めるようにする
+            string glassCamera = !glass.CameraPassthroughOnGlass ? "OFF(設定)"
+                : !glass.IsGlassOutputActive ? "ON(設定) — グラス未出力のため出していない"
+                : glass.CameraPassthroughHasFrame ? "ON — 映像を表示中"
+                : "ON だが映っていない: " + glass.CameraPassthroughBlocker;
+            Add(rows, "glass.cameraFeed", glassCamera);
+        }
+
+        // ── iPhone の画面のカメラ映像 ───────────────────────────────
+        var phoneCamera = UnityEngine.Object.FindFirstObjectByType<ARPassthroughController>(FindObjectsInactive.Include);
+        if (phoneCamera != null)
+        {
+            string phoneFeed = phoneCamera.IsPassthroughEnabled ? "ON — 映像を表示中"
+                : !phoneCamera.PhoneCameraWanted ? "OFF(設定)"
+                : "ON(設定) — グラスへ出力中のため iPhone には出していない";
+            Add(rows, "phone.cameraFeed", phoneFeed);
         }
 
         // ── 屋外の画像分類 ───────────────────────────────────────────

@@ -638,6 +638,15 @@ public class E2EScenarioBehaviour : MonoBehaviour
         {
             Check(passthrough.IsPassthroughEnabled, "passthrough: camera feed shown on the phone by default");
 
+            // iPhone の画面のカメラ映像は開発者モードの SetPhonePassthrough で切り替わる(既定ON)
+            Check(passthrough.PhoneCameraWanted, "phone-passthrough: the setting is ON by default");
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":false}");
+            Check(!passthrough.IsPassthroughEnabled && !passthrough.PhoneCameraWanted,
+                "phone-passthrough: SetPhonePassthrough(false) hides the camera feed on the phone");
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":true}");
+            Check(passthrough.IsPassthroughEnabled,
+                "phone-passthrough: SetPhonePassthrough(true) shows it again");
+
             // ── ARグラス出力リグ: グラスの画角・眼の位置で描く ──────────────
             var glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
             Check(glassRig != null, "glass: GlassViewRig auto-created by bootstrap");
@@ -668,11 +677,28 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(passthrough.IsPassthroughEnabled && (glassRig == null || !glassRig.IsGlassOutputActive),
                 "manual-connect: after the glasses are gone, a manual connect returns rendering to the phone");
 
+            // 同じ戻り道でも、iPhone のカメラ映像を OFF にしていれば映像は出さない(描画だけ iPhone へ戻る)
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":false}");
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");
+            yield return null;
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"phoneDisplayOnly\":true}");
+            yield return null;
+            Check(!passthrough.IsPassthroughEnabled && (glassRig == null || !glassRig.IsGlassOutputActive),
+                "phone-passthrough: with the phone setting OFF, returning to the phone does not bring the camera feed back");
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":true}");
+            Check(passthrough.IsPassthroughEnabled,
+                "phone-passthrough: turning it ON on the phone shows the feed at once");
+
             deviceBridge.OnSwiftCommand(
                 "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
             yield return null;
             Check(!passthrough.IsPassthroughEnabled,
                 "passthrough: camera feed off while output goes to see-through glasses");
+            // グラス出力中は設定を覚えるだけで、ARKit カメラの背景は出さない(描画はグラスの出力カメラ)
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":false}");
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":true}");
+            Check(passthrough.PhoneCameraWanted && !passthrough.IsPassthroughEnabled,
+                "phone-passthrough: turning the phone setting ON does not draw on the phone while glasses own the output");
 
             if (glassRig != null)
             {

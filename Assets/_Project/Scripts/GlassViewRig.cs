@@ -72,6 +72,13 @@ public sealed class GlassViewRig : MonoBehaviour
     public bool CameraPassthroughOnGlass => cameraPassthroughOnGlass;
     /// <summary>今グラスへカメラ映像を出しているか(フレーム到着前でも true)。</summary>
     public bool IsCameraPassthroughShowing => _passthroughLayer != null && _passthroughLayer.IsShowing;
+    /// <summary>
+    /// グラスへ出すカメラ映像を1枚以上描けたか。出す指定なのに false のままなら、ARKit のフレームか
+    /// 変換用のマテリアルが届いていない(診断用 — 「設定はONなのに映らない」の切り分け)
+    /// </summary>
+    public bool CameraPassthroughHasFrame => _passthroughLayer != null && _passthroughLayer.HasFrame;
+    /// <summary>グラスのカメラ映像がどこで止まっているか(日本語・診断用)。出せていれば空</summary>
+    public string CameraPassthroughBlocker => _passthroughLayer != null ? _passthroughLayer.Blocker : "";
     /// <summary>描画の俯角(度・下向きが正)。頭マウントでは頭の実際のピッチ。</summary>
     public float AppliedDownPitchDegrees { get; private set; }
     public CameraMount Mount => cameraMount;

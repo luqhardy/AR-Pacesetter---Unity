@@ -49,6 +49,18 @@ final class GlassConnectionStatusTests: XCTestCase {
         XCTAssertTrue(DeviceGate.canProceed(glass: .mirroring, allowRunWithoutGlasses: true))
     }
 
+    func testPhonePassthroughIsOnUntilTurnedOff() {
+        let defaults = UserDefaults(suiteName: "PhonePassthroughSettingTests")!
+        defaults.removePersistentDomain(forName: "PhonePassthroughSettingTests")
+        XCTAssertTrue(PhonePassthroughSetting.read(defaults), "未設定(初回起動)は ON")
+        defaults.set(false, forKey: PhonePassthroughSetting.key)
+        XCTAssertFalse(PhonePassthroughSetting.read(defaults))
+        defaults.set(true, forKey: PhonePassthroughSetting.key)
+        XCTAssertTrue(PhonePassthroughSetting.read(defaults))
+        defaults.removePersistentDomain(forName: "PhonePassthroughSettingTests")
+        XCTAssertNotEqual(PhonePassthroughSetting.key, GlassPassthroughSetting.key, "2つの設定は別々に持つ")
+    }
+
     func testGlassPassthroughIsOnUntilTurnedOff() {
         let defaults = UserDefaults(suiteName: "GlassPassthroughSettingTests")!
         defaults.removePersistentDomain(forName: "GlassPassthroughSettingTests")
