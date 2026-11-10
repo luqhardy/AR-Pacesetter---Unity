@@ -4,6 +4,10 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-10 (2) — 使っていない LilLeo アバター(FBX・テクスチャ・マテリアル)を削除
+- `Assets/Avatar.fbx`(11MB)・`T_LilLeo_Quest.png`・`M_LilLeo_Quest.mat`・`Mamehinata_LilLeo_Quest.mat` を削除。どのシーン・プレハブからも参照されておらず、第三者のアバターを公開リポジトリに置く根拠(ライセンス・出典)も無かった。
+- `AvatarAnimatorControllerGenerator` が再生成のたびに `Assets/Avatar.fbx` をヒューマノイドへ直す呼び出しも外した。過去のコミットには残る(履歴の書き換えはしていない)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。E2E のログに削除したファイルの参照切れは出ていない。
 ### 2026-11-10 (3) — iPhone の画面のカメラ映像を切り替えるスイッチと、映像が映らない理由の診断
 - 開発者モードに「iPhoneにカメラ映像を出す」(`SetPhonePassthrough`・既定ON)。グラスの分(`SetGlassPassthrough`)と別々に切り替えられる。グラス出力中は設定だけ覚え、iPhone の画面へ戻ったときに使う。
 - 診断に `phone.cameraFeed` / `glass.cameraFeed`。グラスは「設定はONなのに映らない」がどの段で止まっているか(フレーム未着・テクスチャ無し・マテリアル無し)まで出す — 実機で両方とも映らなかった報告の切り分け用。映らない原因そのものは未特定。
