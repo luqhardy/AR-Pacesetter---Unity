@@ -23,6 +23,10 @@ nonisolated enum GlassRowStatus: Equatable {
 
     /// 手動の接続を押せるか(実接続も手動接続もしていないとき)
     var canConnectManually: Bool { self == .notDetected || self == .mirroring }
+
+    /// 手動の接続でも描画を iPhone に残すか。外部画面が無いのにグラス用の描画へ切り替えると、
+    /// iPhone のカメラ映像(ARCameraBackground)が止まる。ミラーリング中はグラスにその描画が映るので切り替える
+    var manualConnectStaysOnPhone: Bool { self == .notDetected }
 }
 
 // MARK: - 準備画面(S4)の「次へ」とエラー表示
@@ -83,6 +87,20 @@ nonisolated enum DeviceGate {
 /// 値は接続のたびに Unity へ送る(`SetGlassPassthrough`)。未設定は ON として読む
 nonisolated enum GlassPassthroughSetting {
     static let key = "devGlassPassthrough"
+    static let defaultValue = true
+
+    static func read(_ defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? defaultValue
+    }
+}
+
+// MARK: - 開発者モード「iPhoneにカメラ映像を出す」
+
+/// iPhone の画面にカメラ映像を出すか(**既定 ON** — 映像が無いと iPhone の画面は AR にならない)。
+/// OFF にすると背景は黒で、アバターとHUDだけが出る(グラスの見え方を iPhone で確かめるとき)。
+/// 値は走行の開始のたびに Unity へ送る(`SetPhonePassthrough`)。未設定は ON として読む
+nonisolated enum PhonePassthroughSetting {
+    static let key = "devPhonePassthrough"
     static let defaultValue = true
 
     static func read(_ defaults: UserDefaults) -> Bool {

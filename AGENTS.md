@@ -25,6 +25,8 @@ Unityプロジェクト(本リポジトリのルート)+ SwiftUIホスト(`ios/`
   (HUD は加算表示なので黒は透ける。見た目を変えたら `HudPreviewRunner` で画像に書き出して確かめる — §3-4)
 - 屋外路面の分類(ARCore) → [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
 - 差し替えアバター(VRM) → [Docs/VRM_AVATARS.md](Docs/VRM_AVATARS.md)
+- 自走モードのペースセッター(`set_speed` 走行・WAIT・OVERTAKEN・サウンド・レーン) → [Docs/PACESETTER_BEHAVIOR_SPEC.md](Docs/PACESETTER_BEHAVIOR_SPEC.md)。
+  実装は `PacesetterModel` ほか(§6)。§1 の優先順位には入っておらず、既定の走行(常時+3m追従)は変えていない
 - 実地テストの計画・実機での初回確認 → [Docs/FIELD_TEST_PLAN.md](Docs/FIELD_TEST_PLAN.md)(実機で一度も見ていない項目は §0-A)。
   結果は [Docs/field-tests/](Docs/field-tests/README.md) に1セッション1フォルダで残す
 - 展示ブースの体験モード(Kobe Calling・立ったまま/数歩あるく) → [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
@@ -122,9 +124,10 @@ P_avatar = P_user + 3.0 × V_forward
 
 ### 4.2 Ground Snap & Vertical Smoothing (LiDAR Enhanced)
 - **Vertical Threshold**: 接地面の高さ変化が ±15cm を超えたら即スナップせず、**0.3秒**かけて補間
-  (`Mathf.SmoothDamp`)。垂直レイは `Physics.RaycastAll(origin, down, 20m)`。
+  (`Mathf.SmoothDamp`)。垂直レイは `Physics.RaycastNonAlloc(origin, down, 20m)`。
 - **Cliff/Obstacle Exception**: 前方 **3.0m** 以内に高さ **1.5m** 以上の崖・壁を検知したら
-  (`Physics.SphereCastAll`, 半径0.4m)前進を止め、ユーザーと向き合う「その場ジョグ」で待つ。
+  (`Physics.CapsuleCastNonAlloc`, 半径0.3m・床から0.4〜1.5mの高さ帯 — 縁石など低い障害物も拾う)
+  前進を止め、ユーザーと向き合う「その場ジョグ」で待つ。
 - **足のめり込み補正**: GroundSnap はアバターの原点を床に合わせ、`FootPlanting` が立脚期の足裏を床へ合わせる(§6)。
 
 ### 4.3 Analytics & Environmental Models
@@ -212,9 +215,12 @@ stateDiagram-v2
 - **距離の単一ソース原則**: Swift主導中(`ARSessionManagerBridge.ExternalMetricsActive`)はUnity内部計測をスプリット判定へ流さない。記録・ゴール判定は `RunSessionController.AuthoritativeDistanceMeters`(新鮮なGPS優先・5秒でUnity計測へフォールバック)を共用
 - **アバターは常時「ユーザー+3m」アンカー追従**(自走ではない)。10m離隔待機は「アバター停止中にユーザーが離れる」場合にのみ発生する。
   ARKit の位置が走行中に止まると一緒に止まるので、`ArTrackingFallback` が GPS の距離でカメラのリグごと進める(判定は `ArTrackingWatch`・診断は `ar.gpsFallback`)。
-  例外は**自走モード**(AR設定のスイッチ・既定OFF・StartSession の `selfPaced`): 前方距離を「3m − 遅れ」にずらす(0.8〜9.5m)。
-  遅れは START からの正規の距離 − 目標ペースの距離(`SelfPacedTarget`)で取り、シンクロ率の距離偏差(速さの積分)は使わない
-  (平滑化した速さの立ち上がりの偏りが数mの一定の遅れとして残る)
+  例外は**自走モード**(AR設定のスイッチ・既定OFF・StartSession の `selfPaced`): [Docs/PACESETTER_BEHAVIOR_SPEC.md](Docs/PACESETTER_BEHAVIOR_SPEC.md) の挙動。
+  判定はすべて `PacesetterModel`(純ロジック)で、`AvatarEngine` は前方距離を `gap` にするだけ(負なら走者の後ろ)。
+  user_pos は `RunnerDistanceEstimator` — 正規の距離を単一ソースのまま、1秒ごとの段差だけをフレームの移動でならす。
+  シンクロ率の距離偏差(速さの積分)は使わない(平滑化した速さの立ち上がりの偏りが数mの一定の遅れとして残る)。
+  仕様の UNDECIDED の仮の値は `PacesetterModel` / `PacesetterSound` / `StartLineCheckpoint` に「仮」と書いてある。
+  スタートラインの検知(U-07)が未決なので、`StartLineCheckpoint` は START の地点へ GPS が最も近づいた瞬間を通過とする
 - **Animator取得は `AvatarRigLocator.FindBestAnimator`** — コンテナに無効化された旧Animatorが残っており、素の `GetComponentInChildren<Animator>` はそれを拾う
 - **AnimatorControllerはジェネレータ管理**(`AvatarAnimatorControllerGenerator`)。手編集せず再生成する(同一パスならGUID維持でシーン参照は無傷)。閾値は km/h 基準を m/s に換算した値(Walk 0.0278 / Run 1.3889 / Sprint 4.1667)
 - **Unity が自前で作る全画面ウインドウは SwiftUI のウインドウの後ろへ下げる**(`UnityLauncher.sendUnityWindowBehindApp`)。

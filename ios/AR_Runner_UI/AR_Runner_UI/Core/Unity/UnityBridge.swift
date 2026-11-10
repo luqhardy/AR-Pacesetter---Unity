@@ -245,7 +245,7 @@ final class UnityBridge: NSObject, ObservableObject {
     ///   画面に適した意匠)。グラス出力中はUnityのF-07 HUDが担当する。
     func startSession(targetPaceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
                       hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false,
-                      hudOnlyWithoutGps: Bool = false) {
+                      lapLengthMeters: Double? = nil, hudOnlyWithoutGps: Bool = false) {
         // 前回の走行の結果を消す。残すと、今回の SessionEnded が届かなかったときに
         // 結果画面が前回の数字を今回のものとして出す
         lastResult = nil
@@ -261,9 +261,13 @@ final class UnityBridge: NSObject, ObservableObject {
             payload["mode"] = "ghost"
             payload["ghostDateIso"] = ghost
         }
-        // アバターが目標ペースで走る(遅れると前へ離れる — AvatarPacing・既定は「走者+3m」)
+        // アバターが目標ペースで自分で走る(AvatarPacing・既定は「走者+3m」)
         if selfPaced {
             payload["selfPaced"] = true
+        }
+        // 選んだレーンの1周。周のチェックポイントに使う(TrackRoutes)
+        if let lapLengthMeters {
+            payload["lapLengthM"] = lapLengthMeters
         }
         // START の時点でGPSが使えなければHUDだけで始める(HudOnlyStart・既定はアバターを出す)
         if hudOnlyWithoutGps {
@@ -273,6 +277,8 @@ final class UnityBridge: NSObject, ObservableObject {
         if let route = routeLatLon, route.count >= 4 {
             payload["routeLatLon"] = route
         }
+        // iPhone の画面のカメラ映像(開発者モード・既定ON)。Unity は設定を覚えないので走行のたびに送る
+        setPhonePassthrough(enabled: PhonePassthroughSetting.read(.standard))
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand", payload: payload)
     }
 
@@ -317,8 +323,11 @@ final class UnityBridge: NSObject, ObservableObject {
     /// - Note: 画角も機種名もグラスからは取得できない(XREALのSDKはAndroid専用で、
     ///   USB-HIDもiOSアプリからは触れない)。iOSが知っているのは解像度とリフレッシュレートだけ。
     ///   1920×1080 は One / One Pro / Air2 で共通のためUnity側は XREAL One を既定に落とす。
-    func connect(model: String? = nil, pixelWidth: Int = 0, pixelHeight: Int = 0, refreshHz: Double = 0) {
+    /// - Parameter phoneDisplayOnly: 外部画面が無いときの手動接続。Unity は描画を iPhone のままにする
+    func connect(model: String? = nil, pixelWidth: Int = 0, pixelHeight: Int = 0, refreshHz: Double = 0,
+                 phoneDisplayOnly: Bool = false) {
         var payload: [String: Any] = ["command": "ConnectXREAL"]
+        if phoneDisplayOnly { payload["phoneDisplayOnly"] = true }
         if let model, !model.isEmpty { payload["model"] = model }
         if pixelWidth > 0 { payload["pixelWidth"] = pixelWidth }
         if pixelHeight > 0 { payload["pixelHeight"] = pixelHeight }
@@ -334,6 +343,13 @@ final class UnityBridge: NSObject, ObservableObject {
     func setGlassPassthrough(enabled: Bool) {
         sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
                     payload: ["command": "SetGlassPassthrough", "enabled": enabled])
+    }
+
+    /// 開発者モード: iPhone の画面にカメラ映像を出すか(既定ON)。
+    /// iPhone に描いている間はすぐ切り替わり、グラスへ出している間は iPhone へ戻ったときに使われる
+    func setPhonePassthrough(enabled: Bool) {
+        sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
+                    payload: ["command": "SetPhonePassthrough", "enabled": enabled])
     }
 
     /// グラス実機の頭部姿勢をUnityへ渡す(度)。
@@ -487,6 +503,7 @@ final class UnityBridge: NSObject, ObservableObject {
         lastBoothDemoEnd = nil
         var payload: [String: Any] = ["command": "StartBoothDemo", "mode": mode.rawValue]
         if targetPaceKmH > 0 { payload["targetPaceKmH"] = targetPaceKmH }
+        setPhonePassthrough(enabled: PhonePassthroughSetting.read(.standard))
         sendToUnity(object: "ARSessionManager", method: "OnSwiftCommand", payload: payload)
     }
 
@@ -721,8 +738,8 @@ final class UnityBridge: NSObject, ObservableObject {
             pendingCommands.removeAll { $0.command == "ConnectXREAL" || $0.command == "DisconnectXREAL" }
         case "RequestHistory":
             pendingCommands.removeAll { $0.command == "RequestHistory" }
-        case "SetGlassPassthrough":
-            pendingCommands.removeAll { $0.command == "SetGlassPassthrough" }
+        case "SetGlassPassthrough", "SetPhonePassthrough":
+            pendingCommands.removeAll { $0.command == command }
         default:
             break
         }
@@ -881,6 +898,9 @@ final class ARSessionManager: ObservableObject {
     /// 設定ペース(推定距離の算出に使う)
     private var configuredPaceKmH: Double = 0
 
+    /// この走行で選んだレーンの1周(m)。レーン以外は nil(グラス切断からの再スタートでも保つ)
+    private(set) var lapLengthMeters: Double?
+
     /// 速度のならし(PaceMetrics)。走行開始で作り直す
     private var speedSmoother = SpeedSmoother()
 
@@ -902,8 +922,9 @@ final class ARSessionManager: ObservableObject {
 
     func start(paceKmH: Double, distanceKm: Double, ghostDateIso: String? = nil,
                hideUnityHud: Bool = false, routeLatLon: [Double]? = nil, selfPaced: Bool = false,
-               hudOnlyWithoutGps: Bool = false) {
+               lapLengthMeters: Double? = nil, hudOnlyWithoutGps: Bool = false) {
         isSessionActive = true
+        self.lapLengthMeters = lapLengthMeters
         startDate = Date()
         elapsedSeconds = 0
         currentDistance = 0
@@ -930,7 +951,7 @@ final class ARSessionManager: ObservableObject {
         bridge.startSession(targetPaceKmH: paceKmH, distanceKm: distanceKm,
                             ghostDateIso: ghostDateIso, hideUnityHud: hideUnityHud,
                             routeLatLon: routeLatLon, selfPaced: selfPaced,
-                            hudOnlyWithoutGps: hudOnlyWithoutGps)
+                            lapLengthMeters: lapLengthMeters, hudOnlyWithoutGps: hudOnlyWithoutGps)
 
         // 実測が届くたびに送る — 画面ロック中もCoreLocationは動き続けるため、
         // タイマーが止まってもUnityへの供給が途切れない(M3)

@@ -25,6 +25,28 @@ public class ARPassthroughController : MonoBehaviour
     /// <summary>現在カメラ映像を描画しているか。既定はtrue(iPhone表示)。</summary>
     public bool IsPassthroughEnabled { get; private set; } = true;
 
+    // 出すかどうかは2つの条件の両方で決まる:
+    //   描画が iPhone の画面にある(グラス出力中は ARKit カメラは何も描かない)
+    //   利用者が iPhone の画面にカメラ映像を出す設定にしている(開発者モード・既定ON)
+    private bool _renderingOnPhone = true;
+
+    /// <summary>
+    /// iPhone の画面にカメラ映像を出す設定(開発者モード「iPhoneにカメラ映像を出す」・既定ON)。
+    /// グラス出力中でも保持し、iPhone の画面へ戻ったときに使う
+    /// </summary>
+    public bool PhoneCameraWanted { get; private set; } = true;
+
+    /// <summary>
+    /// iPhone の画面にカメラ映像を出すかを切り替える(<c>SetPhonePassthrough</c>)。
+    /// OFF にすると背景は黒で、アバターとHUDだけが出る。ARKit のトラッキングは止めない
+    /// </summary>
+    public void SetPhoneCameraWanted(bool wanted)
+    {
+        PhoneCameraWanted = wanted;
+        Apply();
+        Debug.Log($"[PASSTHROUGH] iPhone のカメラ映像を{(wanted ? "ON" : "OFF")}に設定");
+    }
+
     void Awake() => Resolve();
 
     private void Resolve()
@@ -45,7 +67,14 @@ public class ARPassthroughController : MonoBehaviour
     /// </summary>
     public void SetPassthroughEnabled(bool enabled)
     {
+        _renderingOnPhone = enabled;
+        Apply();
+    }
+
+    private void Apply()
+    {
         Resolve();
+        bool enabled = _renderingOnPhone && PhoneCameraWanted;
         IsPassthroughEnabled = enabled;
 
         if (_background != null)

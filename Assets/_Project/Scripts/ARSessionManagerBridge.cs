@@ -9,7 +9,8 @@ using UnityEngine;
 ///   StartSession  { targetPaceKmH, distanceKm, avatarHeightCm, forwardOffsetM }
 ///   UpdateMetrics { paceKmH, heartRate, distanceKm }
 ///   (StartSession は任意で routeLatLon [緯度0, 経度0, ...] — 選んだルートからの逸脱をサイレントルート復帰で案内、
-///    selfPaced true — アバターが目標ペースで走り、遅れると前へ離れる(既定は走者+3m))
+///    selfPaced true — アバターが目標ペースで自分で走る(Docs/PACESETTER_BEHAVIOR_SPEC.md。既定は走者+3m)、
+///    lapLengthM — 選んだレーンの1周(m)。トラック以外は無し)
 ///   EndSession    {}
 ///   RetrySaveSession {} — 履歴への保存をやり直す(結果は SessionSaveRetried {saved})
 ///
@@ -34,8 +35,10 @@ public class ARSessionManagerBridge : MonoBehaviour
         // StartSession: 選んだルート(S8 で「ルートを外れたら案内する」を ON・過去の走行の経路のときだけ)。
         // [緯度0, 経度0, 緯度1, 経度1, ...]。無ければ選んだルート無し(サイレントルート復帰は従来どおり)
         public double[] routeLatLon;
-        // StartSession: 自走モード(アバターが目標ペースで走る — 遅れると前へ離れる。既定 false = 走者+3m)
+        // StartSession: 自走モード(アバターが目標ペースで自分で走る — 10m 離れたら待つ。既定 false = 走者+3m)
         public bool selfPaced;
+        // StartSession: 選んだレーンの1周(m)。0 ならトラックではない(チェックポイントを使わない)
+        public double lapLengthM;
         // StartSession: START の時点でGPSが使えなければ、アバターを出さずHUDだけで始める
         // (精度5m以内の測位でアバターが現れる。既定 false = 従来どおりアバターを出す)
         public bool hudOnlyWithoutGps;
@@ -218,6 +221,7 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         // 自走モード(タスク表「指定した速さで走る」)。展示デモでは使わない(台本のずらしと取り合う)
         avatarEngine.SetSelfPaced(cmd.selfPaced && !_dispatchingPresentation);
+        avatarEngine.SetLapLength(cmd.lapLengthM);
 
         // GPSが使えなければHUDだけで始める(タスク表 ARグラス)。展示デモではアバターを一度も消さない
         _hudOnlyWithoutGps = cmd.hudOnlyWithoutGps && !_dispatchingPresentation;
@@ -355,6 +359,10 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (sessionController != null && freshLocationSample && cmd.gpsAccuracy > 0f)
             sessionController.ReportRoutePoint(cmd.gpsLatitude, cmd.gpsLongitude, cmd.gpsAccuracy);
 
+        // 周のチェックポイント(自走モード・トラックだけ)
+        if (avatarEngine != null && freshLocationSample && runMotionActive && cmd.gpsAccuracy > 0f)
+            avatarEngine.ReportStartLineFix(cmd.gpsLatitude, cmd.gpsLongitude, cmd.gpsAccuracy);
+
         // 実測ペース(F-07 現在ペース表示用)。0以下は無効サンプルとして無視する
         if (freshLocationSample && validSpeedSample)
         {
@@ -399,6 +407,10 @@ public class ARSessionManagerBridge : MonoBehaviour
 
         if (!_goalReached && goalLineController != null)
             goalLineController.HideImmediately();
+
+        // 「◯秒遅れ」の表示形式は未決(U-06)。値は開発者モードとログで確かめる
+        if (avatarEngine != null && avatarEngine.IsPacesetterActive)
+            Debug.Log($"[SWIFT BRIDGE] 走行終了 — lag {avatarEngine.PacesetterLagSeconds:F1}秒");
 
         if (latencyRunner != null)
             latencyRunner.SetContinuousMeasurement(false);
@@ -684,6 +696,7 @@ public class ARSessionManagerBridge : MonoBehaviour
         if (avatarEngine.IsSessionEnded) return "Goal";
         if (_gpsWasLost) return "Lost";
         if (avatarEngine.IsWaitingForUser) return "Slow"; // 離隔待機(手招き)中
+        if (avatarEngine.IsSelfPaced) return "Run";       // 自走モードは速さが変わらない(加速中も遅れではない)
 
         float baseSpeed = avatarEngine.GetBaseTargetSpeed();
         if (baseSpeed > 0.01f)

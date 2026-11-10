@@ -103,8 +103,33 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
         rect.offsetMax = Vector2.zero;
     }
 
+    /// <summary>ARKit からフレームの通知を受けた回数(表示の指定に関係なく数える)。診断用</summary>
+    public int FrameEventCount { get; private set; }
+
+    /// <summary>
+    /// 映像がどこで止まっているか(日本語・診断用)。描けていれば空。
+    /// 実機で「設定はONなのに映らない」とき、開発者モードの診断でどの段かを読む
+    /// </summary>
+    public string Blocker
+    {
+        get
+        {
+            if (!IsShowing) return "";
+            if (HasFrame) return "";
+            if (_cameraManager == null) return "ARCameraManager が見つからない";
+            if (FrameEventCount == 0) return "ARKit のフレームが1枚も届いていない";
+            if (_lastFrameHadNoTextures) return "フレームは届くがテクスチャが付いていない";
+            if (_blitMaterial == null) return "カメラ用マテリアル(cameraMaterial)が取れない";
+            return "フレーム待ち";
+        }
+    }
+
+    private bool _lastFrameHadNoTextures;
+
     private void OnCameraFrameReceived(ARCameraFrameEventArgs args)
     {
+        FrameEventCount++;
+        _lastFrameHadNoTextures = args.textures.Count == 0;
         if (!IsShowing || args.textures.Count == 0) return;
         if (!EnsureMaterial()) return;
 
