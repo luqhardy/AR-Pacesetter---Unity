@@ -8,6 +8,11 @@
 - `Assets/Avatar.fbx`(11MB)・`T_LilLeo_Quest.png`・`M_LilLeo_Quest.mat`・`Mamehinata_LilLeo_Quest.mat` を削除。どのシーン・プレハブからも参照されておらず、第三者のアバターを公開リポジトリに置く根拠(ライセンス・出典)も無かった。
 - `AvatarAnimatorControllerGenerator` が再生成のたびに `Assets/Avatar.fbx` をヒューマノイドへ直す呼び出しも外した。過去のコミットには残る(履歴の書き換えはしていない)。
 - 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。E2E のログに削除したファイルの参照切れは出ていない。
+### 2026-11-11 — Swift ロジックテストの失敗を直す(トラックのレーンを足したときのテストの直し漏れ)
+- `RouteCandidatesTests.testPastRoutesNearestToTheTargetComeFirst` が master で落ちていた(2026-11-10 の feature/pacesetter-behavior 取り込み以降)。候補の後ろにトラックのレーンが並ぶようになったのに、テストは一覧全体が過去のルートだけだと見ていた。近い順は過去のルートだけで確かめ、レーンが最後にまとまることも見る。実装は変えていない。
+- 未マージのブランチ5本(feat/task-sheet-1019・codex/local-save-2026-10-19・feature/univrm-setup・feature/xreal-imu-probe・merge/hsu-ar-project-1021)を master と突き合わせた: 取り込むべき差分は無い(スカッシュマージ済みか、PacesetterModel・ホイール入力のUIに置き換え済み)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 529/529、Swift 構文 90 ファイル、E2E 383/383)。直したテスト自体は Windows で実行できない — CI の swift test で確認する。
+
 ### 2026-11-10 (4) — 開発者モードで頭の向きの元を iPhone / グラスのIMU から選ぶ
 - 頭マウントではグラスのIMUのヨーを捨てていた(2026-11-04)。開発者モード「頭の向きの元」→ `SetHeadYawSource`(既定は iPhone)。「グラスのIMU」では届いている間そのヨーで描画を回し、ピッチと位置は ARKit のまま。IMU の基準のずれ・ドリフトは ARKit のヨーへ時定数10秒で揃える。
 - 選んでいれば走行の開始でグラスのIMUを読み始める(準備画面の「接続」を押していなくても)。診断に `glass.headYawSource`。§4.1(アバターの位置・進行方向に視線を使わない)には触れていない — 変えるのは描画の向きだけ。
