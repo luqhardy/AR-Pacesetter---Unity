@@ -44,6 +44,16 @@ public enum HeadOrientationSource
     ExternalGlassPose,
 }
 
+/// <summary>頭マウントのとき、描画のヨーをどのセンサーから取るか(開発者モードのスイッチ)。</summary>
+public enum HeadYawSource
+{
+    /// <summary>iPhone(ARKitカメラ)。既定</summary>
+    PhoneCamera,
+
+    /// <summary>外部のIMU(グラスのIMU・無ければ AirPods)の頭のヨー。届いていなければ iPhone へ戻る</summary>
+    ExternalImu,
+}
+
 /// <summary>
 /// 「グラスへ出す映像をどの姿勢で描くか」の判断を1か所に閉じた純ロジック (依存ゼロ)。
 ///
@@ -120,6 +130,26 @@ public static class HeadPoseMath
     /// (ドリフト)。数秒の首振りはほぼそのまま残り、横を向いたままの差は数十秒かけて0へ戻る
     /// </summary>
     public const float DefaultHeadYawBaselineSeconds = 30f;
+
+    // ── 頭マウントで、ヨーを iPhone(ARKitカメラ)から取るか外部のIMUから取るか(開発者モード・2026-11-10) ──
+    // 既定は iPhone。ExternalImu にすると、届いている間はグラスのIMU(または AirPods)のヨーで描画を回す:
+    // IMU の基準は任意でドリフトもするので、ARKitカメラのヨーとの差の長周期の平均を基準として追い
+    // (HeadYawBaseline をカメラのヨーに対して使う)、速い動きは IMU・向きの基準は ARKit になる。
+    // ピッチと位置は ARKit のまま。IMU が途切れれば iPhone へ戻る
+
+    /// <summary>外部IMUのヨーを ARKitカメラのヨーへ揃える時定数(秒)。進行方向用(30秒)より短く、ドリフトを早めに消す</summary>
+    public const float ImuYawAlignSeconds = 10f;
+
+    /// <summary><see cref="HeadYawSource"/> の文字列("phone" / "glassImu")。知らない値は既定の iPhone</summary>
+    public static HeadYawSource ParseHeadYawSource(string value)
+        => value == "glassImu" ? HeadYawSource.ExternalImu : HeadYawSource.PhoneCamera;
+
+    /// <summary>
+    /// 頭マウントの描画のヨーを外部IMUで回すか。設定が ExternalImu で、ヨーが新しく届いていて、
+    /// グラスが Anchor(自前で頭回転を打ち消す)でないときだけ
+    /// </summary>
+    public static bool ShouldDriveHeadMountYawFromImu(HeadYawSource source, GlassScreenMode screenMode, bool headYawFresh)
+        => source == HeadYawSource.ExternalImu && ShouldApplyHeadYaw(screenMode, headYawFresh);
 
     /// <summary>
     /// 首振りを足すか。Anchor ではグラスが自前で頭回転を打ち消すので足すと二重補正になる。

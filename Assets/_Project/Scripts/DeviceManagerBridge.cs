@@ -14,6 +14,8 @@ using UnityEngine;
 ///                      — グラス実機の頭部姿勢(将来用。iOSでは現状供給元が無い)
 ///   SetGlassPassthrough {enabled} / SetPhonePassthrough {enabled}
 ///                      — グラスの背景 / iPhone の画面にカメラ映像を出すか(開発者モード・どちらも既定ON)
+///   SetHeadYawSource {source}
+///                      — 頭マウントの描画のヨーの元。"phone"(既定・ARKitカメラ)| "glassImu"(UpdateHeadYaw のヨー)
 ///   UpdateHeadYaw {yaw}
 ///                      — 頭のヨー(度・基準は任意・右が正)。AirPods か XREAL One 自身のIMU(Swift の XrealImuReceiver)。進行方向との差を首振りとして
 ///                        グラスの描画の向きへ足し、首を振ってもアバターが進行方向の3m先に留まって見える
@@ -45,6 +47,9 @@ public class DeviceManagerBridge : MonoBehaviour
 
         // SetGlassPassthrough / SetPhonePassthrough(開発者モード): グラスの背景 / iPhone の画面にカメラ映像を出すか
         public bool enabled;
+
+        // SetHeadYawSource(開発者モード): 頭マウントの描画のヨーの元。"phone"(既定) | "glassImu"
+        public string source;
     }
 
     [SerializeField] private ReadyCheckController readyCheck;
@@ -133,6 +138,15 @@ public class DeviceManagerBridge : MonoBehaviour
                 var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
                 if (rig != null) rig.SetCameraPassthroughOnGlass(cmd.enabled);
                 else Debug.LogWarning("[SWIFT BRIDGE] SetGlassPassthrough ignored — GlassViewRig not found.");
+                break;
+            }
+
+            case "SetHeadYawSource":
+            {
+                // 頭マウントの描画のヨーを iPhone(ARKitカメラ)とグラスのIMUのどちらから取るか(開発者モード)
+                var rig = ResolveGlassRig();
+                if (rig != null) rig.SetHeadYawSource(HeadPoseMath.ParseHeadYawSource(cmd.source));
+                else Debug.LogWarning("[SWIFT BRIDGE] SetHeadYawSource ignored — GlassViewRig not found.");
                 break;
             }
 

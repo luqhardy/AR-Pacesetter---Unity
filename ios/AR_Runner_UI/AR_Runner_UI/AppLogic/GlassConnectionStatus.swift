@@ -108,6 +108,28 @@ nonisolated enum PhonePassthroughSetting {
     }
 }
 
+// MARK: - 開発者モード「頭の向きの元」
+
+/// ARグラスの描画のヨー(頭の向き)をどのセンサーから取るか。**既定は iPhone**(頭に付けた iPhone の ARKit)。
+/// `glassImu` にすると、グラスのIMU(XREAL One)のヨーが届いている間はそれで描画を回す — 届かなければ iPhone のまま。
+/// 値は接続・走行の開始のたびに Unity へ送る(`SetHeadYawSource`)。未設定・知らない値は iPhone として読む
+nonisolated enum HeadYawSourceSetting: String, CaseIterable, Identifiable {
+    case phone
+    case glassImu
+
+    var id: String { rawValue }
+
+    static let key = "devHeadYawSource"
+    static let defaultValue = HeadYawSourceSetting.phone
+
+    static func read(_ defaults: UserDefaults) -> HeadYawSourceSetting {
+        defaults.string(forKey: key).flatMap(HeadYawSourceSetting.init(rawValue:)) ?? defaultValue
+    }
+
+    /// グラスのIMUを選んでいれば、準備画面で「接続」を押していなくても走行の開始で読み始める
+    var startsGlassImuWithRun: Bool { self == .glassImu }
+}
+
 // MARK: - 開発者モード「屋内テスト」
 
 /// Unity の Diagnostics の `gps.autoLostHandling` の値("ON(仕様どおり)" / "OFF(手動で無効化中)")を読む。

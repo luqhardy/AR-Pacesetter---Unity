@@ -95,6 +95,12 @@ public static class DevDiagnostics
             Add(rows, "glass.profile", glass.ActiveProfile != null ? glass.ActiveProfile.ToString() : "");
             Add(rows, "glass.orientation", glass.OrientationSource.ToString());
             Add(rows, "glass.downPitchDeg", Num(glass.AppliedDownPitchDegrees));
+            Add(rows, "glass.headYawSource", glass.HeadYawSourceSetting != HeadYawSource.ExternalImu
+                ? "iPhone(ARKitカメラ・既定)"
+                : glass.IsHeadYawFromImu ? "グラスのIMU — そのヨーで描画中"
+                : glass.Mount != CameraMount.Head ? "グラスのIMU(設定)— 胸マウントでは首振りとして足す"
+                : glass.HasFreshHeadYaw ? "グラスのIMU(設定)— グラス未出力のため使っていない"
+                : "グラスのIMU(設定)— ヨーが届いていないので iPhone を使用中");
             Add(rows, "glass.headYawDeg", glass.HasFreshHeadYaw
                 ? Num(glass.AppliedHeadYawDegrees)
                 : "供給なし(AirPods の頭の向きが届いていない)");

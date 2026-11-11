@@ -47,6 +47,8 @@ public sealed class GlassViewRig : MonoBehaviour
     [SerializeField] private float maxDownPitchDegrees = 15f;
     [Tooltip("グラスの背景にiPhoneのカメラ映像を出す(既定ON)。開発者モードの SetGlassPassthrough で切替")]
     [SerializeField] private bool cameraPassthroughOnGlass = true;
+    [Tooltip("頭マウントのとき描画のヨーをどこから取るか。既定は iPhone(ARKitカメラ)。開発者モードの SetHeadYawSource で切替")]
+    [SerializeField] private HeadYawSource headYawSource = HeadYawSource.PhoneCamera;
 
     private Camera _outputCamera;
     private GlassPassthroughLayer _passthroughLayer;
@@ -162,6 +164,7 @@ public sealed class GlassViewRig : MonoBehaviour
         IsGlassOutputActive = false;
         _headYawBaseline.Reset();
         AppliedHeadYawDegrees = 0f;
+        IsHeadYawFromImu = false;
         ActiveProfile = GlassDisplayProfile.PhoneScreen;
         OrientationSource = HeadOrientationSource.PhoneCamera;
         AppliedDownPitchDegrees = 0f;
@@ -206,6 +209,25 @@ public sealed class GlassViewRig : MonoBehaviour
         _headYawRaw = degrees;
         _headYawTime = Time.time;
     }
+
+    /// <summary>
+    /// 頭マウントの描画のヨーを iPhone(ARKitカメラ)と外部IMU(グラスのIMU)のどちらから取るか
+    /// (開発者モード・<c>SetHeadYawSource</c>・既定は iPhone)。次のフレームから反映する
+    /// </summary>
+    public void SetHeadYawSource(HeadYawSource source)
+    {
+        if (headYawSource == source) return;
+        headYawSource = source;
+        _headYawBaseline.Reset(); // 切り替えた瞬間の向きを「まっすぐ前」として取り直す
+        IsHeadYawFromImu = false;
+        Debug.Log($"[GLASS] 頭の向きの元を {(source == HeadYawSource.ExternalImu ? "外部IMU(グラスのIMU)" : "iPhone(ARKitカメラ)")} に設定");
+    }
+
+    /// <summary>頭マウントの描画のヨーの元(設定)。</summary>
+    public HeadYawSource HeadYawSourceSetting => headYawSource;
+
+    /// <summary>直近のフレームで、頭マウントのヨーを実際に外部IMUで回したか(設定が IMU でも届いていなければ false)</summary>
+    public bool IsHeadYawFromImu { get; private set; }
 
     public bool HasFreshHeadYaw =>
         HeadPoseMath.IsExternalPoseFresh(Time.time, _headYawTime, HeadPoseMath.DefaultHeadYawMaxAgeSeconds);
@@ -286,6 +308,7 @@ public sealed class GlassViewRig : MonoBehaviour
         float downPitch = 0f;
         float headYaw = 0f;
         Quaternion rotation;
+        bool yawFromImu = false;
         switch (OrientationSource)
         {
             case HeadOrientationSource.ExternalGlassPose:
@@ -301,7 +324,22 @@ public sealed class GlassViewRig : MonoBehaviour
                     ? Quaternion.LookRotation(look, Vector3.up)
                     : _outputCamera.transform.rotation;
                 downPitch = HeadPoseMath.WrapDegrees(rotation.eulerAngles.x);
-                _headYawBaseline.Reset();
+                if (lookIsDefined
+                    && HeadPoseMath.ShouldDriveHeadMountYawFromImu(headYawSource, screenMode, HasFreshHeadYaw))
+                {
+                    // 開発者モード「頭の向き: グラスのIMU」。ヨーだけ外部IMUで回す(ピッチと位置は ARKit のまま)
+                    float cameraYaw = rotation.eulerAngles.y;
+                    float imuOffset = _headYawBaseline.Update(_headYawRaw, cameraYaw, Time.deltaTime,
+                                                              HeadPoseMath.ImuYawAlignSeconds);
+                    float imuViewYaw = HeadPoseMath.ResolveViewYawDegrees(cameraYaw, imuOffset, true);
+                    headYaw = imuViewYaw - cameraYaw;
+                    rotation = Quaternion.Euler(rotation.eulerAngles.x, imuViewYaw, 0f);
+                    yawFromImu = true;
+                }
+                else
+                {
+                    _headYawBaseline.Reset();
+                }
                 break;
 
             case HeadOrientationSource.TravelHeading:
@@ -318,6 +356,7 @@ public sealed class GlassViewRig : MonoBehaviour
                 break;
         }
         AppliedHeadYawDegrees = headYaw;
+        IsHeadYawFromImu = yawFromImu;
 
         _outputCamera.transform.rotation = rotation;
         AppliedDownPitchDegrees = downPitch;

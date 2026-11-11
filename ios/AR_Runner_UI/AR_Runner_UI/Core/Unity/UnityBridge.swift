@@ -335,6 +335,8 @@ final class UnityBridge: NSObject, ObservableObject {
 
         // グラスの背景のカメラ映像(開発者モード・既定ON)。接続より先に届くよう、その直前に送る
         setGlassPassthrough(enabled: GlassPassthroughSetting.read(.standard))
+        // 頭の向きの元(開発者モード・既定は iPhone)も同じく接続のたびに送る
+        setHeadYawSource(HeadYawSourceSetting.read(.standard))
         sendToUnity(object: "DeviceManager", method: "OnSwiftCommand", payload: payload)
     }
 
@@ -343,6 +345,13 @@ final class UnityBridge: NSObject, ObservableObject {
     func setGlassPassthrough(enabled: Bool) {
         sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
                     payload: ["command": "SetGlassPassthrough", "enabled": enabled])
+    }
+
+    /// 開発者モード: ARグラスの描画のヨー(頭の向き)を iPhone とグラスのIMUのどちらから取るか(既定は iPhone)。
+    /// グラスのIMUを選んでも、ヨーが届いていなければ Unity は iPhone のまま描く
+    func setHeadYawSource(_ source: HeadYawSourceSetting) {
+        sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
+                    payload: ["command": "SetHeadYawSource", "source": source.rawValue])
     }
 
     /// 開発者モード: iPhone の画面にカメラ映像を出すか(既定ON)。
@@ -738,7 +747,7 @@ final class UnityBridge: NSObject, ObservableObject {
             pendingCommands.removeAll { $0.command == "ConnectXREAL" || $0.command == "DisconnectXREAL" }
         case "RequestHistory":
             pendingCommands.removeAll { $0.command == "RequestHistory" }
-        case "SetGlassPassthrough", "SetPhonePassthrough":
+        case "SetGlassPassthrough", "SetPhonePassthrough", "SetHeadYawSource":
             pendingCommands.removeAll { $0.command == command }
         default:
             break
@@ -943,6 +952,12 @@ final class ARSessionManager: ObservableObject {
         // 実測センサー起動: CoreLocation(距離/速度) + HealthKit(心拍・Watch経由)
         LocationTracker.shared.start()
         HeartRateMonitor.shared.start()
+        // 開発者モードで「頭の向き: グラスのIMU」を選んでいれば、準備画面で押し忘れていても読み始める
+        let headYawSource = HeadYawSourceSetting.read(.standard)
+        if headYawSource.startsGlassImuWithRun, !XrealImuReceiver.shared.isForRun {
+            XrealImuReceiver.shared.startForRun()
+        }
+        bridge.setHeadYawSource(headYawSource)
         // §10(連続稼働60分・電池30%以上)の確認用に、開始時の電池・発熱を残す
         PowerMonitor.shared.runStarted()
         // 途中でアプリが落ちたら、次の起動のホームで「前回の記録」を「-」にする(タスク表 S3)

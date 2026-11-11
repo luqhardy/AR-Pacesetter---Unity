@@ -1685,6 +1685,30 @@ public class E2EScenarioBehaviour : MonoBehaviour
               && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
             $"head: a head-mounted camera ignores AirPods yaw ({glassRig.AppliedHeadYawDegrees:F1}°)");
 
+        // 開発者モード「頭の向き: グラスのIMU」: 頭マウントでも外部IMUのヨーで描画を回す
+        deviceBridge.OnSwiftCommand("{\"command\":\"SetHeadYawSource\",\"source\":\"glassImu\"}");
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
+        yield return null;
+        Check(glassRig.IsHeadYawFromImu && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
+            $"head-source: with the IMU selected, the first sample is taken as straight ahead ({glassRig.AppliedHeadYawDegrees:F1}°)");
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+        yield return null;
+        Check(glassRig.OrientationSource == HeadOrientationSource.HeadMountedCamera
+              && Mathf.Abs(glassRig.AppliedHeadYawDegrees - 30f) < 2f,
+            $"head-source: the IMU yaw turns the head-mounted view ({glassRig.AppliedHeadYawDegrees:F1}°)");
+        if (glassRig.OutputCamera != null && Camera.main != null)
+        {
+            float yawGap = Mathf.DeltaAngle(Camera.main.transform.eulerAngles.y, glassRig.OutputCamera.transform.eulerAngles.y);
+            float pitchGap = Mathf.DeltaAngle(Camera.main.transform.eulerAngles.x, glassRig.OutputCamera.transform.eulerAngles.x);
+            Check(Mathf.Abs(yawGap - 30f) < 2f && Mathf.Abs(pitchGap) < 0.5f,
+                $"head-source: only the yaw comes from the IMU; pitch stays with the ARKit camera (yaw {yawGap:F1}°, pitch {pitchGap:F1}°)");
+        }
+        deviceBridge.OnSwiftCommand("{\"command\":\"SetHeadYawSource\",\"source\":\"phone\"}");
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":160}");
+        yield return null;
+        Check(!glassRig.IsHeadYawFromImu && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
+            $"head-source: switching back to the phone drops the IMU yaw at once ({glassRig.AppliedHeadYawDegrees:F1}°)");
+
         // 頭を向けた先を描く: ヨーとピッチは ARKitカメラのまま、ロールだけ足さない
         Camera headCamera = Camera.main;
         if (headCamera != null && glassRig.OutputCamera != null)

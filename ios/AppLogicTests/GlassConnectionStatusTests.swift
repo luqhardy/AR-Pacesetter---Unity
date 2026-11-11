@@ -49,6 +49,22 @@ final class GlassConnectionStatusTests: XCTestCase {
         XCTAssertTrue(DeviceGate.canProceed(glass: .mirroring, allowRunWithoutGlasses: true))
     }
 
+    func testHeadYawSourceDefaultsToPhone() {
+        let defaults = UserDefaults(suiteName: "HeadYawSourceSettingTests")!
+        defaults.removePersistentDomain(forName: "HeadYawSourceSettingTests")
+        XCTAssertEqual(HeadYawSourceSetting.read(defaults), .phone, "未設定(初回起動)は iPhone")
+        XCTAssertFalse(HeadYawSourceSetting.read(defaults).startsGlassImuWithRun)
+        defaults.set("glassImu", forKey: HeadYawSourceSetting.key)
+        XCTAssertEqual(HeadYawSourceSetting.read(defaults), .glassImu)
+        XCTAssertTrue(HeadYawSourceSetting.read(defaults).startsGlassImuWithRun)
+        defaults.set("somethingElse", forKey: HeadYawSourceSetting.key)
+        XCTAssertEqual(HeadYawSourceSetting.read(defaults), .phone, "知らない値は iPhone")
+        defaults.removePersistentDomain(forName: "HeadYawSourceSettingTests")
+        // Unity(HeadPoseMath.ParseHeadYawSource)と同じ文字列
+        XCTAssertEqual(HeadYawSourceSetting.phone.rawValue, "phone")
+        XCTAssertEqual(HeadYawSourceSetting.glassImu.rawValue, "glassImu")
+    }
+
     func testPhonePassthroughIsOnUntilTurnedOff() {
         let defaults = UserDefaults(suiteName: "PhonePassthroughSettingTests")!
         defaults.removePersistentDomain(forName: "PhonePassthroughSettingTests")

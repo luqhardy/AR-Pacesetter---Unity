@@ -228,6 +228,48 @@ public class GlassPoseAndProfileTests
     }
 
     [Test]
+    public void 頭の向きの元は既定がiPhoneで知らない値もiPhone()
+    {
+        Assert.AreEqual(HeadYawSource.ExternalImu, HeadPoseMath.ParseHeadYawSource("glassImu"));
+        Assert.AreEqual(HeadYawSource.PhoneCamera, HeadPoseMath.ParseHeadYawSource("phone"));
+        Assert.AreEqual(HeadYawSource.PhoneCamera, HeadPoseMath.ParseHeadYawSource(null));
+        Assert.AreEqual(HeadYawSource.PhoneCamera, HeadPoseMath.ParseHeadYawSource("GLASSIMU"));
+    }
+
+    [Test]
+    public void IMUで回すのは設定がIMUでヨーが届いていてAnchorでないときだけ()
+    {
+        Assert.IsTrue(HeadPoseMath.ShouldDriveHeadMountYawFromImu(HeadYawSource.ExternalImu, GlassScreenMode.FollowLocked, true));
+        Assert.IsFalse(HeadPoseMath.ShouldDriveHeadMountYawFromImu(HeadYawSource.PhoneCamera, GlassScreenMode.FollowLocked, true), "既定(iPhone)では使わない");
+        Assert.IsFalse(HeadPoseMath.ShouldDriveHeadMountYawFromImu(HeadYawSource.ExternalImu, GlassScreenMode.FollowLocked, false), "届いていなければ iPhone へ戻る");
+        Assert.IsFalse(HeadPoseMath.ShouldDriveHeadMountYawFromImu(HeadYawSource.ExternalImu, GlassScreenMode.Anchor, true), "Anchor は二重補正になる");
+    }
+
+    [Test]
+    public void IMUとカメラが一緒に回ればIMUのヨーがそのまま描画のヨーになる()
+    {
+        // 頭に付けた iPhone とグラスは同じ頭に載っている: 両方が右へ 60° 回る。IMU の基準は 200° ずれている
+        var b = new HeadYawBaseline();
+        b.Update(200f, 0f, 1f / 60f, HeadPoseMath.ImuYawAlignSeconds);
+        float offset = 0f;
+        for (int i = 1; i <= 60; i++)
+            offset = b.Update(200f + i, i, 1f / 60f, HeadPoseMath.ImuYawAlignSeconds);
+        Assert.AreEqual(0f, offset, 0.5f, "差が変わらなければカメラのヨーに何も足さない");
+    }
+
+    [Test]
+    public void IMUのドリフトは時定数の数倍でカメラのヨーへ戻る()
+    {
+        var b = new HeadYawBaseline();
+        b.Update(0f, 0f, 1f / 60f, HeadPoseMath.ImuYawAlignSeconds);
+        // IMU だけが 10° ずれたまま(ドリフト)。カメラは動いていない
+        float offset = 0f;
+        for (int i = 0; i < 60 * 40; i++)
+            offset = b.Update(10f, 0f, 1f / 60f, HeadPoseMath.ImuYawAlignSeconds);
+        Assert.AreEqual(0f, offset, 0.5f);
+    }
+
+    [Test]
     public void 最初の頭の向きをまっすぐ前とみなす()
     {
         // AirPods の向きの基準は任意(ここでは進行方向から 137° ずれている)
