@@ -4,6 +4,12 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-12 — ドキュメントを実装に合わせる(HANDOVER §5・実地テスト計画・Kobe Calling チェックリスト)
+- HANDOVER §5: 「XREAL の IMU は取得不能・回避策なし」→ TCP の生IMU経路(`XrealImuReceiver`・iPhone 未確認)と頭マウントへ。「UnityFramework 未リンク・Swift 未コンパイル」→ 実施済み(CI の ios-build / swift test)。実地テストは記録が1件も無いと明記し、T1〜T9 → T1〜T10。
+- FIELD_TEST_PLAN: 準備に頭マウントを追加、Apple Watch は任意(第1期スコープ外)、首振りの確認を頭マウント(AirPods 不要)と胸マウントに分ける。
+- KOBE_CALLING_CHECKLIST: 冒頭に注意 — 手順は胸マウント・カメラ映像なしのままで、今の既定(頭マウント・カメラ映像ON)と食い違う。どちらへ合わせるかはチーム判断なので手順は書き換えていない。
+- 検証: ドキュメントのみ(コード変更なし・verify.sh は実行していない)。
+
 ### 2026-11-10 (2) — 使っていない LilLeo アバター(FBX・テクスチャ・マテリアル)を削除
 - `Assets/Avatar.fbx`(11MB)・`T_LilLeo_Quest.png`・`M_LilLeo_Quest.mat`・`Mamehinata_LilLeo_Quest.mat` を削除。どのシーン・プレハブからも参照されておらず、第三者のアバターを公開リポジトリに置く根拠(ライセンス・出典)も無かった。
 - `AvatarAnimatorControllerGenerator` が再生成のたびに `Assets/Avatar.fbx` をヒューマノイドへ直す呼び出しも外した。過去のコミットには残る(履歴の書き換えはしていない)。

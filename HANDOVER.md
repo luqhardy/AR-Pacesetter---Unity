@@ -42,7 +42,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | VFX(起動粒子集積・終了挨拶消滅・接地パルス) | `AvatarVFXController.cs` | エディタ目視 |
 | グラスでの走行終了(挨拶→消滅→結果カード約4秒→表示OFF。Swift はその間 Unity を止めない) | `GlassRunSummaryCard.cs` + `RunSummaryText.cs` | **Unit + E2E自動**(カードが出て消え、HUDも消える) |
 | サイズの異常系(要求身長100〜230cm・測れない/桁外れの検知・画角による上限の下限100cm・スケールイン中断の復元) | `AvatarScale.cs` + `AvatarEngine.ApplyHeightCm` + `AvatarVFXController` | **Unit + E2E自動**。開発者モード `avatar.height` / `avatar.heightAnomaly` |
-| 首振り(AirPods の頭の向きを進行方向との差にしてグラスの描画の向きへ足す。S4 で接続したときだけ) | Unity: `HeadPoseMath.HeadYawBaseline` + `GlassViewRig` / Swift: `HeadphoneHeadTracker.swift` | **Unit + E2E自動**(Unity側)・Swift Unit(CI)・**見え方は実機要** |
+| 首振り(AirPods の頭の向きを進行方向との差にしてグラスの描画の向きへ足す。S4 で接続したときだけ・**胸マウントのときだけ** — 既定の頭マウントでは使わない) | Unity: `HeadPoseMath.HeadYawBaseline` + `GlassViewRig` / Swift: `HeadphoneHeadTracker.swift` | **Unit + E2E自動**(Unity側)・Swift Unit(CI)・**見え方は実機要** |
 | 遅れ(5m以上・オーラが出る)で手招き | `ProceduralGestureDriver.cs` | **E2E自動**(展示デモの遅れ区間) |
 | 自走モード(アバターが目標ペースで走る — 10m 離れたら待ち、3m まで近づいたら走り出す・抜かれても走り続ける。[Docs/PACESETTER_BEHAVIOR_SPEC.md](Docs/PACESETTER_BEHAVIOR_SPEC.md)。AR設定のスイッチ・**既定OFF**) | `PacesetterModel.cs`(純ロジック・`RunnerDistanceEstimator`)+ `PacesetterSound.cs` + `AvatarEngine.UpdatePacesetter` / Swift `AvatarPacing.swift` | **Unit + E2E自動**(走り出し・待ちの間は止まる・遅れを残す・補正は瞬間移動しない)・実機要 |
 | GPSが使えないときはHUDだけ(START の時点で測位が無い・精度10m以上 → アバター非表示+HUD警告、精度5m以内で出現。AR設定のスイッチ・**既定OFF**) | `GpsSignalPolicy.ShouldStartHudOnly` + `GameStateController.StandbyCause.AwaitingGps` + `ARSessionManagerBridge.MaybeStartHudOnly` / Swift `HudOnlyStart.swift` | **Unit + E2E自動**(GPSなしで非表示・12mでは出ない・4mで出現・スイッチ無しは従来どおり)・実機要 |
@@ -154,14 +154,18 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   - S8-1 ルートのカスタマイズ・ルートの学習(画面の仕様が無い)、S5 自動計算の「概要 4.2 ルート提案の詳細」(資料が見つからず、距離を保つ決まりで実装)
   - 身体情報(S9-2)の使い道: 画面・保存・スマホ設定からの編集・不正値の補正は 2026-10-21 に相手側から移植済み。走行(アバターの身長・消費カロリー等)にはまだ使っていない
   - Apple Watch・AirPods の電池残量の警告(iOS から取れない)
-- **XREAL head-pose/IMU入力は原理的に取得不能(2026-09-16 調査で確定)**: XREAL SDKはAndroid専用でiOS版が存在せず、Air系がUSB-HIDで出しているIMUもiOSアプリからは触れない(公開APIが無くMFi/DriverKit対象外)。**回避策は無い**ため、第1期の空間トラッキングはiPhoneのARKit単独で確定。グラスは「平面スクリーン1枚」として扱う。
-  受け口だけは通してある(`UpdateGlassPose` → `GlassViewRig.SetExternalHeadPose`。0.25秒途切れれば§4.1の進行方向ヨーへ自動復帰)。
-  **首振り(ヨー)だけは 2026-10-19 から AirPods で補える**(`UpdateHeadYaw`・S4 で接続したときだけ)。Bluetooth 経由のぶん遅れるはずなので、見え方は実機で要確認
+- **XREAL の頭部姿勢は SDK からは取れない。生IMUだけ非公式の経路で読める(iPhone 実機では未確認)**: XREAL SDKはAndroid専用でiOS版が存在せず、Air系がUSB-HIDで出しているIMUもiOSアプリからは触れない(公開APIが無くMFi/DriverKit対象外 — 2026-09-16 調査)。
+  ただし XREAL One は USBネットワーク越しに TCP `169.254.2.1:52998` で生IMUを流しており(2026-10-27・Mac / Windows で取得して形式を解析)、`XrealImuReceiver` が読む(準備画面「グラスのセンサー」で接続したときだけ・既定OFF・読むだけ)。**iPhone で届くかは実機で一度も確かめていない。**
+  第1期の空間トラッキングは iPhone の ARKit が単独で担う。iPhone は**頭のマウント**に付けるので(2026-11-04〜・`CameraMount.Head`・既定)、ARKit カメラの向きがそのまま頭の向きになる。
+  受け口は通してある(`UpdateGlassPose` → `GlassViewRig.SetExternalHeadPose`。0.25秒途切れれば§4.1の進行方向ヨーへ自動復帰)。
+  AirPods / グラスIMU の首振り(`UpdateHeadYaw`)を描画へ足すのは**胸マウントのときだけ** — 頭マウントではカメラの向きに首振りが含まれている(開発者モード「頭の向きの元」でグラスのIMUを選んだ場合を除く)。どの経路も見え方は実機で要確認
   **グラスの画面モードは Follow(固定) にすること** — Anchorだとグラス側X1が頭回転を打ち消すためUnity側と二重補正になる。
   根拠・数値・設計判断は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md)
 - ~~**F-03の3.0mとXREAL Oneの画角が両立しない**~~ → **解決(2026-10-13 チーム判断: 3.0mは保ち大きさを譲る)**: グラス出力中は `GlassViewRig` が画角に頭から足元まで収まる身長を上限にする(XREAL One で約144cm。足元のオーラも見える)。iPhone画面では175cmのまま。E2Eで「収まる・足元が見える・切断で175cmに戻る」を固定。**実機での見え方(小さく見えすぎないか)は要確認**
-- **Mac統合ビルドの初回手順**: UnityFramework の Embed & Sign 等(SWIFT_INTEGRATION.md ②)。Swiftコードは未コンパイル検証(Windows開発のため)
-  - **未実施であることの確認方法と症状(重要)**: `ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj` に
+- ~~**Mac統合ビルドの初回手順(UnityFramework の Embed & Sign)**~~ → **実施済み**: `project.pbxproj` は UnityFramework をリンク・埋め込みしており、
+  CI の `ios-build.yml`(macOS ランナー)が push のたびにアプリをコンパイル・リンクする。Swift のロジックは `swift-logic-tests.yml` が実行する。
+  Windows では Swift の型検査ができないので、**Swift を変えたら CI の結果を待つ**(手元の verify.sh は構文まで)
+  - **リンクが外れたときの確認方法と症状(重要・設定を作り直すときのために残す)**: `ios/AR_Runner_UI/AR_Runner_UI.xcodeproj/project.pbxproj` に
     `UnityFramework` の文字列が1つも無い場合、リンクは未実施。このとき Swift 側は
     `#if canImport(UnityFramework)` が偽になり **UnityLauncher / UnityBridge がダミー実装へ落ちる** —
     `launch()` はフラグを立てるだけ、`sendToUnity` は送信されず、`simulateUnityResponse` が
@@ -176,13 +180,13 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
   絶対高さが正しい保証は無い(端末をどの高さで起動したかに依存する)。
   `GroundSnap.hideUntilMeasuredFloor` を有効化すると実測フロアを掴むまでアバター描画を抑止できる
   (既定OFF — エディタ/E2Eでは実測フロアが存在せず常時非表示になってしまうため)
-- **Mac側の残作業(コード修正では閉じられない)**: UnityFrameworkのEmbed & Sign と
-  `Data`フォルダのTarget Membership変更(SWIFT_INTEGRATION.md ②-2/②-3)。
-  これが済むまで Swift 側は `#if canImport(UnityFramework)` の偽実装で動き続ける
+- **実機への配布は Mac が要る**: `tools/build-to-iphone.sh`(無料の Apple ID・7日で起動不能)。TestFlight(`ios-testflight.yml`)は
+  実装済みだが有料アカウントの判断待ちで**一度も実行していない**([Docs/TESTFLIGHT.md](Docs/TESTFLIGHT.md))
 - **ARCore Scene Semantics は受け口のみ(未導入・休眠)**: 屋外路面を Road/Sidewalk/Terrain で分類し、ARKitに road が無い穴を埋めるための実装は入っているが、パッケージ(`arcore-unity-extensions#arf6`)と定義シンボル `ARCORE_EXTENSIONS` が未設定のため休眠中。接地判定は従来のまま(E2Eで固定)。**陸上トラックのタータン路面が UNLABELED に落ちる可能性が高く、その場合トラックでは効果ゼロ**(安全側に倒れるだけ)。導入手順と実機確認5項目は [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
 - ~~**フレーム時間依存の平滑化**~~ → **全箇所移行済み**(2026-09-17)。`AvatarEngine`・`GroundSnap`・`SilentRouteRecoverer` は `FrameSmoothing.Factor` を経由し、`SpatialKalmanFilter` は時間単位化した。**新規コードで `Lerp(a, b, Time.deltaTime * k)` を書かないこと** — 1フレームが 1/k 秒を超えると 係数が1に飽和して瞬間移動になる(実機の走行中フレームは最大330msに達する)。`FrameSmoothing.Factor(Time.deltaTime, k)` を使う
 - ~~**§10の接地(±5cm)は未達: 立脚期の足が床へ約6cm沈む**~~ → **解消**(2026-09-24)。原因はMixamo走行クリップが立脚期に足をGroundSnapの原点平面より下げること(スキンメッシュ最下頂点で最大-0.104m)。`FootPlanting` がモデル読込時にバインドポーズのメッシュから足/つま先の足裏の点を選び、毎フレーム最下点が床より下ならモデルを持ち上げる(上げるだけ・空中局面は残す)。E2Eは焼いたメッシュの最下頂点(補正とは独立の真値)で1歩幅ぶん判定し **-0.011m**(持ち上げ最大0.096m)。**残作業: エディタ/実機で走りの見た目(立脚期の持ち上げによる上下動)を目視確認**
-- **実地フィールドテスト**: `Docs/FIELD_TEST_PLAN.md` の T1〜T9 を実施(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)
+- **実地フィールドテストは未実施(2026-11-12 時点で記録が1件も無い)**: `Docs/FIELD_TEST_PLAN.md` の §0-A(室内の初回確認)と T1〜T10 を実施し、
+  結果を [Docs/field-tests/](Docs/field-tests/README.md) に残す(GPS不安定域・実機レイテンシ・XREAL表示の定量評価)。§4 の成功基準①③はこれが済むまで根拠が無い
 - ~~**ルート同期**~~ → **接続済み(2026-10-19・既定OFF)**: S8 で「ルートを外れたらアバターが案内する」を ON にして過去の走行の経路を選ぶと、StartSession の `routeLatLon` で Unity へ渡り、`SilentRouteRecoverer` が外れたら案内する。逸脱は **AR の座標へ置かず GPS の座標のまま**測る(`RouteDeviation` — AR の世界は原点・ヨーが任意で位置合わせの誤差が乗るため)。トラックの GPS 誤差で反応しないよう、しきい値は15m(精度の2倍の方が大きければそれ)・5秒続いたら逸脱・内側(−5m)に2秒で解除・精度20m超の測位は使わない・一度100m以内に近づくまで判定しない(`RouteDeviationGate`)。案内の向きだけ `RunnerTrackingState.TryGeographicToWorldDirection` で AR へ回す。候補0件の往復ルートは渡さない。**実機の見え方・トラックでの誤検知は未確認**。以下は接続前の記述(逸脱判定のシミュレーションは D キー / E2E の `SimulateDeviation` のまま残っている):実ルート運用時はStartSessionへポリライン(緯度経度→開始点基準のローカル座標変換)を追加する必要がある。現状の逸脱検知はシミュレーション(D キー/E2E)のみ
 - **`SafetyAndSystemController` が未配線(TTC危険警告・低バッテリー退避が実行時に不在)**: スクリプトは存在するが、
   シーン(`SampleScene.unity`)にもプレハブにも配置されておらず、`ARVisionSystemsBootstrap` の `Ensure<>` にも無い。
