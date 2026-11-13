@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
 
@@ -29,6 +30,14 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
     // 帯域を抑えるため描画面の半分の解像度で変換する(グラスの視野中央を約2倍に拡大して見るので足りる)
     private const int TextureDownscale = 2;
 
+    // ARKit の背景シェーダーは深度を書く(ZWrite On・SV_Depth)。深度の無い描画先へ描くと
+    // Metal では何も描かれないことがあるので、変換先にも深度バッファを持たせる
+    private const int DepthBufferBits = 24;
+
+    // 変換結果が本当に絵になっているかの確認(小さく縮めて読み戻す)。確認できるまで1秒に1回だけ
+    private const int ProbeSize = 8;
+    private const float ProbeIntervalSeconds = 1f;
+
     private Camera _outputCamera;
     private ARCameraManager _cameraManager;
     private Material _blitMaterial;
@@ -36,12 +45,28 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
     private Canvas _canvas;
     private RawImage _image;
     private float _cameraProjectionM11;
+    private RenderTexture _probe;
+    private System.Action<AsyncGPUReadbackRequest> _onProbe;
+    private bool _probePending;
+    private float _nextProbeTime;
 
     /// <summary>グラスへ映像を出す指定になっているか(フレームが届く前でも true)。</summary>
     public bool IsShowing { get; private set; }
 
-    /// <summary>今の表示中にカメラのフレームを1枚以上描いたか(エディタでは届かないので false のまま)。</summary>
+    /// <summary>
+    /// 今の表示中にカメラのフレームを1枚以上<b>変換にかけた</b>か(エディタでは届かないので false のまま)。
+    /// 変換を実行したことしか言わない — 絵が出たかは <see cref="HasVisiblePixels"/>
+    /// </summary>
     public bool HasFrame { get; private set; }
+
+    /// <summary>変換結果を読み戻して、黒でない画素を確かめたか。</summary>
+    public bool HasVisiblePixels { get; private set; }
+
+    /// <summary>今の表示中に変換結果を読み戻した回数(0 なら未確認)。</summary>
+    public int PixelProbeCount { get; private set; }
+
+    /// <summary>直近に読み戻した画素の最大の明るさ(0〜255)。</summary>
+    public int LastProbePeak { get; private set; }
 
     /// <summary>直近に使った切り出しの割合(1 = 全面)。</summary>
     public float UvScale { get; private set; } = 1f;
@@ -65,6 +90,10 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
     {
         IsShowing = show;
         HasFrame = false;
+        HasVisiblePixels = false;
+        PixelProbeCount = 0;
+        LastProbePeak = 0;
+        _nextProbeTime = 0f;
         if (_canvas != null) _canvas.enabled = show;
         if (_image != null) _image.enabled = false; // 最初のフレームが届いてから出す
     }
@@ -73,6 +102,7 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
     {
         if (_cameraManager != null) _cameraManager.frameReceived -= OnCameraFrameReceived;
         if (_texture != null) { _texture.Release(); Destroy(_texture); }
+        if (_probe != null) { _probe.Release(); Destroy(_probe); }
         if (_blitMaterial != null) Destroy(_blitMaterial);
     }
 
@@ -115,7 +145,14 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
         get
         {
             if (!IsShowing) return "";
-            if (HasFrame) return "";
+            if (HasVisiblePixels) return "";
+            if (HasFrame)
+            {
+                // 変換は実行している。読み戻しがまだ・できない間は止まっているとは言わない
+                if (PixelProbeCount == 0) return "";
+                return $"変換は実行しているが結果が黒い(最大の明るさ {LastProbePeak}/255)。" +
+                       "カメラが覆われていなければ変換の失敗";
+            }
             if (_cameraManager == null) return "ARCameraManager が見つからない";
             if (FrameEventCount == 0) return "ARKit のフレームが1枚も届いていない";
             if (_lastFrameHadNoTextures) return "フレームは届くがテクスチャが付いていない";
@@ -142,7 +179,14 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
             _cameraProjectionM11 = args.projectionMatrix.Value[1, 1];
 
         EnsureTexture();
+        // 描画先を明示して色と深度を消してから描く(Unity の案内と同じ手順)。
+        // 前のフレームが残っていると、変換が失敗しても古い絵で成功に見える
+        var previous = RenderTexture.active;
+        RenderTexture.active = _texture;
+        GL.Clear(true, true, Color.black);
         Graphics.Blit(null, _texture, _blitMaterial);
+        RenderTexture.active = previous;
+        ProbePixelsIfDue();
 
         float fov = _outputCamera != null ? _outputCamera.fieldOfView : 0f;
         UvScale = (float)GlassPassthroughMath.UvCropScale(fov, _cameraProjectionM11);
@@ -185,13 +229,63 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
         if (_texture != null && _texture.width == w && _texture.height == h) return;
 
         if (_texture != null) { _texture.Release(); Destroy(_texture); }
-        _texture = new RenderTexture(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB)
+        _texture = new RenderTexture(w, h, DepthBufferBits, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB)
         {
             name = "GlassPassthrough",
             wrapMode = TextureWrapMode.Clamp,
         };
         _texture.Create();
         _image.texture = _texture;
+    }
+
+    /// <summary>
+    /// 変換結果を 8x8 に縮めて読み戻し、黒でない画素があるかを確かめる。
+    /// 「変換を呼んだ」だけでは絵が出たとは言えない(描けていなくても例外は出ない)。
+    /// 確認できたらやめる。走行中のフレーム時間を乱さないよう、同期の読み戻しは使わない
+    /// </summary>
+    private void ProbePixelsIfDue()
+    {
+        if (HasVisiblePixels || _probePending) return;
+        if (!SystemInfo.supportsAsyncGPUReadback) return;
+        if (Time.unscaledTime < _nextProbeTime) return;
+
+        if (_probe == null)
+        {
+            _probe = new RenderTexture(ProbeSize, ProbeSize, 0, RenderTextureFormat.ARGB32) { name = "GlassPassthroughProbe" };
+            _probe.Create();
+        }
+
+        var previous = RenderTexture.active;
+        Graphics.Blit(_texture, _probe);
+        RenderTexture.active = previous;
+
+        _onProbe ??= OnProbeRead;
+        _probePending = true;
+        _nextProbeTime = Time.unscaledTime + ProbeIntervalSeconds;
+        AsyncGPUReadback.Request(_probe, 0, TextureFormat.RGBA32, _onProbe);
+    }
+
+    private void OnProbeRead(AsyncGPUReadbackRequest request)
+    {
+        _probePending = false;
+        if (this == null || !IsShowing || request.hasError) return;
+
+        var pixels = request.GetData<Color32>();
+        int peak = 0;
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            Color32 c = pixels[i];
+            if (c.r > peak) peak = c.r;
+            if (c.g > peak) peak = c.g;
+            if (c.b > peak) peak = c.b;
+        }
+
+        PixelProbeCount++;
+        LastProbePeak = peak;
+        if (!GlassPassthroughMath.HasVisiblePixels(peak)) return;
+
+        HasVisiblePixels = true;
+        Debug.Log($"[GLASS] カメラ映像の画素を確認(最大の明るさ {peak}/255)");
     }
 
     private static int FirstLayerIn(int mask)

@@ -47,4 +47,14 @@ public class GlassPassthroughMathTests
     {
         Assert.That(GlassPassthroughMath.UvCropScale(glassFov, m11), Is.EqualTo(1.0));
     }
+
+    // 変換結果の読み戻し: 真っ黒(何も描けていない)と、暗くても絵がある場合を分ける
+    [TestCase(0, false)]
+    [TestCase(GlassPassthroughMath.VisiblePixelThreshold, false)]
+    [TestCase(GlassPassthroughMath.VisiblePixelThreshold + 1, true)]
+    [TestCase(255, true)]
+    public void HasVisiblePixels_SeparatesBlackFromAnImage(int peak, bool expected)
+    {
+        Assert.That(GlassPassthroughMath.HasVisiblePixels(peak), Is.EqualTo(expected));
+    }
 }

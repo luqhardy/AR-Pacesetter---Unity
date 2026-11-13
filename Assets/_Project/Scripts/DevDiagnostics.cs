@@ -115,8 +115,10 @@ public static class DevDiagnostics
             // 「設定はONなのに映らない」をどの段で止まっているかまで読めるようにする
             string glassCamera = !glass.CameraPassthroughOnGlass ? "OFF(設定)"
                 : !glass.IsGlassOutputActive ? "ON(設定) — グラス未出力のため出していない"
-                : glass.CameraPassthroughHasFrame ? "ON — 映像を表示中"
-                : "ON だが映っていない: " + glass.CameraPassthroughBlocker;
+                : glass.CameraPassthroughHasVisiblePixels ? "ON — 映像を表示中(画素を確認)"
+                : !string.IsNullOrEmpty(glass.CameraPassthroughBlocker) ? "ON だが映っていない: " + glass.CameraPassthroughBlocker
+                : glass.CameraPassthroughHasFrame ? "ON — 変換を実行中(画素は未確認)"
+                : "ON だが映っていない: フレーム待ち";
             Add(rows, "glass.cameraFeed", glassCamera);
         }
 

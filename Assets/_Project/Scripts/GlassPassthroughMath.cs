@@ -31,4 +31,16 @@ public static class GlassPassthroughMath
 
     /// <summary>中央から <paramref name="scale"/> の割合を切り出すときの UV の起点(縦横共通)。</summary>
     public static double CenteredUvOffset(double scale) => 0.5 - scale * 0.5;
+
+    /// <summary>
+    /// これを超える明るさ(0〜255)の画素があれば「絵が出ている」とみなす。
+    /// 仮の値: レンズを覆ったときのセンサーのノイズより上、暗い室内の映像より下を狙っている(実機で未調整)
+    /// </summary>
+    public const int VisiblePixelThreshold = 8;
+
+    /// <summary>
+    /// 読み戻した画素の最大の明るさから、変換結果が真っ黒でないかを判定する。
+    /// 真っ黒 = 変換が何も描いていない(またはカメラが覆われている)
+    /// </summary>
+    public static bool HasVisiblePixels(int peakChannelValue) => peakChannelValue > VisiblePixelThreshold;
 }

@@ -79,6 +79,8 @@ public sealed class GlassViewRig : MonoBehaviour
     /// 変換用のマテリアルが届いていない(診断用 — 「設定はONなのに映らない」の切り分け)
     /// </summary>
     public bool CameraPassthroughHasFrame => _passthroughLayer != null && _passthroughLayer.HasFrame;
+    /// <summary>グラスへ出すカメラ映像に黒でない画素を確かめたか(変換結果の読み戻し)。</summary>
+    public bool CameraPassthroughHasVisiblePixels => _passthroughLayer != null && _passthroughLayer.HasVisiblePixels;
     /// <summary>グラスのカメラ映像がどこで止まっているか(日本語・診断用)。出せていれば空</summary>
     public string CameraPassthroughBlocker => _passthroughLayer != null ? _passthroughLayer.Blocker : "";
     /// <summary>描画の俯角(度・下向きが正)。頭マウントでは頭の実際のピッチ。</summary>
