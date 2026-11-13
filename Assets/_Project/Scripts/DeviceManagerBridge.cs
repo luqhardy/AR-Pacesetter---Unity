@@ -4,13 +4,18 @@ using UnityEngine;
 /// <summary>
 /// Swift → Unity デバイス管理ブリッジ (AR-runner の UnityBridge.swift 契約)。
 /// GameObject名は必ず "DeviceManager"。
-///   ConnectXREAL {model?, pixelWidth?, pixelHeight?, refreshHz?}
+///   ConnectXREAL {model?, pixelWidth?, pixelHeight?, refreshHz?, phoneDisplayOnly?}
 ///                      — XREALグラス接続 → ReadyチェックをConnectedへ。
-///                        表示メトリクスがあればグラスの画角で描くプロファイルを選ぶ
+///                        表示メトリクスがあればグラスの画角で描くプロファイルを選ぶ。
+///                        phoneDisplayOnly は外部画面が無いときの手動接続で、描画はiPhoneのまま
 ///   DisconnectXREAL {} — グラス切断(§8.3) → スタンバイ移行(アバター消去)。
 ///                        走行セッションは終了させず、CSVログ書き出しは継続する
 ///   UpdateGlassPose {yaw, pitch, roll, timestamp}
 ///                      — グラス実機の頭部姿勢(将来用。iOSでは現状供給元が無い)
+///   SetGlassPassthrough {enabled} / SetPhonePassthrough {enabled}
+///                      — グラスの背景 / iPhone の画面にカメラ映像を出すか(開発者モード・どちらも既定ON)
+///   SetHeadYawSource {source}
+///                      — 頭マウントの描画のヨーの元。"phone"(既定・ARKitカメラ)| "glassImu"(UpdateHeadYaw のヨー)
 ///   UpdateHeadYaw {yaw}
 ///                      — 頭のヨー(度・基準は任意・右が正)。AirPods か XREAL One 自身のIMU(Swift の XrealImuReceiver)。進行方向との差を首振りとして
 ///                        グラスの描画の向きへ足し、首を振ってもアバターが進行方向の3m先に留まって見える
@@ -30,11 +35,21 @@ public class DeviceManagerBridge : MonoBehaviour
         public int pixelHeight;
         public float refreshHz;
 
+        // 外部画面が無いときの手動接続(ミラーリングの予備手段とは別)。iPhone の画面には
+        // グラス用の描画を出さない — ARCameraBackground を止めるとカメラ映像が消える
+        public bool phoneDisplayOnly;
+
         // UpdateGlassPose (度)。UpdateHeadYaw は yaw だけを使う(AirPods の頭のヨー・右が正)
         public float yaw;
         public float pitch;
         public float roll;
         public float timestamp;
+
+        // SetGlassPassthrough / SetPhonePassthrough(開発者モード): グラスの背景 / iPhone の画面にカメラ映像を出すか
+        public bool enabled;
+
+        // SetHeadYawSource(開発者モード): 頭マウントの描画のヨーの元。"phone"(既定) | "glassImu"
+        public string source;
     }
 
     [SerializeField] private ReadyCheckController readyCheck;
@@ -73,8 +88,15 @@ public class DeviceManagerBridge : MonoBehaviour
                     readyCheck.SetDeviceState("glass", ReadyCheckController.DeviceState.Connected);
                 IsGlassDisconnected = false;
 
-                // 光学シースルーのグラスへ出す間はカメラ映像を描かない。
-                // 現実の上に「現実の動画」を重ねると二重像になり全体が濁るため
+                if (cmd.phoneDisplayOnly)
+                {
+                    EnsureRenderingOnPhone();
+                    Debug.Log("[SWIFT BRIDGE] ConnectXREAL — 外部画面なしの手動接続。描画はiPhoneのまま。");
+                    break;
+                }
+
+                // ARKitカメラの背景は止める(グラス出力中は何も描かないカメラになる)。
+                // グラスへのカメラ映像は出力リグが出す(既定ON・SetGlassPassthrough で切替)
                 SetPassthrough(false);
 
                 // グラスの画角・眼の位置で描く出力リグへ切り替える。
@@ -111,6 +133,32 @@ public class DeviceManagerBridge : MonoBehaviour
                 ApplyHeadYaw(cmd);
                 break;
 
+            case "SetGlassPassthrough":
+            {
+                var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+                if (rig != null) rig.SetCameraPassthroughOnGlass(cmd.enabled);
+                else Debug.LogWarning("[SWIFT BRIDGE] SetGlassPassthrough ignored — GlassViewRig not found.");
+                break;
+            }
+
+            case "SetHeadYawSource":
+            {
+                // 頭マウントの描画のヨーを iPhone(ARKitカメラ)とグラスのIMUのどちらから取るか(開発者モード)
+                var rig = ResolveGlassRig();
+                if (rig != null) rig.SetHeadYawSource(HeadPoseMath.ParseHeadYawSource(cmd.source));
+                else Debug.LogWarning("[SWIFT BRIDGE] SetHeadYawSource ignored — GlassViewRig not found.");
+                break;
+            }
+
+            case "SetPhonePassthrough":
+            {
+                // iPhone の画面のカメラ映像(開発者モード)。グラス出力中は設定だけ覚え、iPhone へ戻ったときに使う
+                var passthrough = FindFirstObjectByType<ARPassthroughController>(FindObjectsInactive.Include);
+                if (passthrough != null) passthrough.SetPhoneCameraWanted(cmd.enabled);
+                else Debug.LogWarning("[SWIFT BRIDGE] SetPhonePassthrough ignored — ARPassthroughController not found.");
+                break;
+            }
+
             default:
                 Debug.LogWarning($"[SWIFT BRIDGE] Unknown device command: {cmd.command}");
                 break;
@@ -130,6 +178,20 @@ public class DeviceManagerBridge : MonoBehaviour
         var passthrough = FindFirstObjectByType<ARPassthroughController>(FindObjectsInactive.Include);
         if (passthrough != null)
             passthrough.SetPassthroughEnabled(enabled);
+    }
+
+    /// <summary>
+    /// 出力リグが動いていればiPhoneの描画へ戻す。ミラーリング中に手動接続してから
+    /// グラスを抜いた場合は DisconnectXREAL が来ないので、ここで解く。
+    /// 動いていないときは何もしない(描画中の ARCameraBackground の設定を崩さない)
+    /// </summary>
+    private void EnsureRenderingOnPhone()
+    {
+        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        if (rig == null || !rig.IsGlassOutputActive) return;
+
+        SetPassthrough(true);
+        rig.DisableGlassOutput();
     }
 
     /// <summary>
@@ -168,7 +230,7 @@ public class DeviceManagerBridge : MonoBehaviour
     /// </summary>
     private void ApplyGlassPose(SwiftCommand cmd)
     {
-        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        var rig = ResolveGlassRig();
         if (rig == null) return;
 
         // 鮮度判定はUnityの時間軸で行う。Swiftの timestamp は CACurrentMediaTime 系で
@@ -182,8 +244,23 @@ public class DeviceManagerBridge : MonoBehaviour
     /// </summary>
     private void ApplyHeadYaw(SwiftCommand cmd)
     {
-        var rig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        var rig = ResolveGlassRig();
         if (rig != null) rig.SetHeadYaw(cmd.yaw);
+    }
+
+    // 頭の向きは約30Hzで届く。届くたびにシーン全体を探さない — 見つけたものを持ち、
+    // 見つからない間も探し直すのは1秒に1回まで
+    private GlassViewRig _glassRig;
+    private float _nextGlassRigLookupTime;
+
+    private GlassViewRig ResolveGlassRig()
+    {
+        if (_glassRig == null && Time.unscaledTime >= _nextGlassRigLookupTime)
+        {
+            _nextGlassRigLookupTime = Time.unscaledTime + 1f;
+            _glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
+        }
+        return _glassRig;
     }
 
     /// <summary>

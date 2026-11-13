@@ -174,6 +174,7 @@ struct MapRouteView: View {
                             guard selectedRoute != nil else { return }
                             RunSettings.shared.guidanceRoute = RouteGuidance.payload(for: selectedRoute,
                                                                                     enabled: routeGuidanceEnabled)
+                            RunSettings.shared.lapLengthMeters = selectedRoute?.lapLengthMeters
                             onNext()
                         }
                         .disabled(selectedRoute == nil)
@@ -272,8 +273,9 @@ private struct RouteCandidateCard: View {
 }
 
 private extension RouteCandidate {
-    /// カードの見出し: 過去のルートは日付、作ったルートは「おまかせ(往復)」
+    /// カードの見出し: 過去のルートは日付、作ったルートは「おまかせ(往復)」、レーンはレーンの名前
     var title: String {
+        if id == TrackRoutes.lane1.id { return AppStrings.Route.trackLane1Title }
         guard kind == .past, let dateIso else { return AppStrings.Route.generatedTitle }
         return RunHistoryEntry(dateIso: dateIso, distanceKm: distanceKm, elapsedSeconds: 0,
                                averageSync: 0, grade: "").dateLabel(locale: .appLanguage)

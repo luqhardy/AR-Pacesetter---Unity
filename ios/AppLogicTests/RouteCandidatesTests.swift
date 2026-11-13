@@ -16,8 +16,11 @@ final class RouteCandidatesTests: XCTestCase {
                                                   run("2026-10-17T07:00:00", km: 9.5),
                                                   run("2026-10-16T07:00:00", km: 5)],
                                          targetDistanceKm: 10, currentLocation: here)
-        XCTAssertEqual(list.map(\.distanceKm), [9.5, 5, 3])
-        XCTAssertTrue(list.allSatisfy { $0.kind == .past })
+        // トラックのレーン(TrackRoutes)は過去のルートの後ろに並ぶ。近い順を見るのは過去のルートだけ
+        XCTAssertEqual(list.filter { $0.kind == .past }.map(\.distanceKm), [9.5, 5, 3])
+        XCTAssertTrue(list.allSatisfy { $0.kind == .past || $0.kind == .track })
+        let firstLane = list.firstIndex { $0.kind == .track } ?? list.count
+        XCTAssertTrue(list[firstLane...].allSatisfy { $0.kind == .track }, "レーンは最後にまとめて並ぶ")
     }
 
     func testAGeneratedRouteIsOfferedWhenThereAreNoCandidates() throws {
@@ -25,7 +28,7 @@ final class RouteCandidatesTests: XCTestCase {
         let list = RouteCandidates.build(history: [run("2026-10-01T07:00:00", km: 5, routed: false)],
                                          targetDistanceKm: 10, currentLocation: here)
         let only = try XCTUnwrap(list.first)
-        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list.filter { $0.kind != .track }.count, 1)
         XCTAssertEqual(only.kind, .generated)
         XCTAssertEqual(only.id, RouteCandidates.generatedID)
         XCTAssertEqual(only.distanceKm, 10)

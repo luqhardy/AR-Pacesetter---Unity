@@ -70,6 +70,10 @@ public static class DevDiagnostics
         }
 
         // ── GPS (F-09/F-10) ──────────────────────────────────────────
+        var arFallback = UnityEngine.Object.FindFirstObjectByType<ArTrackingFallback>(FindObjectsInactive.Include);
+        if (arFallback != null)
+            Add(rows, "ar.gpsFallback", (arFallback.IsActive ? "GPSで追従中" : "ARKit") + $"(この走行で{arFallback.FreezeCount}回停止)");
+
         var gps = UnityEngine.Object.FindFirstObjectByType<GpsSignalMonitor>(FindObjectsInactive.Include);
         if (gps != null)
         {
@@ -91,6 +95,12 @@ public static class DevDiagnostics
             Add(rows, "glass.profile", glass.ActiveProfile != null ? glass.ActiveProfile.ToString() : "");
             Add(rows, "glass.orientation", glass.OrientationSource.ToString());
             Add(rows, "glass.downPitchDeg", Num(glass.AppliedDownPitchDegrees));
+            Add(rows, "glass.headYawSource", glass.HeadYawSourceSetting != HeadYawSource.ExternalImu
+                ? "iPhone(ARKitカメラ・既定)"
+                : glass.IsHeadYawFromImu ? "グラスのIMU — そのヨーで描画中"
+                : glass.Mount != CameraMount.Head ? "グラスのIMU(設定)— 胸マウントでは首振りとして足す"
+                : glass.HasFreshHeadYaw ? "グラスのIMU(設定)— グラス未出力のため使っていない"
+                : "グラスのIMU(設定)— ヨーが届いていないので iPhone を使用中");
             Add(rows, "glass.headYawDeg", glass.HasFreshHeadYaw
                 ? Num(glass.AppliedHeadYawDegrees)
                 : "供給なし(AirPods の頭の向きが届いていない)");
@@ -100,6 +110,24 @@ public static class DevDiagnostics
                 : "-");
             if (!string.IsNullOrEmpty(glass.LastFitReport))
                 Add(rows, "glass.fit", glass.LastFitReport);
+
+            // グラスの背景のカメラ映像: 設定・出しているか・実際に1枚描けたか。
+            // 「設定はONなのに映らない」をどの段で止まっているかまで読めるようにする
+            string glassCamera = !glass.CameraPassthroughOnGlass ? "OFF(設定)"
+                : !glass.IsGlassOutputActive ? "ON(設定) — グラス未出力のため出していない"
+                : glass.CameraPassthroughHasFrame ? "ON — 映像を表示中"
+                : "ON だが映っていない: " + glass.CameraPassthroughBlocker;
+            Add(rows, "glass.cameraFeed", glassCamera);
+        }
+
+        // ── iPhone の画面のカメラ映像 ───────────────────────────────
+        var phoneCamera = UnityEngine.Object.FindFirstObjectByType<ARPassthroughController>(FindObjectsInactive.Include);
+        if (phoneCamera != null)
+        {
+            string phoneFeed = phoneCamera.IsPassthroughEnabled ? "ON — 映像を表示中"
+                : !phoneCamera.PhoneCameraWanted ? "OFF(設定)"
+                : "ON(設定) — グラスへ出力中のため iPhone には出していない";
+            Add(rows, "phone.cameraFeed", phoneFeed);
         }
 
         // ── 屋外の画像分類 ───────────────────────────────────────────
@@ -149,7 +177,9 @@ public static class DevDiagnostics
                     : "骨からの概算(メッシュを読めない — FBXのRead/Writeを確認)");
 
             Add(rows, "avatar.pacing", engine.IsSelfPaced
-                ? $"自走(目標ペース)— 前方 {Num(engine.DisplayedLeadDistanceMeters)}m"
+                ? (engine.IsPacesetterActive
+                    ? $"自走 {engine.PacesetterCurrentState} — gap {Num(engine.PacesetterGapMeters)}m / lag {Num(engine.PacesetterLagSeconds)}秒"
+                    : "自走(START 待ち)")
                 : "走者+3m(既定)");
 
             // 選んだルート(GPS)からの逸脱。実機で「案内された/されない」を確かめる

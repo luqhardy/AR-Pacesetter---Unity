@@ -88,9 +88,11 @@ struct DeviceConnectView: View {
                         onConnect: {
                             // 手動の ConnectXREAL(UnityのReadyチェックとグラス用の描画を有効にする)。
                             // グラスが検出されない・ミラーリング中の予備手段として残すが、
-                            // 実接続とは表示で区別する
+                            // 実接続とは表示で区別する。外部画面が無ければ描画は iPhone のまま
+                            external.refreshMirroring()
+                            let phoneDisplayOnly = glassStatus.manualConnectStaysOnPhone
                             manualConnect = true
-                            UnityBridge.shared.connect()
+                            UnityBridge.shared.connect(phoneDisplayOnly: phoneDisplayOnly)
                         }
                     )
                     // Apple Watch は第1期のスコープ外(基本設計書 §1.2 —

@@ -103,10 +103,13 @@ public class GlassPoseAndProfileTests
     [Test]
     public void グラス接続で外部姿勢が無ければ進行方向ヨーを使う()
     {
-        Assert.AreEqual(HeadOrientationSource.TravelHeading,
+        Assert.AreEqual(HeadOrientationSource.HeadMountedCamera,
             HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.FollowLocked, false));
-        Assert.AreEqual(HeadOrientationSource.TravelHeading,
+        Assert.AreEqual(HeadOrientationSource.HeadMountedCamera,
             HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.Unknown, false));
+        // 胸マウントのカメラの向きは頭の向きではないので、進行方向から作る
+        Assert.AreEqual(HeadOrientationSource.TravelHeading,
+            HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.FollowLocked, false, CameraMount.Chest));
     }
 
     [Test]
@@ -125,6 +128,11 @@ public class GlassPoseAndProfileTests
     {
         Assert.AreEqual(HeadOrientationSource.TravelHeading,
             HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.Anchor, true));
+        Assert.AreEqual(HeadOrientationSource.TravelHeading,
+            HeadPoseMath.ResolveOrientationSource(true, GlassScreenMode.Anchor, false),
+            "頭マウントのカメラの向きも Anchor では足さない(二重補正)");
+        Assert.IsTrue(HeadPoseMath.IsDoubleCompensationRisk(
+            GlassScreenMode.Anchor, HeadOrientationSource.HeadMountedCamera));
     }
 
     [Test]
@@ -148,10 +156,17 @@ public class GlassPoseAndProfileTests
     }
 
     [Test]
+    public void 頭マウントは視点を持ち上げない()
+    {
+        Assert.AreEqual(0f, HeadPoseMath.MountToEyeOffsetMeters(CameraMount.Head,
+            HeadPoseMath.DefaultChestMountHeightMeters, HeadPoseMath.DefaultEyeHeightMeters));
+    }
+
+    [Test]
     public void 胸マウントから眼までの持ち上げ量()
     {
         Assert.AreEqual(0.35f,
-            HeadPoseMath.ChestToEyeOffsetMeters(HeadPoseMath.DefaultChestMountHeightMeters,
+            HeadPoseMath.MountToEyeOffsetMeters(CameraMount.Chest, HeadPoseMath.DefaultChestMountHeightMeters,
                                                 HeadPoseMath.DefaultEyeHeightMeters), 1e-5f);
     }
 
@@ -210,6 +225,48 @@ public class GlassPoseAndProfileTests
         Assert.AreEqual(170f, HeadPoseMath.WrapDegrees(-190f), 1e-4f);
         Assert.AreEqual(0f, HeadPoseMath.WrapDegrees(720f), 1e-4f);
         Assert.AreEqual(0f, HeadPoseMath.WrapDegrees(float.NaN), 1e-4f);
+    }
+
+    [Test]
+    public void 頭の向きの元は既定がiPhoneで知らない値もiPhone()
+    {
+        Assert.AreEqual(HeadYawSource.ExternalImu, HeadPoseMath.ParseHeadYawSource("glassImu"));
+        Assert.AreEqual(HeadYawSource.PhoneCamera, HeadPoseMath.ParseHeadYawSource("phone"));
+        Assert.AreEqual(HeadYawSource.PhoneCamera, HeadPoseMath.ParseHeadYawSource(null));
+        Assert.AreEqual(HeadYawSource.PhoneCamera, HeadPoseMath.ParseHeadYawSource("GLASSIMU"));
+    }
+
+    [Test]
+    public void IMUで回すのは設定がIMUでヨーが届いていてAnchorでないときだけ()
+    {
+        Assert.IsTrue(HeadPoseMath.ShouldDriveHeadMountYawFromImu(HeadYawSource.ExternalImu, GlassScreenMode.FollowLocked, true));
+        Assert.IsFalse(HeadPoseMath.ShouldDriveHeadMountYawFromImu(HeadYawSource.PhoneCamera, GlassScreenMode.FollowLocked, true), "既定(iPhone)では使わない");
+        Assert.IsFalse(HeadPoseMath.ShouldDriveHeadMountYawFromImu(HeadYawSource.ExternalImu, GlassScreenMode.FollowLocked, false), "届いていなければ iPhone へ戻る");
+        Assert.IsFalse(HeadPoseMath.ShouldDriveHeadMountYawFromImu(HeadYawSource.ExternalImu, GlassScreenMode.Anchor, true), "Anchor は二重補正になる");
+    }
+
+    [Test]
+    public void IMUとカメラが一緒に回ればIMUのヨーがそのまま描画のヨーになる()
+    {
+        // 頭に付けた iPhone とグラスは同じ頭に載っている: 両方が右へ 60° 回る。IMU の基準は 200° ずれている
+        var b = new HeadYawBaseline();
+        b.Update(200f, 0f, 1f / 60f, HeadPoseMath.ImuYawAlignSeconds);
+        float offset = 0f;
+        for (int i = 1; i <= 60; i++)
+            offset = b.Update(200f + i, i, 1f / 60f, HeadPoseMath.ImuYawAlignSeconds);
+        Assert.AreEqual(0f, offset, 0.5f, "差が変わらなければカメラのヨーに何も足さない");
+    }
+
+    [Test]
+    public void IMUのドリフトは時定数の数倍でカメラのヨーへ戻る()
+    {
+        var b = new HeadYawBaseline();
+        b.Update(0f, 0f, 1f / 60f, HeadPoseMath.ImuYawAlignSeconds);
+        // IMU だけが 10° ずれたまま(ドリフト)。カメラは動いていない
+        float offset = 0f;
+        for (int i = 0; i < 60 * 40; i++)
+            offset = b.Update(10f, 0f, 1f / 60f, HeadPoseMath.ImuYawAlignSeconds);
+        Assert.AreEqual(0f, offset, 0.5f);
     }
 
     [Test]

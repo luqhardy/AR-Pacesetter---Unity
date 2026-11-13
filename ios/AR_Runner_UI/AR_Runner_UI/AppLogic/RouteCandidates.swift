@@ -16,6 +16,8 @@ nonisolated struct RouteCandidate: Identifiable, Equatable {
         case past
         /// 候補が無いときに作った既定のルート(現在地から北へ行って戻る往復)
         case generated
+        /// トラックのレーン(TrackRoutes)
+        case track
     }
 
     let id: String
@@ -25,6 +27,8 @@ nonisolated struct RouteCandidate: Identifiable, Equatable {
     let distanceKm: Double
     /// 地図に引く線(古い順)。現在地が分からないときの既定ルートは空
     let coordinates: [RouteCoordinate]
+    /// トラックのレーンの1周(m)。レーン以外は nil
+    var lapLengthMeters: Double? = nil
 
     var hasLine: Bool { coordinates.count >= 2 }
 
@@ -39,15 +43,21 @@ nonisolated enum RouteCandidates {
     /// 既定のルートの id(選択状態の比較に使う)
     static let generatedID = "generated"
 
-    /// 候補の一覧。過去のルート(経路のあるもの)を目標距離に近い順に。1件も無ければ既定のルートを1件
+    /// 候補の一覧。過去のルート(経路のあるもの)を目標距離に近い順に。1件も無ければ既定のルートを1件。
+    /// トラックのレーンは後ろに並べる(最初に選ばれるルートは変えない)
     static func build(history: [RunHistoryEntry], targetDistanceKm: Double,
                       currentLocation: RouteCoordinate?) -> [RouteCandidate] {
         let past = PastRouteOrdering.candidates(from: history, targetDistanceKm: targetDistanceKm).map {
             RouteCandidate(id: $0.id, kind: .past, dateIso: $0.dateIso, distanceKm: $0.distanceKm, coordinates: $0.route)
         }
-        if !past.isEmpty { return past }
+        let lanes = TrackRoutes.all.map {
+            RouteCandidate(id: $0.id, kind: .track, dateIso: nil, distanceKm: $0.lapLengthMeters / 1000,
+                           coordinates: $0.coordinates, lapLengthMeters: $0.lapLengthMeters)
+        }
+        if !past.isEmpty { return past + lanes }
         return [RouteCandidate(id: generatedID, kind: .generated, dateIso: nil, distanceKm: targetDistanceKm,
                                coordinates: currentLocation.map { outAndBack(from: $0, distanceKm: targetDistanceKm) } ?? [])]
+            + lanes
     }
 
     /// 最初に選んでおく候補(一覧の先頭)。選んでいたものがまだあればそれを保つ

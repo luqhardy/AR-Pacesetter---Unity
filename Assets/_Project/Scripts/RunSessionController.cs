@@ -156,6 +156,9 @@ public class RunSessionController : MonoBehaviour
     public void PersistInterruptedSnapshot()
     {
         if (!_runActive || _finished || SuppressPersistence) return;
+        // カウントダウン中(START 前)はまだ走っていない。ここで控えを書くと、その間にアプリを
+        // 終了しただけで 0m・0秒の「中断された走行」が次の起動で履歴に入る
+        if (avatarEngine != null && !avatarEngine.IsRunMotionActive) return;
         SessionDataStore.SaveInterruptedSnapshot(BuildSessionRecord());
     }
 

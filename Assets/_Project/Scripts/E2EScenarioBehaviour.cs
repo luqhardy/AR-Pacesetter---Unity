@@ -638,6 +638,15 @@ public class E2EScenarioBehaviour : MonoBehaviour
         {
             Check(passthrough.IsPassthroughEnabled, "passthrough: camera feed shown on the phone by default");
 
+            // iPhone の画面のカメラ映像は開発者モードの SetPhonePassthrough で切り替わる(既定ON)
+            Check(passthrough.PhoneCameraWanted, "phone-passthrough: the setting is ON by default");
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":false}");
+            Check(!passthrough.IsPassthroughEnabled && !passthrough.PhoneCameraWanted,
+                "phone-passthrough: SetPhonePassthrough(false) hides the camera feed on the phone");
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":true}");
+            Check(passthrough.IsPassthroughEnabled,
+                "phone-passthrough: SetPhonePassthrough(true) shows it again");
+
             // ── ARグラス出力リグ: グラスの画角・眼の位置で描く ──────────────
             var glassRig = FindFirstObjectByType<GlassViewRig>(FindObjectsInactive.Include);
             Check(glassRig != null, "glass: GlassViewRig auto-created by bootstrap");
@@ -647,17 +656,65 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Camera phoneCamera = Camera.main;
             int phoneCullingMask = phoneCamera != null ? phoneCamera.cullingMask : 0;
 
+            // 外部画面が無いときの手動接続: iPhone の画面にカメラ映像を残す
+            // (以前はグラス用の描画へ切り替わり、ARCameraBackground が止まったままになった)
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"phoneDisplayOnly\":true}");
+            yield return null;
+            Check(passthrough.IsPassthroughEnabled,
+                "manual-connect: camera feed stays on the phone when there is no external screen");
+            Check(glassRig == null || !glassRig.IsGlassOutputActive,
+                "manual-connect: the glass rig does not take over the phone screen");
+            Check(phoneCamera == null || phoneCamera.cullingMask == phoneCullingMask,
+                "manual-connect: the AR camera keeps drawing");
+
+            // ミラーリング中の手動接続(メトリクスなし)はグラス用の描画のまま。抜いた後の手動接続で解ける
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");
+            yield return null;
+            Check(glassRig == null || glassRig.IsGlassOutputActive,
+                "manual-connect: while mirroring, the rig still renders for the glasses");
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"phoneDisplayOnly\":true}");
+            yield return null;
+            Check(passthrough.IsPassthroughEnabled && (glassRig == null || !glassRig.IsGlassOutputActive),
+                "manual-connect: after the glasses are gone, a manual connect returns rendering to the phone");
+
+            // 同じ戻り道でも、iPhone のカメラ映像を OFF にしていれば映像は出さない(描画だけ iPhone へ戻る)
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":false}");
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\"}");
+            yield return null;
+            deviceBridge.OnSwiftCommand("{\"command\":\"ConnectXREAL\",\"phoneDisplayOnly\":true}");
+            yield return null;
+            Check(!passthrough.IsPassthroughEnabled && (glassRig == null || !glassRig.IsGlassOutputActive),
+                "phone-passthrough: with the phone setting OFF, returning to the phone does not bring the camera feed back");
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":true}");
+            Check(passthrough.IsPassthroughEnabled,
+                "phone-passthrough: turning it ON on the phone shows the feed at once");
+
             deviceBridge.OnSwiftCommand(
                 "{\"command\":\"ConnectXREAL\",\"pixelWidth\":1920,\"pixelHeight\":1080,\"refreshHz\":60}");
             yield return null;
             Check(!passthrough.IsPassthroughEnabled,
                 "passthrough: camera feed off while output goes to see-through glasses");
+            // グラス出力中は設定を覚えるだけで、ARKit カメラの背景は出さない(描画はグラスの出力カメラ)
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":false}");
+            deviceBridge.OnSwiftCommand("{\"command\":\"SetPhonePassthrough\",\"enabled\":true}");
+            Check(passthrough.PhoneCameraWanted && !passthrough.IsPassthroughEnabled,
+                "phone-passthrough: turning the phone setting ON does not draw on the phone while glasses own the output");
 
             if (glassRig != null)
             {
                 Check(GlassViewRig.VerificationDefaultGlassOutput,
                     "verification: glass output rig is enabled by default");
                 Check(glassRig.IsGlassOutputActive, "glass: output rig takes over rendering on connect");
+
+                // グラスの背景のカメラ映像: 既定ON、開発者モードの SetGlassPassthrough で接続中に切り替わる
+                Check(glassRig.CameraPassthroughOnGlass && glassRig.IsCameraPassthroughShowing,
+                    "glass-passthrough: camera feed shown on the glasses by default");
+                deviceBridge.OnSwiftCommand("{\"command\":\"SetGlassPassthrough\",\"enabled\":false}");
+                Check(!glassRig.IsCameraPassthroughShowing,
+                    "glass-passthrough: SetGlassPassthrough(false) hides the camera feed while connected");
+                deviceBridge.OnSwiftCommand("{\"command\":\"SetGlassPassthrough\",\"enabled\":true}");
+                Check(glassRig.IsCameraPassthroughShowing,
+                    "glass-passthrough: SetGlassPassthrough(true) shows it again");
                 Check(glassRig.ActiveProfile != null && glassRig.ActiveProfile.Model == "XREAL One",
                     $"glass: 1920x1080 resolves to the XREAL One profile (got {glassRig.ActiveProfile?.Model})");
 
@@ -688,10 +745,19 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 Check(phoneCamera == null || phoneCamera.cullingMask == 0,
                     "glass: AR camera stops drawing but stays enabled for ARKit tracking");
 
-                Check(glassRig.OrientationSource == HeadOrientationSource.TravelHeading,
-                    $"glass: orientation comes from the smoothed travel heading (got {glassRig.OrientationSource})");
-                Check(glassRig.AppliedDownPitchDegrees > 1f && glassRig.AppliedDownPitchDegrees <= 15f,
-                    $"glass: camera pitches down to fit the avatar into the narrow FoV ({glassRig.AppliedDownPitchDegrees:F1}°)");
+                // 頭マウント: 描画の位置と向きは ARKit カメラ(頭)のまま。ロールだけ足さない
+                Check(glassRig.Mount == CameraMount.Head, "glass: the iPhone is head-mounted by default");
+                Check(glassRig.OrientationSource == HeadOrientationSource.HeadMountedCamera,
+                    $"glass: orientation comes from the head-mounted camera (got {glassRig.OrientationSource})");
+                if (outCam != null && phoneCamera != null)
+                {
+                    Check(Vector3.Distance(outCam.transform.position, phoneCamera.transform.position) < 0.001f,
+                        "glass: the view stays at the head-mounted camera position (no chest-to-eye lift)");
+                    Check(Vector3.Angle(outCam.transform.forward, phoneCamera.transform.forward) < 0.5f,
+                        "glass: the view looks where the head-mounted camera looks");
+                    Check(Vector3.Angle(outCam.transform.right, Vector3.ProjectOnPlane(outCam.transform.right, Vector3.up)) < 0.5f,
+                        "glass: the view has no roll");
+                }
 
                 // §7-1(2026-10-13 チーム判断): 3.0m前方(F-03)は保ち、グラスの画角に全身が収まる身長へ縮める。
                 // 以前は「175cmは収まらない・足元は視野外」をここで固定していた
@@ -726,6 +792,8 @@ public class E2EScenarioBehaviour : MonoBehaviour
             if (glassRig != null)
             {
                 Check(!glassRig.IsGlassOutputActive, "glass: output rig stops on disconnect");
+                Check(!glassRig.IsCameraPassthroughShowing && glassRig.CameraPassthroughOnGlass,
+                    "glass-passthrough: feed stops on disconnect but the setting is kept");
                 Check(glassRig.OutputCamera == null || !glassRig.OutputCamera.enabled,
                     "glass: output camera disabled on disconnect");
                 Check(phoneCamera == null || phoneCamera.cullingMask == phoneCullingMask,
@@ -1569,6 +1637,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
 
         // ── Step 6a: 首振り(AirPods の頭の向き)— 本走行のシンクロ率を乱さないよう走行の外で ──
         yield return StartCoroutine(RunHeadTurnTest());
+        yield return StartCoroutine(RunArFreezeTest(bridge, engine));
 
         // ── Step 6a'': 自走モード(タスク表「指定した速さで走る」)— GPS を送る前に(カメラの移動だけでペースを測る) ──
         yield return StartCoroutine(RunSelfPacedTest(bridge, engine));
@@ -1607,6 +1676,64 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return null;
         Check(glassRig.IsGlassOutputActive, "head: glass output is on for the head-turn checks");
 
+        // 頭マウント(既定): AirPods の向きは足さない — ARKitカメラの向きに首振りが含まれている
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
+        yield return null;
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+        yield return null;
+        Check(glassRig.OrientationSource == HeadOrientationSource.HeadMountedCamera
+              && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
+            $"head: a head-mounted camera ignores AirPods yaw ({glassRig.AppliedHeadYawDegrees:F1}°)");
+
+        // 開発者モード「頭の向き: グラスのIMU」: 頭マウントでも外部IMUのヨーで描画を回す
+        deviceBridge.OnSwiftCommand("{\"command\":\"SetHeadYawSource\",\"source\":\"glassImu\"}");
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
+        yield return null;
+        Check(glassRig.IsHeadYawFromImu && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.5f,
+            $"head-source: with the IMU selected, the first sample is taken as straight ahead ({glassRig.AppliedHeadYawDegrees:F1}°)");
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":130}");
+        yield return null;
+        Check(glassRig.OrientationSource == HeadOrientationSource.HeadMountedCamera
+              && Mathf.Abs(glassRig.AppliedHeadYawDegrees - 30f) < 2f,
+            $"head-source: the IMU yaw turns the head-mounted view ({glassRig.AppliedHeadYawDegrees:F1}°)");
+        if (glassRig.OutputCamera != null && Camera.main != null)
+        {
+            float yawGap = Mathf.DeltaAngle(Camera.main.transform.eulerAngles.y, glassRig.OutputCamera.transform.eulerAngles.y);
+            float pitchGap = Mathf.DeltaAngle(Camera.main.transform.eulerAngles.x, glassRig.OutputCamera.transform.eulerAngles.x);
+            Check(Mathf.Abs(yawGap - 30f) < 2f && Mathf.Abs(pitchGap) < 0.5f,
+                $"head-source: only the yaw comes from the IMU; pitch stays with the ARKit camera (yaw {yawGap:F1}°, pitch {pitchGap:F1}°)");
+        }
+        deviceBridge.OnSwiftCommand("{\"command\":\"SetHeadYawSource\",\"source\":\"phone\"}");
+        deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":160}");
+        yield return null;
+        Check(!glassRig.IsHeadYawFromImu && Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
+            $"head-source: switching back to the phone drops the IMU yaw at once ({glassRig.AppliedHeadYawDegrees:F1}°)");
+
+        // 頭を向けた先を描く: ヨーとピッチは ARKitカメラのまま、ロールだけ足さない
+        Camera headCamera = Camera.main;
+        if (headCamera != null && glassRig.OutputCamera != null)
+        {
+            Quaternion savedHead = headCamera.transform.rotation;
+            Quaternion headPose = Quaternion.Euler(10f, 40f, 25f);
+            headCamera.transform.rotation = headPose;
+            yield return null;
+            Transform view = glassRig.OutputCamera.transform;
+            float viewError = Vector3.Angle(view.forward, headPose * Vector3.forward);
+            Check(viewError < 0.5f,
+                $"head: the glass view follows the head-mounted camera's yaw and pitch ({viewError:F1}° off)");
+            Check(Mathf.Abs(glassRig.AppliedDownPitchDegrees - 10f) < 0.5f,
+                $"head: the view pitch is the real head pitch ({glassRig.AppliedDownPitchDegrees:F1}°)");
+            Check(Mathf.Abs(view.right.y) < 0.01f, "head: head roll is not added to the view");
+            headCamera.transform.rotation = savedHead;
+            yield return null;
+        }
+
+        // 以下は胸マウントの経路
+        glassRig.SetCameraMount(CameraMount.Chest);
+        yield return WaitScaled(HeadPoseMath.DefaultHeadYawMaxAgeSeconds + 0.2f);
+        Check(glassRig.AppliedDownPitchDegrees > 1f && glassRig.AppliedDownPitchDegrees <= 15f,
+            $"head: a chest mount pitches the view down to fit the avatar ({glassRig.AppliedDownPitchDegrees:F1}°)");
+
         // 首振り(タスク表 ARグラス「首を振り向けた時に想定する場所を走る」): AirPods の頭の向きを
         // 進行方向との差にして描画の向きへ足す。最初のサンプルを「まっすぐ前」とみなす
         deviceBridge.OnSwiftCommand("{\"command\":\"UpdateHeadYaw\",\"yaw\":100}");
@@ -1631,6 +1758,7 @@ public class E2EScenarioBehaviour : MonoBehaviour
         yield return WaitScaled(HeadPoseMath.DefaultHeadYawMaxAgeSeconds + 0.2f);
         Check(Mathf.Abs(glassRig.AppliedHeadYawDegrees) < 0.01f,
             "head: the view falls back to the travel heading when AirPods stop sending");
+        glassRig.SetCameraMount(CameraMount.Head);
 
         deviceBridge.OnSwiftCommand("{\"command\":\"DisconnectXREAL\"}");
         yield return null;
@@ -1644,6 +1772,65 @@ public class E2EScenarioBehaviour : MonoBehaviour
     /// 自走モード(タスク表「指定した速さで走る」・既定OFF): アバターは目標ペースで走ったときの位置にいる。
     /// 遅れると前へ離れ(9.5m まで — 離隔待機には入らない)、速ければ近づく。既定の走行は「走者+3m」のまま
     /// </summary>
+    /// <summary>
+    /// 走っているのに ARKit の位置が止まっても、アバターは GPS の距離で進み続ける。
+    /// 以前は同じ場所に留まった(GPS 9m に対して 0.00m — 2026-11-04 再現)
+    /// </summary>
+    private IEnumerator RunArFreezeTest(ARSessionManagerBridge bridge, AvatarEngine engine)
+    {
+        var fallback = FindFirstObjectByType<ArTrackingFallback>(FindObjectsInactive.Include);
+        Check(fallback != null, "ar-freeze: ArTrackingFallback auto-created by bootstrap");
+        if (fallback == null) yield break;
+
+        const string Start = "{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":5.0," +
+                             "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0}";
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+        bridge.OnSwiftCommand(Start);
+        yield return null;
+        float wait = 0f;
+        while (!engine.IsRunMotionActive && wait < 8f) { wait += Time.deltaTime; yield return null; }
+        Check(engine.IsRunMotionActive, "ar-freeze: the run starts");
+
+        // 立っているだけでは反応しない
+        for (float t = 0f; t < 1f; t += Time.deltaTime) yield return null;
+        Check(!fallback.IsActive, "ar-freeze: standing still is not a frozen ARKit");
+
+        // カメラは動かさず、GPS だけ 3.6m/s で進める
+        Vector3 before = engine.transform.position;
+        double gpsMeters = 0.0;
+        for (float t = 0f; t < 6f; t += 0.5f)
+        {
+            gpsMeters += 1.8;
+            string km = (gpsMeters / 1000.0).ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+            bridge.OnSwiftCommand("{\"command\":\"UpdateMetrics\",\"paceKmH\":13.0,\"heartRate\":150,\"distanceKm\":" + km + "}");
+            for (float w = 0f; w < 0.5f; w += Time.deltaTime) yield return null;
+        }
+        for (float t = 0f; t < 2f; t += Time.deltaTime) yield return null;
+        float moved = Vector3.Distance(before, engine.transform.position);
+        Check(fallback.IsActive, "ar-freeze: GPS advancing with a still camera is detected");
+        Check(moved > 8f, $"ar-freeze: the avatar keeps moving on GPS distance ({moved:F1}m of {gpsMeters:F1}m)");
+        Check(!engine.IsWaitingForUser, "ar-freeze: the avatar does not fall into the 10m wait");
+        Check(fallback.FreezeCount == 1, $"ar-freeze: one freeze counted ({fallback.FreezeCount})");
+        // 既存の走行シナリオの GPS の飛び(1回で20m)には反応していないこと
+        Check(fallback.TotalFreezeCount == 1, $"ar-freeze: a single GPS jump never triggered it ({fallback.TotalFreezeCount})");
+
+        // ARKit が戻る: カメラが動き出したら GPS の追従を止める
+        for (float t = 0f; t < 0.5f; t += Time.deltaTime)
+        {
+            MoveRig(Vector3.forward * 3.6f * Time.deltaTime);
+            yield return null;
+        }
+        Check(!fallback.IsActive, "ar-freeze: the fallback ends when ARKit moves again");
+
+        bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
+        yield return WaitScaled(0.2f);
+    }
+
+    /// <summary>
+    /// 自走モード(Docs/PACESETTER_BEHAVIOR_SPEC.md)。状態遷移は Tests/UnitTests で縛っているので、
+    /// ここでは AvatarEngine へ組み込んだときに世界座標のアバターが仕様どおり動くかを見る
+    /// </summary>
     private IEnumerator RunSelfPacedTest(ARSessionManagerBridge bridge, AvatarEngine engine)
     {
         bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
@@ -1656,38 +1843,131 @@ public class E2EScenarioBehaviour : MonoBehaviour
         float startWait = 0f;
         while (!engine.IsRunMotionActive && startWait < 8f) { startWait += Time.deltaTime; yield return null; }
         Check(engine.IsRunMotionActive, "pace-mode: the self-paced run starts");
+        yield return null;
+        yield return null;
 
         Vector3 dir = Vector3.forward;
-        // 目標ペースどおり(13km/h ≒ 3.6m/s)— 前方距離はほぼ3m
-        for (float t = 0f; t < 3f; t += Time.deltaTime)
-        {
-            MoveRig(dir * 3.6f * Time.deltaTime);
-            yield return null;
-        }
-        float onPaceLead = engine.DisplayedLeadDistanceMeters;
-        // 遅れを速さの積分で取っていたときは、目標ペースどおりでも 8.2m に出ていた(平滑化の立ち上がりの偏り)
-        Check(onPaceLead < 4.5f, $"pace-mode: on target pace the avatar stays near 3m ({onPaceLead:F1}m)");
 
-        // 遅い(1.5m/s)— 遅れた分だけ前へ離れる。9.5m で止まり、離隔待機(10m)には入らない
-        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        // R-01: 走り出すまではその場に立って待つ
+        for (float t = 0f; t < 1f; t += Time.deltaTime) yield return null;
+        Check(engine.IsPacesetterActive && engine.PacesetterCurrentState == PacesetterState.Start,
+              $"pace-mode: the avatar stands until the runner moves ({engine.PacesetterCurrentState})");
+        Check(Mathf.Abs(engine.PacesetterGapMeters - 3f) < 0.3f,
+              $"pace-mode: the avatar starts 3m ahead ({engine.PacesetterGapMeters:F2}m)");
+
+        // T-01: 走者も数歩かけて走り出す
+        float elapsed = 0f;
+        while (engine.PacesetterCurrentState == PacesetterState.Start && elapsed < 5f)
         {
             MoveRig(dir * 1.5f * Time.deltaTime);
+            elapsed += Time.deltaTime;
             yield return null;
         }
-        float behindLead = engine.DisplayedLeadDistanceMeters;
-        Check(behindLead > onPaceLead + 3f && behindLead <= SelfPacedLead.MaxDisplayedLeadMeters + 0.01f,
-              $"pace-mode: falling behind lets the avatar pull ahead ({onPaceLead:F1}m -> {behindLead:F1}m)");
-        Check(!engine.IsWaitingForUser, "pace-mode: pulling ahead stays short of the 10m wait-for-runner");
+        Check(engine.PacesetterCurrentState == PacesetterState.Run, "pace-mode: T-01 the avatar runs when the runner moves");
+        Check(engine.PacesetterSpeedMetersPerSecond < 1.5f,
+              $"pace-mode: it accelerates over a few steps ({engine.PacesetterSpeedMetersPerSecond:F2}m/s)");
 
-        // 速い(6m/s)— 近づく
-        for (float t = 0f; t < 4f; t += Time.deltaTime)
+        for (float t = 0f; t < 3f; t += Time.deltaTime)
         {
-            MoveRig(dir * 6f * Time.deltaTime);
+            MoveRig(dir * Mathf.Max(1.5f, engine.PacesetterSpeedMetersPerSecond) * Time.deltaTime);
             yield return null;
         }
-        float catchUpLead = engine.DisplayedLeadDistanceMeters;
-        Check(catchUpLead < behindLead - 3f,
-              $"pace-mode: running faster closes the gap ({behindLead:F1}m -> {catchUpLead:F1}m)");
+
+        // S-01: 同じ速さなら距離は変わらず、世界座標のアバターもその距離にいる
+        float onPaceGap = engine.PacesetterGapMeters;
+        for (float t = 0f; t < 3f; t += Time.deltaTime)
+        {
+            MoveRig(dir * engine.GetBaseTargetSpeed() * Time.deltaTime);
+            yield return null;
+        }
+        Check(Mathf.Abs(engine.PacesetterGapMeters - onPaceGap) < 0.5f,
+              $"pace-mode: S-01 at the set speed the gap holds ({onPaceGap:F1}m -> {engine.PacesetterGapMeters:F1}m)");
+        float worldLead = Vector3.Dot(engine.transform.position - _cameraMover.position, dir);
+        Check(Mathf.Abs(worldLead - engine.PacesetterGapMeters) < 1.0f,
+              $"pace-mode: the avatar is where the gap says ({worldLead:F1}m vs {engine.PacesetterGapMeters:F1}m)");
+
+        // S-02: 遅いと離れていき、10m で止まって待つ
+        elapsed = 0f;
+        while (engine.PacesetterCurrentState != PacesetterState.Wait && elapsed < 15f)
+        {
+            MoveRig(dir * 1.0f * Time.deltaTime);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.PacesetterCurrentState == PacesetterState.Wait && engine.IsWaitingForUser,
+              "pace-mode: S-02 the avatar waits at a 10m gap");
+        yield return null;
+        yield return null;
+        Vector3 waitingAt = engine.transform.position;
+        Check(engine.GetTargetSpeed() == 0f, "pace-mode: the wait stops the running animation");
+
+        // S-03 / R-12: 3m まで近づくと走り出す。その間アバターは動かず、遅れは取り戻さない
+        float waitLag = engine.PacesetterLagSeconds;
+        elapsed = 0f;
+        while (engine.PacesetterCurrentState == PacesetterState.Wait && elapsed < 15f)
+        {
+            MoveRig(dir * 4f * Time.deltaTime);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.PacesetterCurrentState == PacesetterState.Run,
+              $"pace-mode: S-03 the avatar runs again at a 3m gap ({engine.PacesetterGapMeters:F1}m)");
+        Vector3 moved = engine.transform.position - waitingAt;
+        moved.y = 0f;
+        Check(moved.magnitude < 0.5f, $"pace-mode: the avatar stayed put while waiting ({moved.magnitude:F2}m)");
+        Check(engine.PacesetterSpeedMetersPerSecond < engine.GetBaseTargetSpeed() * 0.5f,
+              $"pace-mode: T-03 it accelerates again ({engine.PacesetterSpeedMetersPerSecond:F2}m/s)");
+        Check(engine.PacesetterLagSeconds > 0f && waitLag > 0f, "pace-mode: S-07 the lag remains for the goal");
+
+        // S-04: 追い抜くとアバターは走者の後ろを走り続ける。抜き返したり道を譲ったりしない
+        elapsed = 0f;
+        while (engine.PacesetterCurrentState != PacesetterState.Overtaken && elapsed < 15f)
+        {
+            MoveRig(dir * 7f * Time.deltaTime);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.PacesetterCurrentState == PacesetterState.Overtaken,
+              $"pace-mode: S-04 passing the avatar leaves it behind ({engine.PacesetterGapMeters:F1}m)");
+        Check(engine.CurrentOvertakeState == AvatarEngine.OvertakeState.None, "pace-mode: no sprint or sidestep state");
+        for (float t = 0f; t < 2f; t += Time.deltaTime)
+        {
+            MoveRig(dir * 7f * Time.deltaTime);
+            yield return null;
+        }
+        float behind = Vector3.Dot(engine.transform.position - _cameraMover.position, dir);
+        Check(behind < -1f, $"pace-mode: the avatar is behind the runner, out of view ({behind:F1}m)");
+
+        // S-05: 減速するとアバターが前へ戻る
+        elapsed = 0f;
+        while (engine.PacesetterCurrentState == PacesetterState.Overtaken && elapsed < 20f)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        Check(engine.PacesetterCurrentState == PacesetterState.Run,
+              $"pace-mode: S-05 the avatar comes back past the runner ({engine.PacesetterGapMeters:F1}m)");
+
+        // S-08: 補正が入ってもアバターは瞬間移動しない
+        for (float t = 0f; t < 2f; t += Time.deltaTime)
+        {
+            MoveRig(dir * engine.GetBaseTargetSpeed() * Time.deltaTime);
+            yield return null;
+        }
+        float beforeCorrection = engine.PacesetterGapMeters;
+        Vector3 beforePosition = engine.transform.position;
+        Check(engine.ApplyPacesetterCorrection(5.0), "pace-mode: a large drift is corrected");
+        yield return null;
+        yield return null;
+        Check(Mathf.Abs(engine.PacesetterGapMeters - beforeCorrection) < 0.5f, "pace-mode: S-08 the correction does not jump");
+        Check((engine.transform.position - beforePosition).magnitude < 1.5f, "pace-mode: S-08 the avatar does not teleport");
+        for (float t = 0f; t < 3.5f; t += Time.deltaTime)
+        {
+            MoveRig(dir * engine.GetBaseTargetSpeed() * Time.deltaTime);
+            yield return null;
+        }
+        Check(Mathf.Abs(engine.PacesetterGapMeters - (beforeCorrection - 5f)) < 1.0f,
+              $"pace-mode: S-08 the correction arrives within seconds ({beforeCorrection:F1}m -> {engine.PacesetterGapMeters:F1}m)");
 
         // 既定に戻る(次の走行で selfPaced が無ければ「走者+3m」)
         bridge.OnSwiftCommand("{\"command\":\"EndSession\"}");
@@ -1966,7 +2246,6 @@ public class E2EScenarioBehaviour : MonoBehaviour
               $"({engine.MeasuredAvatarHeightMeters:F2}m)");
         bool glassActive = glassRig != null && glassRig.IsGlassOutputActive && glassRig.OutputCamera != null;
         Check(glassActive, "booth: the glasses output view is active for the booth checks");
-        float pitchAt3m = glassActive ? glassRig.AppliedDownPitchDegrees : 0f;
 
         // 立ったまま体の向きを90°変えても、アバターは1秒以内に正面へ回り込む(部屋に置き去りにしない)。
         // 以前は 不感帯12°・45°/s で90°に約2.5秒かかり「すぐ反応しない」と言われた(2026-10-09 実機)
@@ -2016,13 +2295,6 @@ public class E2EScenarioBehaviour : MonoBehaviour
               "booth: HUD pace turns red while behind");
         Check(hud == null || (hud.CurrentDistanceText != "0.00 km" && hud.CurrentDistanceText.EndsWith("km")),
               $"booth: HUD distance counts up while standing still ({(hud != null ? hud.CurrentDistanceText : "-")})");
-        if (glassActive)
-        {
-            // 9m先へ離れたら視点の俯角を浅くする(3m前提のままだと頭が視野の上へ切れる)
-            float pitchAt9m = glassRig.AppliedDownPitchDegrees;
-            Check(pitchAt9m < pitchAt3m - 5f,
-                  $"booth: the glasses view tilts up when the avatar is ~9m ahead ({pitchAt3m:F1}° → {pitchAt9m:F1}°)");
-        }
 
         // ── 追い抜き: 寄って緑→青、HUDペース緑 ──
         yield return WaitForDemoTime(demo, 33f);

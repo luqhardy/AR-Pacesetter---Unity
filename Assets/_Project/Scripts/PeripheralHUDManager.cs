@@ -95,6 +95,10 @@ public class PeripheralHUDManager : MonoBehaviour
     // E2E・診断が読む素の値(画面の文字は等幅のためのタグ入り)
     private string _plainDistance = string.Empty;
     private string _plainPace = string.Empty;
+    // 今 画面に出している値(これが変わったときだけ文字列を作り直す)。初期値は「まだ出していない」
+    private int _shownWholeSeconds = int.MinValue;
+    private int _shownWholeMeters = int.MinValue;
+    private int _shownPaceSeconds = int.MinValue;
 
     // Session read access for the result/stop flow
     public float ElapsedTimeSeconds => _elapsedTimeSeconds;
@@ -208,10 +212,14 @@ public class PeripheralHUDManager : MonoBehaviour
                 _runStartUtc = System.DateTime.UtcNow;
             _elapsedTimeSeconds = (float)(System.DateTime.UtcNow - _runStartUtc).TotalSeconds;
         }
-        int minutes = Mathf.FloorToInt(_elapsedTimeSeconds / 60f);
-        int seconds = Mathf.FloorToInt(_elapsedTimeSeconds % 60f);
-        if (textTime != null)
+        // 文字列は表示が変わるときだけ作り直す。毎フレーム作ると1秒に数百個の文字列が
+        // GC の対象になり、フレーム時間を乱す(§3)。時間は秒が変わったときだけ
+        int wholeSeconds = Mathf.FloorToInt(_elapsedTimeSeconds);
+        int minutes = wholeSeconds / 60;
+        int seconds = wholeSeconds % 60;
+        if (textTime != null && wholeSeconds != _shownWholeSeconds)
         {
+            _shownWholeSeconds = wholeSeconds;
             textTime.text = _skin != null
                 ? PeripheralHudSkin.FormatTime(minutes, seconds)
                 : string.Format("{0:00}:{1:00}", minutes, seconds);
@@ -255,9 +263,15 @@ public class PeripheralHUDManager : MonoBehaviour
             float shownMeters = PresentationDistanceMeters >= 0f
                 ? PresentationDistanceMeters
                 : _cumulativeDistanceMeters;
-            float totalKm = shownMeters / 1000f;
-            _plainDistance = string.Format("{0:F2} km", totalKm);
-            textDistance.text = _skin != null ? PeripheralHudSkin.FormatDistance(totalKm) : _plainDistance;
+            // 表示は 0.01km 刻みなので、1m 進むごとに作り直せば足りる
+            int wholeMeters = Mathf.FloorToInt(shownMeters);
+            if (wholeMeters != _shownWholeMeters)
+            {
+                _shownWholeMeters = wholeMeters;
+                float totalKm = shownMeters / 1000f;
+                _plainDistance = string.Format("{0:F2} km", totalKm);
+                textDistance.text = _skin != null ? PeripheralHudSkin.FormatDistance(totalKm) : _plainDistance;
+            }
         }
 
         // 3. F-07 右上=現在ペース(遅れ=赤 / 維持=緑)
@@ -270,8 +284,16 @@ public class PeripheralHUDManager : MonoBehaviour
                 ? PaceHudDisplay.KmhToPaceMinutesPerKm(measuredKmh)
                 : PaceHudDisplay.SpeedToPaceMinutesPerKm(_smoothedSpeedMps);
 
-            _plainPace = PaceHudDisplay.Format(currentPace);
-            textPace.text = _skin != null ? PeripheralHudSkin.FormatPace(_plainPace) : _plainPace;
+            // 表示は秒/km 刻み(出せないペースは -1 = "--'--")。変わったときだけ作り直す
+            bool paceShowable = !float.IsNaN(currentPace) && !float.IsInfinity(currentPace)
+                && currentPace > 0f && currentPace < PaceHudDisplay.UndisplayablePaceMinutesPerKm;
+            int paceSeconds = paceShowable ? (int)System.Math.Round(currentPace * 60.0) : -1;
+            if (paceSeconds != _shownPaceSeconds)
+            {
+                _shownPaceSeconds = paceSeconds;
+                _plainPace = PaceHudDisplay.Format(currentPace);
+                textPace.text = _skin != null ? PeripheralHudSkin.FormatPace(_plainPace) : _plainPace;
+            }
 
             PaceHudDisplay.PaceState state = PaceHudDisplay.Evaluate(
                 currentPace, avatarEngine.TargetPaceMinutesPerKm,
@@ -295,8 +317,9 @@ public class PeripheralHUDManager : MonoBehaviour
         if (analytics != null)
         {
             // Real-Time Synchronicity Rate
+            // F-07 のレイアウトではこの3項目は伏せてある。見えていない間は文字列を作らない
             float syncRate = analytics.GetLiveSyncRate();
-            if (textSyncRate != null)
+            if (textSyncRate != null && textSyncRate.isActiveAndEnabled)
             {
                 textSyncRate.text = string.Format("Sync: {0:F1}%", syncRate);
             }
@@ -304,14 +327,14 @@ public class PeripheralHUDManager : MonoBehaviour
             // Cumulative Fatigue Index & Temp multiplier display
             float fatigue = analytics.GetCumulativeFatigue();
             float multiplier = analytics.GetFatigueMultiplier();
-            if (textFatigueIndex != null)
+            if (textFatigueIndex != null && textFatigueIndex.isActiveAndEnabled)
             {
                 textFatigueIndex.text = string.Format("Fatigue: {0:F2} (x{1:F1})", fatigue, multiplier);
             }
 
             // Real-Time Session Grade
             string grade = analytics.EvaluateFinalSessionPerformanceRank();
-            if (textGrade != null)
+            if (textGrade != null && textGrade.isActiveAndEnabled)
             {
                 textGrade.text = string.Format("Grade: {0}", grade);
             }

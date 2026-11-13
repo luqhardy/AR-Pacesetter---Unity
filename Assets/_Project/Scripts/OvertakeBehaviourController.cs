@@ -126,32 +126,40 @@ public class OvertakeBehaviourController : MonoBehaviour
         avatarAnimator = newAnimator;
     }
 
+    // Animator.parameters は読むたびに配列を確保する。毎フレーム4回読んでいたので、
+    // Animator(と Controller)が変わったときだけ一覧を取り直す(§3 のフレーム時間を GC で乱さない)
+    private readonly System.Collections.Generic.Dictionary<string, AnimatorControllerParameterType> _parameterTypes
+        = new System.Collections.Generic.Dictionary<string, AnimatorControllerParameterType>();
+    private Animator _parametersOf;
+    private RuntimeAnimatorController _parametersOfController;
+
+    private bool HasAnimatorParameter(string paramName, AnimatorControllerParameterType type)
+    {
+        if (avatarAnimator == null) return false;
+        if (_parametersOf != avatarAnimator
+            || _parametersOfController != avatarAnimator.runtimeAnimatorController)
+        {
+            _parametersOf = avatarAnimator;
+            _parametersOfController = avatarAnimator.runtimeAnimatorController;
+            _parameterTypes.Clear();
+            foreach (var param in avatarAnimator.parameters)
+                _parameterTypes[param.name] = param.type;
+            // 初期化前の Animator は空を返す。空は覚えず、次に呼ばれたとき読み直す
+            if (_parameterTypes.Count == 0) _parametersOf = null;
+        }
+        return _parameterTypes.TryGetValue(paramName, out var found) && found == type;
+    }
+
     private void SetAnimatorFloatSafe(string paramName, float value)
     {
-        if (avatarAnimator == null) return;
-        foreach (var param in avatarAnimator.parameters)
-        {
-            if (param.type == AnimatorControllerParameterType.Float
-             && param.name == paramName)
-            {
-                avatarAnimator.SetFloat(paramName, value);
-                return;
-            }
-        }
+        if (HasAnimatorParameter(paramName, AnimatorControllerParameterType.Float))
+            avatarAnimator.SetFloat(paramName, value);
     }
 
     private void SetAnimatorBoolSafe(string paramName, bool value)
     {
-        if (avatarAnimator == null) return;
-        foreach (var param in avatarAnimator.parameters)
-        {
-            if (param.type == AnimatorControllerParameterType.Bool
-             && param.name == paramName)
-            {
-                avatarAnimator.SetBool(paramName, value);
-                return;
-            }
-        }
+        if (HasAnimatorParameter(paramName, AnimatorControllerParameterType.Bool))
+            avatarAnimator.SetBool(paramName, value);
     }
 
     // ── State change reactions ───────────────────────────────────────────────
@@ -269,14 +277,10 @@ public class OvertakeBehaviourController : MonoBehaviour
         if (avatarAnimator == null) return;
 
         // Check that the trigger exists in the controller before calling it
-        foreach (var param in avatarAnimator.parameters)
+        if (HasAnimatorParameter(triggerName, AnimatorControllerParameterType.Trigger))
         {
-            if (param.type == AnimatorControllerParameterType.Trigger
-             && param.name == triggerName)
-            {
-                avatarAnimator.SetTrigger(triggerName);
-                return;
-            }
+            avatarAnimator.SetTrigger(triggerName);
+            return;
         }
         Debug.LogWarning($"[OVERTAKE VISUAL] Animator trigger '{triggerName}' not found in controller. " +
                           "Add it to the Animator to enable the reaction animation.");

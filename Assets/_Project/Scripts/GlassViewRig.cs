@@ -9,10 +9,11 @@ using UnityEngine;
 ///   iPhoneカメラの内部パラメータ由来だった。XREAL One の画角(対角50° → 垂直約25.7°)とは
 ///   別物なので、3.0m前方に置いたアバターが<b>実寸の角度で見えない</b>。
 ///   グラスへ出す間はグラスの画角で描く。</item>
-/// <item><b>視点が違う</b>: iPhoneは胸マウント、グラスは目の位置。さらにARKitカメラの姿勢を
-///   そのまま使うと、胸の上下動・ロールがそのまま頭固定スクリーンへ出て画面全体が揺れる
-///   (§4.1が禁じている酔いの原因そのもの)。視点を眼高へ持ち上げ、向きは
-///   §4.1の移動平均済み進行方向(ヨーのみ)から作る。</item>
+/// <item><b>視点</b>: iPhoneは頭のマウントなので、ARKitカメラの位置と向き(ヨー・ピッチ)を
+///   そのまま使う — アバターとカメラ映像が現実と揃い、首を振ってもアバターは進行方向の3m先に留まる。
+///   ロールは足さない(マウントの縦横で90°変わり、走行中の首かしげも画面へ出さない)。
+///   胸マウント(<see cref="CameraMount.Chest"/>)では胸の揺れが画面へ出るので、視点を眼高へ持ち上げ、
+///   向きは§4.1の移動平均済み進行方向(ヨーのみ)から作る。</item>
 /// </list>
 ///
 /// <para><b>ARKitカメラは触らない</b>。トラッキングは従来どおりARKitが担当し、
@@ -33,17 +34,24 @@ public sealed class GlassViewRig : MonoBehaviour
     [SerializeField] private AvatarEngine avatarEngine;
 
     [Header("Head model")]
-    [Tooltip("iPhoneの装着高(胸マウント)。GroundSnap.assumedCameraHeightMeters と対の想定値")]
+    [Tooltip("iPhoneの装着位置。既定は頭")]
+    [SerializeField] private CameraMount cameraMount = CameraMount.Head;
+    [Tooltip("胸マウントのときのiPhoneの装着高")]
     [SerializeField] private float chestMountHeightMeters = HeadPoseMath.DefaultChestMountHeightMeters;
     [Tooltip("眼の高さ。グラスはここにある")]
     [SerializeField] private float eyeHeightMeters = HeadPoseMath.DefaultEyeHeightMeters;
 
     [Header("Glass")]
     [SerializeField] private GlassScreenMode screenMode = GlassScreenMode.FollowLocked;
-    [Tooltip("狭いFoVへアバターを収めるための下向き俯角の上限(度)")]
+    [Tooltip("全身が収まる目線の俯角の上限(度)。胸マウントでは描画へ足す")]
     [SerializeField] private float maxDownPitchDegrees = 15f;
+    [Tooltip("グラスの背景にiPhoneのカメラ映像を出す(既定ON)。開発者モードの SetGlassPassthrough で切替")]
+    [SerializeField] private bool cameraPassthroughOnGlass = true;
+    [Tooltip("頭マウントのとき描画のヨーをどこから取るか。既定は iPhone(ARKitカメラ)。開発者モードの SetHeadYawSource で切替")]
+    [SerializeField] private HeadYawSource headYawSource = HeadYawSource.PhoneCamera;
 
     private Camera _outputCamera;
+    private GlassPassthroughLayer _passthroughLayer;
     private Quaternion _externalPose = Quaternion.identity;
     private float _externalPoseTime = -1f;
     // 首振り。AirPods の頭のヨー(基準は任意・右が正)を進行方向との差にして足す(HeadPoseMath 参照)
@@ -62,7 +70,20 @@ public sealed class GlassViewRig : MonoBehaviour
     public GlassDisplayProfile ActiveProfile { get; private set; } = GlassDisplayProfile.PhoneScreen;
     public HeadOrientationSource OrientationSource { get; private set; } = HeadOrientationSource.PhoneCamera;
     public Camera OutputCamera => _outputCamera;
+    /// <summary>グラスへカメラ映像を出す設定(グラス未接続でも保持する)。</summary>
+    public bool CameraPassthroughOnGlass => cameraPassthroughOnGlass;
+    /// <summary>今グラスへカメラ映像を出しているか(フレーム到着前でも true)。</summary>
+    public bool IsCameraPassthroughShowing => _passthroughLayer != null && _passthroughLayer.IsShowing;
+    /// <summary>
+    /// グラスへ出すカメラ映像を1枚以上描けたか。出す指定なのに false のままなら、ARKit のフレームか
+    /// 変換用のマテリアルが届いていない(診断用 — 「設定はONなのに映らない」の切り分け)
+    /// </summary>
+    public bool CameraPassthroughHasFrame => _passthroughLayer != null && _passthroughLayer.HasFrame;
+    /// <summary>グラスのカメラ映像がどこで止まっているか(日本語・診断用)。出せていれば空</summary>
+    public string CameraPassthroughBlocker => _passthroughLayer != null ? _passthroughLayer.Blocker : "";
+    /// <summary>描画の俯角(度・下向きが正)。頭マウントでは頭の実際のピッチ。</summary>
     public float AppliedDownPitchDegrees { get; private set; }
+    public CameraMount Mount => cameraMount;
     public bool FullBodyFitsInFov { get; private set; } = true;
 
     /// <summary>足元の地面が見え始める距離(m)。∞ なら地面は一切視野に入らない。</summary>
@@ -128,6 +149,7 @@ public sealed class GlassViewRig : MonoBehaviour
         ReportOpticalFit();
         ApplyHudSafeArea();
         UpdateOutputCamera();
+        ApplyCameraPassthrough();
 
         Debug.Log($"[GLASS] 出力リグ起動: {profile} / 描画面 {Screen.width}x{Screen.height} " +
                  $"(アスペクト {ViewportAspect:F3} 期待 {profile.Aspect:F3} " +
@@ -142,10 +164,12 @@ public sealed class GlassViewRig : MonoBehaviour
         IsGlassOutputActive = false;
         _headYawBaseline.Reset();
         AppliedHeadYawDegrees = 0f;
+        IsHeadYawFromImu = false;
         ActiveProfile = GlassDisplayProfile.PhoneScreen;
         OrientationSource = HeadOrientationSource.PhoneCamera;
         AppliedDownPitchDegrees = 0f;
 
+        if (_passthroughLayer != null) _passthroughLayer.SetShowing(false);
         if (_outputCamera != null) _outputCamera.enabled = false;
         RestoreArCamera();
         RestoreHudSafeArea();
@@ -167,8 +191,16 @@ public sealed class GlassViewRig : MonoBehaviour
         _externalPoseTime = timestampSeconds > 0f ? timestampSeconds : Time.time;
     }
 
+    /// <summary>iPhoneの装着位置を切り替える(次のフレームから反映)。</summary>
+    public void SetCameraMount(CameraMount mount)
+    {
+        cameraMount = mount;
+        _headYawBaseline.Reset();
+    }
+
     /// <summary>
-    /// AirPods の頭のヨー(度・基準は任意・右が正)を受け取る。グラスは Follow(固定) なので、
+    /// AirPods の頭のヨー(度・基準は任意・右が正)を受け取る。胸マウント用 — 頭マウントでは
+    /// ARKitカメラの向きに首振りが含まれているので足さない。グラスは Follow(固定) なので、
     /// 首振りを描画の向きへ足さないと、首を振ったときアバターが視線の先へ付いてくる。
     /// 供給が <see cref="HeadPoseMath.DefaultHeadYawMaxAgeSeconds"/> 途切れれば進行方向だけに戻る
     /// </summary>
@@ -177,6 +209,25 @@ public sealed class GlassViewRig : MonoBehaviour
         _headYawRaw = degrees;
         _headYawTime = Time.time;
     }
+
+    /// <summary>
+    /// 頭マウントの描画のヨーを iPhone(ARKitカメラ)と外部IMU(グラスのIMU)のどちらから取るか
+    /// (開発者モード・<c>SetHeadYawSource</c>・既定は iPhone)。次のフレームから反映する
+    /// </summary>
+    public void SetHeadYawSource(HeadYawSource source)
+    {
+        if (headYawSource == source) return;
+        headYawSource = source;
+        _headYawBaseline.Reset(); // 切り替えた瞬間の向きを「まっすぐ前」として取り直す
+        IsHeadYawFromImu = false;
+        Debug.Log($"[GLASS] 頭の向きの元を {(source == HeadYawSource.ExternalImu ? "外部IMU(グラスのIMU)" : "iPhone(ARKitカメラ)")} に設定");
+    }
+
+    /// <summary>頭マウントの描画のヨーの元(設定)。</summary>
+    public HeadYawSource HeadYawSourceSetting => headYawSource;
+
+    /// <summary>直近のフレームで、頭マウントのヨーを実際に外部IMUで回したか(設定が IMU でも届いていなければ false)</summary>
+    public bool IsHeadYawFromImu { get; private set; }
 
     public bool HasFreshHeadYaw =>
         HeadPoseMath.IsExternalPoseFresh(Time.time, _headYawTime, HeadPoseMath.DefaultHeadYawMaxAgeSeconds);
@@ -246,22 +297,49 @@ public sealed class GlassViewRig : MonoBehaviour
     {
         if (_outputCamera == null || arCamera == null) return;
 
-        OrientationSource = HeadPoseMath.ResolveOrientationSource(true, screenMode, HasFreshExternalPose);
+        OrientationSource = HeadPoseMath.ResolveOrientationSource(true, screenMode, HasFreshExternalPose, cameraMount);
 
-        // 視点: ARKitカメラ(胸)の位置を眼高へ持ち上げる
+        // 視点: ARKitカメラの位置から眼高へ(頭マウントはそのまま)
         Vector3 eye = arCamera.transform.position;
-        eye.y += HeadPoseMath.ChestToEyeOffsetMeters(chestMountHeightMeters, eyeHeightMeters);
+        eye.y += HeadPoseMath.MountToEyeOffsetMeters(cameraMount, chestMountHeightMeters, eyeHeightMeters);
         _outputCamera.transform.position = eye;
 
         // 向き
         float downPitch = 0f;
         float headYaw = 0f;
         Quaternion rotation;
+        bool yawFromImu = false;
         switch (OrientationSource)
         {
             case HeadOrientationSource.ExternalGlassPose:
                 // 実姿勢にはピッチが含まれるので、こちらで俯角を足さない
                 rotation = _externalPose;
+                break;
+
+            case HeadOrientationSource.HeadMountedCamera:
+                // 真上・真下を向いた瞬間は水平の向きが定まらないので前のフレームの向きを保つ
+                Vector3 look = arCamera.transform.forward;
+                bool lookIsDefined = new Vector2(look.x, look.z).sqrMagnitude > 1e-4f;
+                rotation = lookIsDefined
+                    ? Quaternion.LookRotation(look, Vector3.up)
+                    : _outputCamera.transform.rotation;
+                downPitch = HeadPoseMath.WrapDegrees(rotation.eulerAngles.x);
+                if (lookIsDefined
+                    && HeadPoseMath.ShouldDriveHeadMountYawFromImu(headYawSource, screenMode, HasFreshHeadYaw))
+                {
+                    // 開発者モード「頭の向き: グラスのIMU」。ヨーだけ外部IMUで回す(ピッチと位置は ARKit のまま)
+                    float cameraYaw = rotation.eulerAngles.y;
+                    float imuOffset = _headYawBaseline.Update(_headYawRaw, cameraYaw, Time.deltaTime,
+                                                              HeadPoseMath.ImuYawAlignSeconds);
+                    float imuViewYaw = HeadPoseMath.ResolveViewYawDegrees(cameraYaw, imuOffset, true);
+                    headYaw = imuViewYaw - cameraYaw;
+                    rotation = Quaternion.Euler(rotation.eulerAngles.x, imuViewYaw, 0f);
+                    yawFromImu = true;
+                }
+                else
+                {
+                    _headYawBaseline.Reset();
+                }
                 break;
 
             case HeadOrientationSource.TravelHeading:
@@ -278,6 +356,7 @@ public sealed class GlassViewRig : MonoBehaviour
                 break;
         }
         AppliedHeadYawDegrees = headYaw;
+        IsHeadYawFromImu = yawFromImu;
 
         _outputCamera.transform.rotation = rotation;
         AppliedDownPitchDegrees = downPitch;
@@ -355,6 +434,25 @@ public sealed class GlassViewRig : MonoBehaviour
         _outputCamera.depth = arCamera != null ? arCamera.depth + 1f : 1f;
         _outputCamera.allowHDR = false;
         _outputCamera.allowMSAA = false;
+
+        _passthroughLayer = go.AddComponent<GlassPassthroughLayer>();
+        _passthroughLayer.Initialize(_outputCamera, arCamera);
+    }
+
+    /// <summary>
+    /// グラスの背景にカメラ映像を出すかを切り替える(開発者モード)。接続中ならすぐ反映し、
+    /// 未接続なら次の接続で使う。
+    /// </summary>
+    public void SetCameraPassthroughOnGlass(bool enabled)
+    {
+        cameraPassthroughOnGlass = enabled;
+        if (IsGlassOutputActive) ApplyCameraPassthrough();
+        Debug.Log($"[GLASS] グラスのカメラ映像を{(enabled ? "ON" : "OFF")}に設定");
+    }
+
+    private void ApplyCameraPassthrough()
+    {
+        if (_passthroughLayer != null) _passthroughLayer.SetShowing(cameraPassthroughOnGlass);
     }
 
     /// <summary>
@@ -420,7 +518,7 @@ public sealed class GlassViewRig : MonoBehaviour
         string groundText = double.IsInfinity(ground) ? "なし" : ground.ToString("F2") + "m";
         LastFitReport =
             $"{ActiveProfile.Model}: 垂直FoV {vFov:F1}° / アバター(高さ{height:F2}m・{distance:F1}m前方)の占有角 {span:F1}° / " +
-            $"俯角 {pitch:F1}° / 全身 {(FullBodyFitsInFov ? "収まる" : "収まらない")} / " +
+            $"全身が入る目線の俯角 {pitch:F1}° / 全身 {(FullBodyFitsInFov ? "収まる" : "収まらない")} / " +
             $"全身に必要な距離 {minDistance:F2}m / 地面が見え始める距離 {groundText}";
 
         if (FullBodyFitsInFov)

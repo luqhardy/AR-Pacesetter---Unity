@@ -366,9 +366,6 @@ public class AvatarAnimatorControllerGenerator
         EnsureModelIsHumanoid(Y_BOT_JOGGING, ybotAvatar, true);
         EnsureModelIsHumanoid(Y_BOT_RUNNING, ybotAvatar, true);
         EnsureModelIsHumanoid(Y_BOT_RUNNING2, ybotAvatar, true);
-
-        // Enforce humanoid setup on the custom companion model as well
-        EnsureModelIsHumanoid("Assets/Avatar.fbx", null, false);
     }
 
     private static void EnsureModelIsHumanoid(string assetPath, Avatar sourceAvatar, bool isAnimationOnly)

@@ -25,6 +25,8 @@ Unityプロジェクト(本リポジトリのルート)+ SwiftUIホスト(`ios/`
   (HUD は加算表示なので黒は透ける。見た目を変えたら `HudPreviewRunner` で画像に書き出して確かめる — §3-4)
 - 屋外路面の分類(ARCore) → [Docs/ARCORE_SCENE_SEMANTICS.md](Docs/ARCORE_SCENE_SEMANTICS.md)
 - 差し替えアバター(VRM) → [Docs/VRM_AVATARS.md](Docs/VRM_AVATARS.md)
+- 自走モードのペースセッター(`set_speed` 走行・WAIT・OVERTAKEN・サウンド・レーン) → [Docs/PACESETTER_BEHAVIOR_SPEC.md](Docs/PACESETTER_BEHAVIOR_SPEC.md)。
+  実装は `PacesetterModel` ほか(§6)。§1 の優先順位には入っておらず、既定の走行(常時+3m追従)は変えていない
 - 実地テストの計画・実機での初回確認 → [Docs/FIELD_TEST_PLAN.md](Docs/FIELD_TEST_PLAN.md)(実機で一度も見ていない項目は §0-A)。
   結果は [Docs/field-tests/](Docs/field-tests/README.md) に1セッション1フォルダで残す
 - 展示ブースの体験モード(Kobe Calling・立ったまま/数歩あるく) → [Docs/KOBE_CALLING_DEMO.md](Docs/KOBE_CALLING_DEMO.md)
@@ -122,9 +124,10 @@ P_avatar = P_user + 3.0 × V_forward
 
 ### 4.2 Ground Snap & Vertical Smoothing (LiDAR Enhanced)
 - **Vertical Threshold**: 接地面の高さ変化が ±15cm を超えたら即スナップせず、**0.3秒**かけて補間
-  (`Mathf.SmoothDamp`)。垂直レイは `Physics.RaycastAll(origin, down, 20m)`。
+  (`Mathf.SmoothDamp`)。垂直レイは `Physics.RaycastNonAlloc(origin, down, 20m)`。
 - **Cliff/Obstacle Exception**: 前方 **3.0m** 以内に高さ **1.5m** 以上の崖・壁を検知したら
-  (`Physics.SphereCastAll`, 半径0.4m)前進を止め、ユーザーと向き合う「その場ジョグ」で待つ。
+  (`Physics.CapsuleCastNonAlloc`, 半径0.3m・床から0.4〜1.5mの高さ帯 — 縁石など低い障害物も拾う)
+  前進を止め、ユーザーと向き合う「その場ジョグ」で待つ。
 - **足のめり込み補正**: GroundSnap はアバターの原点を床に合わせ、`FootPlanting` が立脚期の足裏を床へ合わせる(§6)。
 
 ### 4.3 Analytics & Environmental Models
@@ -211,9 +214,13 @@ stateDiagram-v2
 - **`AvatarEngine.IsHalted` は `GroundSnap` が毎フレーム上書きする**。恒久的な停止には `IsSessionEnded` を使う
 - **距離の単一ソース原則**: Swift主導中(`ARSessionManagerBridge.ExternalMetricsActive`)はUnity内部計測をスプリット判定へ流さない。記録・ゴール判定は `RunSessionController.AuthoritativeDistanceMeters`(新鮮なGPS優先・5秒でUnity計測へフォールバック)を共用
 - **アバターは常時「ユーザー+3m」アンカー追従**(自走ではない)。10m離隔待機は「アバター停止中にユーザーが離れる」場合にのみ発生する。
-  例外は**自走モード**(AR設定のスイッチ・既定OFF・StartSession の `selfPaced`): 前方距離を「3m − 遅れ」にずらす(0.8〜9.5m)。
-  遅れは START からの正規の距離 − 目標ペースの距離(`SelfPacedTarget`)で取り、シンクロ率の距離偏差(速さの積分)は使わない
-  (平滑化した速さの立ち上がりの偏りが数mの一定の遅れとして残る)
+  ARKit の位置が走行中に止まると一緒に止まるので、`ArTrackingFallback` が GPS の距離でカメラのリグごと進める(判定は `ArTrackingWatch`・診断は `ar.gpsFallback`)。
+  例外は**自走モード**(AR設定のスイッチ・既定OFF・StartSession の `selfPaced`): [Docs/PACESETTER_BEHAVIOR_SPEC.md](Docs/PACESETTER_BEHAVIOR_SPEC.md) の挙動。
+  判定はすべて `PacesetterModel`(純ロジック)で、`AvatarEngine` は前方距離を `gap` にするだけ(負なら走者の後ろ)。
+  user_pos は `RunnerDistanceEstimator` — 正規の距離を単一ソースのまま、1秒ごとの段差だけをフレームの移動でならす。
+  シンクロ率の距離偏差(速さの積分)は使わない(平滑化した速さの立ち上がりの偏りが数mの一定の遅れとして残る)。
+  仕様の UNDECIDED の仮の値は `PacesetterModel` / `PacesetterSound` / `StartLineCheckpoint` に「仮」と書いてある。
+  スタートラインの検知(U-07)が未決なので、`StartLineCheckpoint` は START の地点へ GPS が最も近づいた瞬間を通過とする
 - **Animator取得は `AvatarRigLocator.FindBestAnimator`** — コンテナに無効化された旧Animatorが残っており、素の `GetComponentInChildren<Animator>` はそれを拾う
 - **AnimatorControllerはジェネレータ管理**(`AvatarAnimatorControllerGenerator`)。手編集せず再生成する(同一パスならGUID維持でシーン参照は無傷)。閾値は km/h 基準を m/s に換算した値(Walk 0.0278 / Run 1.3889 / Sprint 4.1667)
 - **Unity が自前で作る全画面ウインドウは SwiftUI のウインドウの後ろへ下げる**(`UnityLauncher.sendUnityWindowBehindApp`)。
@@ -239,6 +246,9 @@ stateDiagram-v2
   屋内で消えないのは `GpsSignalMonitor.RequireInitialFixBeforeLost` のおかげ(良好な初回測位前はロスト判定しない)
 - 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する
 - IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、エディタ=カメラ差分近似)。`SetImuAcceleration` はC#専用で、Swiftからは呼べない
+- **グラスの背景には iPhone のカメラ映像を出す(既定ON)**。`GlassViewRig` の `GlassPassthroughLayer` がグラスの画角で切り出して描く
+  (ARKit カメラの `ARCameraBackground` はグラス出力中は止めたまま)。切替は開発者モード → `SetGlassPassthrough`。
+  詳細は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) §3-5
 - グラスの画面モードは **Follow(固定)**。Anchor だと頭部補正が二重にかかる。XREAL SDK の姿勢は iOS から取れない(XREAL One の生IMUは下の `XrealImuReceiver`)
 - 屋外路面分類(ARCore)は `#if ARCORE_EXTENSIONS` の中だけで触る。**3D面分類を画像分類で上書きしない**
 - VRMアバターの受け入れ基準(三角形70,000・マテリアル8等)は 60fps と M2P 20ms のための値。`.vrca`(VRChat)は使えない
@@ -250,8 +260,11 @@ stateDiagram-v2
 - **アバターの身長は `AvatarEngine.ApplyHeightCm` / `SetHeightLimitCm` だけで変える**(モデルの `localScale` を直接書かない)。
   適用されるのは要求身長と上限の小さい方(`EffectiveHeightCm`)— グラス出力中の上限が §7-1 の決定を実現している
 - **展示デモではアバターを一度も消さない**(GPSロスト判定OFF)。向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView`)— §4.1 Gaze Lock の**唯一の例外**で、走行には持ち込まない
+- **iPhone は頭のマウントに付ける(`CameraMount.Head`・既定)**。グラスの描画は ARKit カメラの位置・ヨー・ピッチのまま(`HeadMountedCamera`)で、
+  ロールは足さない(マウントの縦横で90°変わるため)。§4.1 が禁じているのはアバターの位置・進行方向に視線を使うことで、描画の向きは別。
+  `GroundSnap.assumedCameraHeightMeters` も眼高(1.55m)。胸マウントの経路(`CameraMount.Chest` = 進行方向ヨー+俯角+`UpdateHeadYaw`)は残してある
 - **AirPods の頭の向き(`HeadphoneHeadTracker` → `UpdateHeadYaw`)は準備画面(S4)で「接続」を押したときだけ使う**(既定OFF・走行の終了で止める)。
-  グラスは Follow(固定)なので、首振りは Unity が進行方向ヨーへ足して打ち消す(`HeadYawBaseline`)。Anchor モードでは足さない
+  足すのは胸マウントのときだけ(`HeadYawBaseline`)。頭マウントではカメラの向きに首振りが含まれているので Unity は使わない。Anchor モードでは足さない
 - **XREAL One 自身のIMU(`XrealImuReceiver`・USBネットワーク TCP 169.254.2.1:52998)も準備画面の「グラスのセンサー」で「接続」したときだけ使う**
   (既定OFF・走行の終了で止める・**読むだけ**で 52999 の設定口は触らない)。届いている間は AirPods より優先して `UpdateHeadYaw` を送り
   (AirPods は送らない)、重力を除いた100Hzの加速度を `ARV_PushGlassImuSample` 経由で CSV の imu_accel 列へ渡す(軸はグラスの x=右・y=下・z=前)。
@@ -273,7 +286,8 @@ Swift⇄ブリッジ境界は km/h、Unity内部は 分/km(変換: 分/km = 60 �
 1. ~~**3.0m前方と画角の両立(F-03 × グラス)**~~ → **決定(2026-10-13 チーム判断)**: 3.0m前方は保ち、**大きさを譲る**。
    ARグラスへ出力している間は `GlassViewRig` が「その画角で頭から足元まで収まる身長」を `AvatarEngine.SetHeightLimitCm` で
    上限にする(XREAL One で約144cm。画角の広い One Pro では高い)。iPhone画面では要求どおり(175cm)。
-   展示デモは固定の145cm(`BoothDemoScript.AvatarHeightCm`)。経緯: 175cmは3.0mで垂直31.1°を占め、垂直25.7°に収まらなかった
+   展示デモは固定の145cm(`BoothDemoScript.AvatarHeightCm`)。経緯: 175cmは3.0mで垂直31.1°を占め、垂直25.7°に収まらなかった。
+   頭マウント(2026-11-04)では視点を人工的に傾けないので、全身が入るのは**目線を下げたとき**(約12°)。水平を見ている間は足元が視野の下に出る
 2. **`SafetyAndSystemController`(TTC警告・低バッテリー退避)は休眠中**: 実行時に生成されない。有効化には
    (a)障害物検知ソースの接続 (b)非検出時にTTCを `ttcScanRange` で計算する誤りの修正が要る —
    そのまま配線すると19.2km/h超で誤警報が出る。詳細は HANDOVER.md §5

@@ -44,7 +44,7 @@ AR Pacesetter/          ← Unityプロジェクト(プロトタイプ/検証レ
 | サイズの異常系(要求身長100〜230cm・測れない/桁外れの検知・画角による上限の下限100cm・スケールイン中断の復元) | `AvatarScale.cs` + `AvatarEngine.ApplyHeightCm` + `AvatarVFXController` | **Unit + E2E自動**。開発者モード `avatar.height` / `avatar.heightAnomaly` |
 | 首振り(AirPods の頭の向きを進行方向との差にしてグラスの描画の向きへ足す。S4 で接続したときだけ) | Unity: `HeadPoseMath.HeadYawBaseline` + `GlassViewRig` / Swift: `HeadphoneHeadTracker.swift` | **Unit + E2E自動**(Unity側)・Swift Unit(CI)・**見え方は実機要** |
 | 遅れ(5m以上・オーラが出る)で手招き | `ProceduralGestureDriver.cs` | **E2E自動**(展示デモの遅れ区間) |
-| 自走モード(アバターが目標ペースで走る — 遅れると前へ最大9.5m・速ければ近づく。AR設定のスイッチ・**既定OFF**) | `SelfPacedLead.cs`(`SelfPacedTarget`)+ `AvatarEngine.UpdateSelfPacedLead` / Swift `AvatarPacing.swift` | **Unit + E2E自動**(目標ペースで3.2m・遅れて9.5m・速くて2.2m)・実機要 |
+| 自走モード(アバターが目標ペースで走る — 10m 離れたら待ち、3m まで近づいたら走り出す・抜かれても走り続ける。[Docs/PACESETTER_BEHAVIOR_SPEC.md](Docs/PACESETTER_BEHAVIOR_SPEC.md)。AR設定のスイッチ・**既定OFF**) | `PacesetterModel.cs`(純ロジック・`RunnerDistanceEstimator`)+ `PacesetterSound.cs` + `AvatarEngine.UpdatePacesetter` / Swift `AvatarPacing.swift` | **Unit + E2E自動**(走り出し・待ちの間は止まる・遅れを残す・補正は瞬間移動しない)・実機要 |
 | GPSが使えないときはHUDだけ(START の時点で測位が無い・精度10m以上 → アバター非表示+HUD警告、精度5m以内で出現。AR設定のスイッチ・**既定OFF**) | `GpsSignalPolicy.ShouldStartHudOnly` + `GameStateController.StandbyCause.AwaitingGps` + `ARSessionManagerBridge.MaybeStartHudOnly` / Swift `HudOnlyStart.swift` | **Unit + E2E自動**(GPSなしで非表示・12mでは出ない・4mで出現・スイッチ無しは従来どおり)・実機要 |
 | 追い抜き/追い抜かれ動作 | `AvatarEngine.cs` + `OvertakeBehaviourController.cs` | エディタ(O/Pキー) |
 

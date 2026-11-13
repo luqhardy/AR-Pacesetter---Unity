@@ -21,6 +21,9 @@ final class RunSettings: ObservableObject {
     /// Unity の StartSession の routeLatLon([緯度, 経度, ...])。次の1走行だけ — 端末には保存しない
     @Published var guidanceRoute: [Double]? = nil
 
+    /// S8 で選んだトラックのレーンの1周(m)。レーン以外は nil。次の1走行だけ — 端末には保存しない
+    @Published var lapLengthMeters: Double? = nil
+
     private init() {
         let saved = RunTargetSettings.load(from: .standard)
         paceKmH = saved.paceKmH

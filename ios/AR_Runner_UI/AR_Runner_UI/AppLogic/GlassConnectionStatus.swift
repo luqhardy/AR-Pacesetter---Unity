@@ -23,6 +23,10 @@ nonisolated enum GlassRowStatus: Equatable {
 
     /// 手動の接続を押せるか(実接続も手動接続もしていないとき)
     var canConnectManually: Bool { self == .notDetected || self == .mirroring }
+
+    /// 手動の接続でも描画を iPhone に残すか。外部画面が無いのにグラス用の描画へ切り替えると、
+    /// iPhone のカメラ映像(ARCameraBackground)が止まる。ミラーリング中はグラスにその描画が映るので切り替える
+    var manualConnectStaysOnPhone: Bool { self == .notDetected }
 }
 
 // MARK: - 準備画面(S4)の「次へ」とエラー表示
@@ -75,6 +79,55 @@ nonisolated enum DeviceGate {
         case .mirroring, .notDetected: return allowRunWithoutGlasses
         }
     }
+}
+
+// MARK: - 開発者モード「グラスにカメラ映像を出す」
+
+/// ARグラスの背景に iPhone のカメラ映像(パススルー)を出すか(**既定 ON** — 頭に付けた iPhone の映像)。
+/// 値は接続のたびに Unity へ送る(`SetGlassPassthrough`)。未設定は ON として読む
+nonisolated enum GlassPassthroughSetting {
+    static let key = "devGlassPassthrough"
+    static let defaultValue = true
+
+    static func read(_ defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? defaultValue
+    }
+}
+
+// MARK: - 開発者モード「iPhoneにカメラ映像を出す」
+
+/// iPhone の画面にカメラ映像を出すか(**既定 ON** — 映像が無いと iPhone の画面は AR にならない)。
+/// OFF にすると背景は黒で、アバターとHUDだけが出る(グラスの見え方を iPhone で確かめるとき)。
+/// 値は走行の開始のたびに Unity へ送る(`SetPhonePassthrough`)。未設定は ON として読む
+nonisolated enum PhonePassthroughSetting {
+    static let key = "devPhonePassthrough"
+    static let defaultValue = true
+
+    static func read(_ defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? defaultValue
+    }
+}
+
+// MARK: - 開発者モード「頭の向きの元」
+
+/// ARグラスの描画のヨー(頭の向き)をどのセンサーから取るか。**既定は iPhone**(頭に付けた iPhone の ARKit)。
+/// `glassImu` にすると、グラスのIMU(XREAL One)のヨーが届いている間はそれで描画を回す — 届かなければ iPhone のまま。
+/// 値は接続・走行の開始のたびに Unity へ送る(`SetHeadYawSource`)。未設定・知らない値は iPhone として読む
+nonisolated enum HeadYawSourceSetting: String, CaseIterable, Identifiable {
+    case phone
+    case glassImu
+
+    var id: String { rawValue }
+
+    static let key = "devHeadYawSource"
+    static let defaultValue = HeadYawSourceSetting.phone
+
+    static func read(_ defaults: UserDefaults) -> HeadYawSourceSetting {
+        defaults.string(forKey: key).flatMap(HeadYawSourceSetting.init(rawValue:)) ?? defaultValue
+    }
+
+    /// グラスのIMUを選んでいれば、準備画面で「接続」を押していなくても走行の開始で読み始める
+    var startsGlassImuWithRun: Bool { self == .glassImu }
 }
 
 // MARK: - 開発者モード「屋内テスト」

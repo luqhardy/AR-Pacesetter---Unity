@@ -24,6 +24,8 @@ final class GlassConnectionStatusTests: XCTestCase {
         XCTAssertTrue(GlassRowStatus.mirroring.canConnectManually)
         XCTAssertFalse(GlassRowStatus.connected.canConnectManually)
         XCTAssertFalse(GlassRowStatus.manual.canConnectManually)
+        XCTAssertTrue(GlassRowStatus.notDetected.manualConnectStaysOnPhone, "外部画面が無ければ iPhone のカメラ映像を残す")
+        XCTAssertFalse(GlassRowStatus.mirroring.manualConnectStaysOnPhone, "ミラーリング中はグラスにその描画が映る")
     }
 
     func testGpsLostHandlingReadsUnitysDiagnosticsValue() {
@@ -45,6 +47,45 @@ final class GlassConnectionStatusTests: XCTestCase {
     func testDeveloperSettingLetsYouRunWithoutGlasses() {
         XCTAssertTrue(DeviceGate.canProceed(glass: .notDetected, allowRunWithoutGlasses: true))
         XCTAssertTrue(DeviceGate.canProceed(glass: .mirroring, allowRunWithoutGlasses: true))
+    }
+
+    func testHeadYawSourceDefaultsToPhone() {
+        let defaults = UserDefaults(suiteName: "HeadYawSourceSettingTests")!
+        defaults.removePersistentDomain(forName: "HeadYawSourceSettingTests")
+        XCTAssertEqual(HeadYawSourceSetting.read(defaults), .phone, "未設定(初回起動)は iPhone")
+        XCTAssertFalse(HeadYawSourceSetting.read(defaults).startsGlassImuWithRun)
+        defaults.set("glassImu", forKey: HeadYawSourceSetting.key)
+        XCTAssertEqual(HeadYawSourceSetting.read(defaults), .glassImu)
+        XCTAssertTrue(HeadYawSourceSetting.read(defaults).startsGlassImuWithRun)
+        defaults.set("somethingElse", forKey: HeadYawSourceSetting.key)
+        XCTAssertEqual(HeadYawSourceSetting.read(defaults), .phone, "知らない値は iPhone")
+        defaults.removePersistentDomain(forName: "HeadYawSourceSettingTests")
+        // Unity(HeadPoseMath.ParseHeadYawSource)と同じ文字列
+        XCTAssertEqual(HeadYawSourceSetting.phone.rawValue, "phone")
+        XCTAssertEqual(HeadYawSourceSetting.glassImu.rawValue, "glassImu")
+    }
+
+    func testPhonePassthroughIsOnUntilTurnedOff() {
+        let defaults = UserDefaults(suiteName: "PhonePassthroughSettingTests")!
+        defaults.removePersistentDomain(forName: "PhonePassthroughSettingTests")
+        XCTAssertTrue(PhonePassthroughSetting.read(defaults), "未設定(初回起動)は ON")
+        defaults.set(false, forKey: PhonePassthroughSetting.key)
+        XCTAssertFalse(PhonePassthroughSetting.read(defaults))
+        defaults.set(true, forKey: PhonePassthroughSetting.key)
+        XCTAssertTrue(PhonePassthroughSetting.read(defaults))
+        defaults.removePersistentDomain(forName: "PhonePassthroughSettingTests")
+        XCTAssertNotEqual(PhonePassthroughSetting.key, GlassPassthroughSetting.key, "2つの設定は別々に持つ")
+    }
+
+    func testGlassPassthroughIsOnUntilTurnedOff() {
+        let defaults = UserDefaults(suiteName: "GlassPassthroughSettingTests")!
+        defaults.removePersistentDomain(forName: "GlassPassthroughSettingTests")
+        XCTAssertTrue(GlassPassthroughSetting.read(defaults), "未設定(初回起動)は ON")
+        defaults.set(false, forKey: GlassPassthroughSetting.key)
+        XCTAssertFalse(GlassPassthroughSetting.read(defaults))
+        defaults.set(true, forKey: GlassPassthroughSetting.key)
+        XCTAssertTrue(GlassPassthroughSetting.read(defaults))
+        defaults.removePersistentDomain(forName: "GlassPassthroughSettingTests")
     }
 
     func testNoProblemOnceConnected() {

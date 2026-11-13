@@ -2,18 +2,17 @@ using UnityEngine;
 using UnityEngine.XR.ARFoundation;
 
 /// <summary>
-/// カメラ映像(パススルー)の表示可否を、出力先に応じて切り替える。
+/// ARKitカメラ(iPhone画面)のカメラ映像(パススルー)の表示可否を、出力先に応じて切り替える。
 ///
-/// なぜ必要か: XREALは**光学シースルー**のグラスで、装着者はレンズ越しに現実を直接見る。
-/// そこへiPhoneのカメラ映像を描くと、目に見えている現実の上に「現実の動画」を重ねることに
-/// なり、二重像になって全体が白く濁る。グラスへ出すべきはアバターとHUDだけで、
-/// 背景は黒(=このグラスでは発光せず透過)にする。
+/// グラス出力中は描画を <see cref="GlassViewRig"/> の出力カメラへ移しているので、ARKitカメラの背景は止める。
+/// グラスへのカメラ映像は <see cref="GlassPassthroughLayer"/> がグラスの画角で出す
+/// (2026-11-01 から既定ON・開発者モードで切替。以前は光学シースルーで二重像になるとして出していなかった)。
 ///
 /// iPhoneの画面に出しているときは逆に、カメラ映像がないとARとして成立しないため
 /// パススルーを有効に保つ(ビデオシースルー)。
 ///
 /// カメラのトラッキング自体は常に動き続ける — 消すのは表示だけで、ARKitは
-/// 変わらずカメラを使って自己位置推定を行う(胸マウント運用の前提)。
+/// 変わらずカメラを使って自己位置推定を行う(頭マウント運用の前提)。
 /// </summary>
 public class ARPassthroughController : MonoBehaviour
 {
@@ -25,6 +24,28 @@ public class ARPassthroughController : MonoBehaviour
 
     /// <summary>現在カメラ映像を描画しているか。既定はtrue(iPhone表示)。</summary>
     public bool IsPassthroughEnabled { get; private set; } = true;
+
+    // 出すかどうかは2つの条件の両方で決まる:
+    //   描画が iPhone の画面にある(グラス出力中は ARKit カメラは何も描かない)
+    //   利用者が iPhone の画面にカメラ映像を出す設定にしている(開発者モード・既定ON)
+    private bool _renderingOnPhone = true;
+
+    /// <summary>
+    /// iPhone の画面にカメラ映像を出す設定(開発者モード「iPhoneにカメラ映像を出す」・既定ON)。
+    /// グラス出力中でも保持し、iPhone の画面へ戻ったときに使う
+    /// </summary>
+    public bool PhoneCameraWanted { get; private set; } = true;
+
+    /// <summary>
+    /// iPhone の画面にカメラ映像を出すかを切り替える(<c>SetPhonePassthrough</c>)。
+    /// OFF にすると背景は黒で、アバターとHUDだけが出る。ARKit のトラッキングは止めない
+    /// </summary>
+    public void SetPhoneCameraWanted(bool wanted)
+    {
+        PhoneCameraWanted = wanted;
+        Apply();
+        Debug.Log($"[PASSTHROUGH] iPhone のカメラ映像を{(wanted ? "ON" : "OFF")}に設定");
+    }
 
     void Awake() => Resolve();
 
@@ -46,7 +67,14 @@ public class ARPassthroughController : MonoBehaviour
     /// </summary>
     public void SetPassthroughEnabled(bool enabled)
     {
+        _renderingOnPhone = enabled;
+        Apply();
+    }
+
+    private void Apply()
+    {
         Resolve();
+        bool enabled = _renderingOnPhone && PhoneCameraWanted;
         IsPassthroughEnabled = enabled;
 
         if (_background != null)

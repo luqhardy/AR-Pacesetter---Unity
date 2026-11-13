@@ -1,5 +1,9 @@
 # 更新履歴
 
+## 2026-11-13
+- ios-ui に origin/master (005677d) の更新を統合。origin/ar-ui (1d11c7a) は取り込み済み。
+- 検証: C#コンパイル成功、C# 529/529・Swift 198/198成功。E2Eは前回と同じVRM検証後に進行が止まり中断・未完了。
+
 ## 2026-10-31
 - ios-ui に ar-ui の更新を統合し、翻訳ファイルの競合を解消。
 - 検証: Swift 189/189成功。E2Eは進行が止まったため中断・未完了
@@ -7,6 +11,69 @@
 新しい順。**1エントリは5行以内**: 何を変えたか・なぜ・検証結果(ビルド/ユニット/E2E)。
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
+
+### 2026-11-10 (2) — 使っていない LilLeo アバター(FBX・テクスチャ・マテリアル)を削除
+- `Assets/Avatar.fbx`(11MB)・`T_LilLeo_Quest.png`・`M_LilLeo_Quest.mat`・`Mamehinata_LilLeo_Quest.mat` を削除。どのシーン・プレハブからも参照されておらず、第三者のアバターを公開リポジトリに置く根拠(ライセンス・出典)も無かった。
+- `AvatarAnimatorControllerGenerator` が再生成のたびに `Assets/Avatar.fbx` をヒューマノイドへ直す呼び出しも外した。過去のコミットには残る(履歴の書き換えはしていない)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。E2E のログに削除したファイルの参照切れは出ていない。
+### 2026-11-11 — Swift ロジックテストの失敗を直す(トラックのレーンを足したときのテストの直し漏れ)
+- `RouteCandidatesTests.testPastRoutesNearestToTheTargetComeFirst` が master で落ちていた(2026-11-10 の feature/pacesetter-behavior 取り込み以降)。候補の後ろにトラックのレーンが並ぶようになったのに、テストは一覧全体が過去のルートだけだと見ていた。近い順は過去のルートだけで確かめ、レーンが最後にまとまることも見る。実装は変えていない。
+- 未マージのブランチ5本(feat/task-sheet-1019・codex/local-save-2026-10-19・feature/univrm-setup・feature/xreal-imu-probe・merge/hsu-ar-project-1021)を master と突き合わせた: 取り込むべき差分は無い(スカッシュマージ済みか、PacesetterModel・ホイール入力のUIに置き換え済み)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 529/529、Swift 構文 90 ファイル、E2E 383/383)。直したテスト自体は Windows で実行できない — CI の swift test で確認する。
+
+### 2026-11-10 (4) — 開発者モードで頭の向きの元を iPhone / グラスのIMU から選ぶ
+- 頭マウントではグラスのIMUのヨーを捨てていた(2026-11-04)。開発者モード「頭の向きの元」→ `SetHeadYawSource`(既定は iPhone)。「グラスのIMU」では届いている間そのヨーで描画を回し、ピッチと位置は ARKit のまま。IMU の基準のずれ・ドリフトは ARKit のヨーへ時定数10秒で揃える。
+- 選んでいれば走行の開始でグラスのIMUを読み始める(準備画面の「接続」を押していなくても)。診断に `glass.headYawSource`。§4.1(アバターの位置・進行方向に視線を使わない)には触れていない — 変えるのは描画の向きだけ。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 529/529、Swift 構文 90 ファイル、E2E 383/383)。Swift の型検査・swift test は CI、実機は未確認。
+
+### 2026-11-10 (3) — iPhone の画面のカメラ映像を切り替えるスイッチと、映像が映らない理由の診断
+- 開発者モードに「iPhoneにカメラ映像を出す」(`SetPhonePassthrough`・既定ON)。グラスの分(`SetGlassPassthrough`)と別々に切り替えられる。グラス出力中は設定だけ覚え、iPhone の画面へ戻ったときに使う。
+- 診断に `phone.cameraFeed` / `glass.cameraFeed`。グラスは「設定はONなのに映らない」がどの段で止まっているか(フレーム未着・テクスチャ無し・マテリアル無し)まで出す — 実機で両方とも映らなかった報告の切り分け用。映らない原因そのものは未特定。
+- 検証: verify.sh ALL CHECKS PASSED(feature/pacesetter-behavior を取り込んだ状態で dotnet test 525/525、Swift 構文 90 ファイル、E2E 379/379)。Swift の型検査・実機は未確認。
+
+### 2026-11-10 — フレーム時間を乱す毎フレームの確保を減らし、履歴の並びと中断の控えを直す
+- インクリメンタルGCを有効化(`gcIncremental`)。`Animator.parameters` を毎フレーム4回読むのをやめて一覧を持つ。HUD の文字列は表示が変わるときだけ作る。頭の向き(約30Hz)のたびに `GlassViewRig` をシーン全体から探すのをやめる — いずれも §3 の ±5ms を GC で乱さないため。
+- `SessionDataStore.LoadAllSessions` をファイル名順に揃える(iOS は名前順に返さず、履歴の「新しい順20件」が別の20件になり得た)。カウントダウン中は中断の控えを書かない(START 前にアプリを終了すると 0m の走行が履歴に入った)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。実機でのフレーム時間・GC の改善量は未計測。
+
+### 2026-11-09 — ドキュメントを実装に合わせる(自走モード・障害物検知)
+- HANDOVER §2・SWIFT_INTEGRATION の `StartSession` が廃止済みの `SelfPacedLead`/`SelfPacedTarget` を指していたので `PacesetterModel` へ(SWIFT_INTEGRATION の `lapLengthM` に混ざっていた旧文も削除)。
+- AGENTS §4.2 の障害物検知を実装どおり `CapsuleCastNonAlloc`(半径0.3m・床から0.4〜1.5m)へ。コード変更なし。
+- 検証: ドキュメントのみ(直前の verify.sh は ALL CHECKS PASSED — dotnet test 525/525、E2E 373/373)。
+
+### 2026-11-09 — アバターの走る姿を連番 PNG に書き出すエディタツール(展示ループ動画の素材)
+- `Assets/Editor/AvatarClipCapture.cs`(Build → Capture Avatar Run Clip / `-executeMethod AvatarClipCapture.Run`)。目線 1.6m から 3.0m 先の Y Bot(145cm)を黒背景で、ペースの4色ぶん書き出す。動画側で加算合成する前提。
+- 空のシーンで描くのでプロジェクトのシーンは変えない。出力は `Builds/AvatarClip/`(git 管理外)。アプリの実行時コードは変更なし。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。書き出しそのものは手元で実行済みの前提で、この検証では走らせていない。
+
+### 2026-11-07 — 外部画面なしの手動「接続」で iPhone のカメラ映像が消えないようにする
+- グラス無しで準備画面の「接続」を押すと Unity がグラス扱いになり、`ARCameraBackground` が止まって iPhone にグラス用の描画が出たまま戻らなかった。未検出なら `ConnectXREAL` に `phoneDisplayOnly` を付け、Ready だけ更新して描画は iPhone のままにする(ミラーリング中の予備手段は変えない)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 525/525、Swift 構文 90 ファイル、E2E 373/373)。Swift の型検査・`swift test` は CI、実機は未確認。
+
+### 2026-11-04 (3) — 自走モードをペースセッター仕様 v0.6 へ(`Docs/PACESETTER_BEHAVIOR_SPEC.md`)
+- アバターが `set_speed` で自分で走り、10m で待ち 3m で数歩かけて走り出す。遅れは取り戻さず(`lag` を残す)、抜かれると走者の後ろを走り続けて足音と呼吸だけで伝える。判定は `PacesetterModel`、音は `PacesetterSound`。既定の「走者+3m」は変えない。
+- GPS の1秒ごとの段差で gap が脈打つので `RunnerDistanceEstimator` でならす。ルート選択に「400mトラック 第1レーン」、iPhone の HUD に周回数と「あと◯m」。周の補正は `StartLineCheckpoint`(スタートラインの検知は U-07 が未決なので仮)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 525/525、Swift 構文 90 ファイル、E2E 368/368)。Swift の型検査・`swift test` は CI、実機は未確認。
+
+### 2026-11-04 (2) — ARKit の位置が止まっても GPS の距離でアバターを進める
+- 走行中に ARKit が止まるとアバターが同じ場所に留まった(E2E で GPS 9m に対して 0.00m)。`ArTrackingWatch` が GPS とカメラの食い違いで検知し、`ArTrackingFallback` がカメラのリグごと進める。復帰時の飛びは吸収する。
+- 立っているだけ・GPSの飛び1回・GPSロスト中・展示デモでは動かない。開発者モードの診断に `ar.gpsFallback`。実機で止まった原因そのものは未確認。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 500/500、Swift 構文 88 ファイル、E2E 352/352)。実機は未確認。
+
+### 2026-11-04 — グラスの描画と接地を頭マウントへ(`CameraMount.Head`・既定)
+- iPhone は頭に付ける運用なので、描画は ARKit カメラの位置・ヨー・ピッチのまま(`HeadMountedCamera`)。アバターとカメラ映像が揃う。ロールは足さず、AirPods / グラスIMU のヨーも足さない。
+- 人工の俯角をやめたので、全身が入るのは目線を約12°下げたとき。`GroundSnap` の想定カメラ高は 1.55m。胸マウントの経路は `CameraMount.Chest` に残す。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 489/489、Swift 構文 88 ファイル、E2E 343/343)。Swift の型検査・`swift test` は CI、実機は未確認。
+
+### 2026-11-01 (2) — ARグラスの背景に iPhone のカメラ映像を出す(既定ON・開発者モードで切替)
+- 頭に付けた iPhone の映像を `GlassPassthroughLayer` がグラスの出力カメラの最背面へ(YCbCr→RenderTexture、遮蔽キーワードは切る)。中央をグラスの垂直画角ぶん切り出す(`GlassPassthroughMath`)。
+- 開発者モード「グラスにカメラ映像を出す」→ `SetGlassPassthrough`(接続のたびにも送る)。以前は光学シースルーの二重像を避けて出していなかった。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 488/488、Swift 構文 88 ファイル、E2E 336/336)。Swift の型検査・`swift test` は CI、実機(色・縮尺・M2P)は未確認。
+
+### 2026-11-01 — ar-ui(Hsu の走行条件設定・ホイール入力)を master へ取り込み
+- `RunningSettingsView.swift` と `Localizable.xcstrings` は ar-ui のまま(UIは変更しない)。scheme の version 1.8 も取り込む。
+- 個人の署名(DEVELOPMENT_TEAM・Bundle ID)と `UIApplicationSceneManifest_Generation = NO`・Info.plist は master のまま — 外したらグラスがミラーリングに戻るため。InfoPlist.xcstrings の衝突は master 側(#17 の NSLocalNetworkUsageDescription と同じ文言)で解消。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 477/477、Swift 構文 88 ファイル、E2E 332/332)。Swift の型検査・`swift test` は CI、実機の見た目は未確認。
 
 ### 2026-10-27 (3) — UniVRM を導入し .vrm の取り込みを有効化
 - `Packages/manifest.json` に UniVRM v0.131.3(`com.vrmc.gltf` / `com.vrmc.univrm`、新しい `/Packages/` 配置)、`UNIVRM` を Android / Standalone / iPhone に定義。
@@ -1870,4 +1937,3 @@ Swift側は`#if canImport(UnityFramework)`の偽実装で動作する点に注�
 3. AvatarModelSwitcherのモデル参照が2つともUIアイコンを誤指定 → 無効参照を検出し実モデルを自動配線
 
 あわせて接地レイキャストにトリガーコライダー無視を追加、`IsSessionEnded`フラグ新設（GroundSnapの`IsHalted`毎フレーム上書きと終了停止の競合を解消）。
-

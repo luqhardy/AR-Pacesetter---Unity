@@ -29,6 +29,12 @@ struct DevModeView: View {
     @State private var autoRefresh = true
     /// 準備画面(S4)で ARグラスなしでも「次へ」を押せるようにする(既定 OFF — 仕様ではグラスは必須)
     @AppStorage(DeviceGate.allowRunWithoutGlassesKey) private var allowRunWithoutGlasses = false
+    /// ARグラスの背景に iPhone のカメラ映像を出す(既定 ON)
+    @AppStorage(GlassPassthroughSetting.key) private var glassPassthrough = GlassPassthroughSetting.defaultValue
+    /// iPhone の画面にカメラ映像を出す(既定 ON)
+    @AppStorage(PhonePassthroughSetting.key) private var phonePassthrough = PhonePassthroughSetting.defaultValue
+    /// ARグラスの描画のヨー(頭の向き)の元。既定は iPhone
+    @AppStorage(HeadYawSourceSetting.key) private var headYawSource = HeadYawSourceSetting.defaultValue
     @State private var reportCopied = false
 
     private let accent = Color(red: 199.0 / 255.0, green: 242.0 / 255.0, blue: 25.0 / 255.0)
@@ -343,6 +349,84 @@ struct DevModeView: View {
                      : "OFF(仕様どおり)。グラスがつながるまで準備画面から先へ進めない")
                     .font(.system(size: 12))
                     .foregroundStyle(allowRunWithoutGlasses ? Color.orange : secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+
+            // グラスの背景のカメラ映像。設定はアプリに残り、接続のたびに Unity へ送る
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: $glassPassthrough) {
+                    Text("グラスにカメラ映像を出す")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .tint(accent)
+                .onChange(of: glassPassthrough) { _, on in
+                    bridge.setGlassPassthrough(enabled: on)
+                }
+                Text(glassPassthrough
+                     ? "ON(既定)。頭に付けた iPhone の映像をグラスの画角で背景に出す"
+                     : "OFF — グラスにはアバターとHUDだけ(レンズ越しの現実だけを見る)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+
+            // iPhone の画面のカメラ映像。設定はアプリに残り、走行の開始のたびに Unity へ送る
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: $phonePassthrough) {
+                    Text("iPhoneにカメラ映像を出す")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .tint(accent)
+                .onChange(of: phonePassthrough) { _, on in
+                    bridge.setPhonePassthrough(enabled: on)
+                }
+                Text(phonePassthrough
+                     ? "ON(既定)。iPhone の画面にカメラ映像とアバターを重ねて出す"
+                     : "OFF — iPhone の画面は黒い背景にアバターとHUDだけ(位置の計測は続く)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("映っているかは下の診断の phone.cameraFeed / glass.cameraFeed で確かめられる")
+                    .font(.system(size: 11))
+                    .foregroundStyle(secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+
+            // グラスの描画のヨー(頭の向き)を iPhone とグラスのIMUのどちらから取るか
+            VStack(alignment: .leading, spacing: 8) {
+                Text("頭の向きの元(グラスの描画)")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                Picker("頭の向きの元", selection: $headYawSource) {
+                    Text("iPhone").tag(HeadYawSourceSetting.phone)
+                    Text("グラスのIMU").tag(HeadYawSourceSetting.glassImu)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: headYawSource) { _, source in
+                    bridge.setHeadYawSource(source)
+                    // 走行中に切り替えたときも、その場でグラスのIMUを読み始める
+                    if source.startsGlassImuWithRun, ARSessionManager.shared.isSessionActive,
+                       !XrealImuReceiver.shared.isForRun {
+                        XrealImuReceiver.shared.startForRun()
+                    }
+                }
+                Text(headYawSource == .glassImu
+                     ? "グラスのIMU — XREAL One のヨーで描画を回す(上下の向きと位置は iPhone のまま)。届かなければ iPhone に戻る"
+                     : "iPhone(既定)— 頭に付けた iPhone の ARKit の向きで描く。グラスのIMUは走行ログの加速度にだけ使う")
+                    .font(.system(size: 12))
+                    .foregroundStyle(secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("実際に使われているかは下の診断の glass.headYawSource で確かめられる")
+                    .font(.system(size: 11))
+                    .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(14)

@@ -33,6 +33,8 @@
     <Compile Include="..\..\Assets\_Project\Scripts\FrameSmoothing.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\VrmAvatarPolicy.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GlassOpticsMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\GlassPassthroughMath.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\ArTrackingWatch.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\GlassDisplayProfile.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\HeadPoseMath.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\SurfaceSemanticMath.cs" />
@@ -58,6 +60,8 @@
     <Compile Include="..\..\Assets\_Project\Scripts\RouteRecorder.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\RunSummaryText.cs" />
     <Compile Include="..\..\Assets\_Project\Scripts\RouteDeviation.cs" />
-    <Compile Include="..\..\Assets\_Project\Scripts\SelfPacedLead.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\PacesetterModel.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\PacesetterSound.cs" />
+    <Compile Include="..\..\Assets\_Project\Scripts\StartLineCheckpoint.cs" />
   </ItemGroup>
 </Project>
