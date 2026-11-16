@@ -18,6 +18,11 @@ using UnityEngine.XR.ARFoundation;
 /// <para>切り替えるのは <b>Renderer だけ</b> — MeshCollider は残す。
 /// 接地(<c>GroundSnap</c>)と断崖判定はプレーンのコライダーを使うため、
 /// ここでコライダーを消すと床が取れなくなる。</para>
+///
+/// <para><b><c>Renderer.enabled</c> ではなく <c>forceRenderingOff</c> で隠す</b>:
+/// <c>ARPlaneMeshVisualizer</c> は毎フレーム <c>enabled</c> を書き戻すので、<c>enabled</c> を
+/// 切っても次のフレームには描かれていた(グラスでは深度だけ書く材質がカメラ映像を隠し、
+/// 平面の形に黒く抜ける)。ビジュアライザ自体は止めない — コライダーのメッシュを更新している。</para>
 /// </summary>
 public class ARPlaneOcclusionController : MonoBehaviour
 {
@@ -32,6 +37,8 @@ public class ARPlaneOcclusionController : MonoBehaviour
     private float _nextRefreshTime;
     private int _lastAppliedCount = -1;
     private bool _lastAppliedSetting;
+    // 平面ごとの Renderer を集める入れ物(定期的に走査するので毎回確保しない)
+    private readonly System.Collections.Generic.List<Renderer> _rendererBuffer = new System.Collections.Generic.List<Renderer>();
 
     /// <summary>アバターを平面の背後で遮蔽するか。実行時に切り替えられる。</summary>
     public bool OccludeAvatarBehindPlanes
@@ -59,14 +66,18 @@ public class ARPlaneOcclusionController : MonoBehaviour
 
     private void Update()
     {
-        if (Time.time < _nextRefreshTime) return;
+        if (_planeManager == null) return;
+
+        // 新しい平面は見つかったフレームで隠す(待つとその間だけ描かれる)。枚数が同じまま
+        // 入れ替わることもあるので、一定間隔でも掛け直す
+        bool countChanged = _planeManager.trackables.count != _lastAppliedCount;
+        if (!countChanged && Time.time < _nextRefreshTime) return;
         _nextRefreshTime = Time.time + Mathf.Max(0.1f, refreshIntervalSeconds);
-        Apply(force: false);
+        Apply(force: true);
     }
 
     /// <summary>
-    /// 検出済み平面のRendererへ現在の設定を反映する。
-    /// 平面が増減した時と設定変更時だけ実際に書き込む(毎回の走査は数枚なので安い)。
+    /// 検出済み平面のRendererへ現在の設定を反映する(数枚〜数十枚の走査・確保なし)。
     /// </summary>
     private void Apply(bool force)
     {
@@ -81,13 +92,15 @@ public class ARPlaneOcclusionController : MonoBehaviour
         {
             if (plane == null) continue;
 
-            // Renderer だけを切り替える。コライダーは接地・断崖判定が使うので残す
-            var renderers = plane.GetComponentsInChildren<Renderer>(true);
-            for (int i = 0; i < renderers.Length; i++)
-                renderers[i].enabled = occludeAvatarBehindPlanes;
+            // 描画だけを止める。enabled はビジュアライザの持ち物なので触らない。
+            // コライダーは接地・断崖判定が使うので残す
+            plane.GetComponentsInChildren(true, _rendererBuffer);
+            for (int i = 0; i < _rendererBuffer.Count; i++)
+                _rendererBuffer[i].forceRenderingOff = !occludeAvatarBehindPlanes;
 
             applied++;
         }
+        _rendererBuffer.Clear();
 
         if (applied != AppliedPlaneCount || occludeAvatarBehindPlanes != _lastAppliedSetting)
         {
