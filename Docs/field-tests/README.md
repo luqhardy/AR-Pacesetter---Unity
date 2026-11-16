@@ -1,6 +1,6 @@
 # 実地テストの記録(Docs/field-tests)
 
-[FIELD_TEST_PLAN.md](../FIELD_TEST_PLAN.md) の T1〜T9 を実施したら、**1回のセッションを1フォルダ**にまとめてここへ置く。
+[FIELD_TEST_PLAN.md](../FIELD_TEST_PLAN.md) の T1〜T10 を実施したら、**1回のセッションを1フォルダ**にまとめてここへ置く。
 第1期の成果物は「技術限界データ」そのもの(AGENTS.md §2)なので、走行ログCSVと解析結果を必ず残す。
 
 ```
