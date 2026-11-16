@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Running Settings Screen
 struct RunningSettingsView: View {
@@ -86,9 +87,16 @@ struct RunningSettingsView: View {
     }
 
     private func toggle(_ part: Part) {
+        finishColumnEditing()
         withAnimation(.easeInOut(duration: 0.2)) {
             expanded = (expanded == part) ? nil : part
         }
+    }
+
+    private func finishColumnEditing() {
+        // 次へ/カード切替の前に同期的に確定し、古い値を保存しない。
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
     }
 
     var timeDisplay: String {
@@ -102,7 +110,10 @@ struct RunningSettingsView: View {
             VStack(spacing: 0) {
                 // Nav bar
                 HStack {
-                    ARBackButton(action: onBack)
+                    ARBackButton {
+                        finishColumnEditing()
+                        onBack()
+                    }
                     Spacer()
                 }
                 .padding(.horizontal, 20)
@@ -188,6 +199,7 @@ struct RunningSettingsView: View {
 
                 // Next button
                 Button {
+                    finishColumnEditing()
                     // 最終チェック(タスク表 S5): 走れない値ではルート選択へ進まず、理由をダイアログで出す
                     if let issue = RunTargetIssue.check(current) {
                         targetIssue = issue
@@ -359,28 +371,14 @@ struct WheelColumn: View {
         self._selection = selection
     }
 
-    private func label(_ value: Int) -> String {
-        let s = String(value)
-        return String(repeating: "0", count: max(0, digits - s.count)) + s
-    }
-
     var body: some View {
         VStack(spacing: 2) {
             Text(title)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.arGrayText)
 
-            Picker(title, selection: $selection) {
-                ForEach(range, id: \.self) { value in
-                    Text(label(value))
-                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white)
-                        .tag(value)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.wheel)
-            .environment(\.colorScheme, .dark)   // ホイールの文字を白で表示
+            EditableWheel(range: range, digits: digits, selection: $selection)
+            .accessibilityLabel(Text(title))
             .frame(height: 120)
             .clipped()
             .overlay(
@@ -392,6 +390,162 @@ struct WheelColumn: View {
             )
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// 中央行のタップだけを入力に使う。パンは UIPickerView に任せるので、
+/// 選択行から指を上下に動かしても従来どおりスクロールできる。
+private struct EditableWheel: UIViewRepresentable {
+    let range: ClosedRange<Int>
+    let digits: Int
+    @Binding var selection: Int
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UIPickerView {
+        let picker = UIPickerView()
+        picker.overrideUserInterfaceStyle = .dark
+        picker.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        picker.dataSource = context.coordinator
+        picker.delegate = context.coordinator
+        context.coordinator.picker = picker
+
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        picker.addGestureRecognizer(tap)
+
+        let field = context.coordinator.field
+        field.translatesAutoresizingMaskIntoConstraints = false
+        field.isHidden = true
+        field.keyboardType = .numberPad
+        field.textAlignment = .center
+        field.font = .monospacedDigitSystemFont(ofSize: 22, weight: .semibold)
+        field.textColor = .white
+        field.tintColor = UIColor(Color.arYellow)
+        field.backgroundColor = UIColor(Color.arBG)
+        field.layer.cornerRadius = 10
+        field.layer.borderWidth = 1.5
+        field.delegate = context.coordinator
+        field.addTarget(context.coordinator, action: #selector(Coordinator.textChanged), for: .editingChanged)
+        picker.addSubview(field)
+        NSLayoutConstraint.activate([
+            field.centerYAnchor.constraint(equalTo: picker.centerYAnchor),
+            field.leadingAnchor.constraint(equalTo: picker.leadingAnchor),
+            field.trailingAnchor.constraint(equalTo: picker.trailingAnchor),
+            field.heightAnchor.constraint(equalToConstant: 36)
+        ])
+
+        let toolbar = UIToolbar()
+        toolbar.sizeToFit()
+        toolbar.items = [
+            UIBarButtonItem(title: AppStrings.Settings.columnCancel, style: .plain,
+                            target: context.coordinator, action: #selector(Coordinator.cancel)),
+            UIBarButtonItem(systemItem: .flexibleSpace),
+            context.coordinator.doneButton
+        ]
+        field.inputAccessoryView = toolbar
+        picker.accessibilityCustomActions = [
+            UIAccessibilityCustomAction(name: AppStrings.Settings.columnEdit,
+                                        target: context.coordinator, selector: #selector(Coordinator.beginEditing))
+        ]
+        return picker
+    }
+
+    func updateUIView(_ picker: UIPickerView, context: Context) {
+        context.coordinator.parent = self
+        let row = selection - range.lowerBound
+        if picker.selectedRow(inComponent: 0) != row {
+            picker.selectRow(row, inComponent: 0, animated: false)
+        }
+    }
+
+    static func dismantleUIView(_ picker: UIPickerView, coordinator: Coordinator) {
+        // 通常の画面操作は親が先に確定済み。破棄中に State を書き換えない。
+        coordinator.field.delegate = nil
+        coordinator.field.resignFirstResponder()
+    }
+
+    final class Coordinator: NSObject, UIPickerViewDataSource, UIPickerViewDelegate,
+                             UITextFieldDelegate, UIGestureRecognizerDelegate {
+        var parent: EditableWheel
+        weak var picker: UIPickerView?
+        let field = UITextField()
+        private var cancelled = false
+        lazy var doneButton = UIBarButtonItem(title: AppStrings.Settings.columnDone, style: .prominent,
+                                              target: self, action: #selector(done))
+
+        init(_ parent: EditableWheel) { self.parent = parent }
+
+        func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
+        func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+            parent.range.count
+        }
+        func pickerView(_ pickerView: UIPickerView, rowHeightForComponent component: Int) -> CGFloat { 36 }
+        func pickerView(_ pickerView: UIPickerView, viewForRow row: Int, forComponent component: Int,
+                        reusing view: UIView?) -> UIView {
+            let label = (view as? UILabel) ?? UILabel()
+            label.text = formatted(parent.range.lowerBound + row)
+            label.textAlignment = .center
+            label.font = .monospacedDigitSystemFont(ofSize: 22, weight: .semibold)
+            label.textColor = .white
+            return label
+        }
+        func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+            guard !field.isFirstResponder else { return }
+            parent.selection = parent.range.lowerBound + row
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard field.isHidden, let picker else { return false }
+            return abs(touch.location(in: picker).y - picker.bounds.midY) <= 18
+        }
+
+        @objc func tapped(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+            _ = beginEditing()
+        }
+
+        @objc func beginEditing() -> Bool {
+            // 別の列の編集を確定してから現在の値を読む。
+            picker?.window?.endEditing(true)
+            cancelled = false
+            field.text = formatted(parent.selection)
+            field.isHidden = false
+            textChanged()
+            field.becomeFirstResponder()
+            field.selectAll(nil)
+            return true
+        }
+
+        @objc func textChanged() {
+            let valid = NumericInput.parseWheelColumn(field.text ?? "", range: parent.range) != nil
+            doneButton.isEnabled = valid
+            field.layer.borderColor = (valid ? UIColor(Color.arYellow) : .systemRed).cgColor
+        }
+
+        @objc func done() { field.resignFirstResponder() }
+        @objc func cancel() {
+            cancelled = true
+            field.resignFirstResponder()
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            // 空欄/範囲外で離れた場合は元の値を保つ。1文字ごとに連動計算しない。
+            if !cancelled, let value = NumericInput.parseWheelColumn(textField.text ?? "", range: parent.range) {
+                parent.selection = value
+            }
+            field.isHidden = true
+            cancelled = false
+        }
+
+        private func formatted(_ value: Int) -> String {
+            let text = String(value)
+            return String(repeating: "0", count: max(0, parent.digits - text.count)) + text
+        }
     }
 }
 

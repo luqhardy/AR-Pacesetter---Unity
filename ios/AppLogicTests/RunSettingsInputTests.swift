@@ -4,6 +4,42 @@ import XCTest
 /// ランニング設定(S5)の入力: 全角でも読めること・＋/− が境界で止まること
 final class RunSettingsInputTests: XCTestCase {
 
+    func testWheelColumnsAcceptZeroPaddingAndFullWidthDigits() {
+        XCTAssertEqual(NumericInput.parseWheelColumn("00", range: 0...23), 0)
+        XCTAssertEqual(NumericInput.parseWheelColumn("２５", range: 0...59), 25)
+        XCTAssertEqual(NumericInput.parseWheelColumn("　０９ ", range: 0...99), 9)
+        XCTAssertEqual(NumericInput.parseWheelColumn("5", range: 0...9), 5)
+    }
+
+    func testWheelColumnsEnforceTheirOwnBounds() {
+        for range in [0...23, 0...59, 0...99, 0...30, 0...9] {
+            XCTAssertEqual(NumericInput.parseWheelColumn(String(range.upperBound), range: range), range.upperBound)
+            XCTAssertNil(NumericInput.parseWheelColumn(String(range.upperBound + 1), range: range))
+            XCTAssertNil(NumericInput.parseWheelColumn("-1", range: range))
+        }
+    }
+
+    func testWheelDraftRejectsEmptyMalformedAndOverflowingInput() {
+        for text in ["", " ", "1.5", "1:30", "+5", "5e1", "1 2", "abc", String(repeating: "9", count: 100)] {
+            XCTAssertNil(NumericInput.parseWheelColumn(text, range: 0...99), text)
+        }
+    }
+
+    func testColumnInputUsesExistingTargetLinkWithoutChangingOtherParts() {
+        let minute = NumericInput.parseWheelColumn("30", range: 0...59)!
+        let time = RunTargetLink.keepingTime(distanceKm: 5, timeSeconds: minute * 60 + 15)
+        XCTAssertEqual(time.timeSeconds, 1815)
+        XCTAssertEqual(time.distanceKm, 5)
+        let fraction = NumericInput.parseWheelColumn("25", range: 0...99)!
+        let distance = RunTargetLink.keepingPace(distanceKm: 5 + Double(fraction) / 100, paceKmH: 10)
+        XCTAssertEqual(distance.distanceKm, 5.25)
+        XCTAssertEqual(distance.paceKmH, 10)
+        let tenth = NumericInput.parseWheelColumn("5", range: 0...9)!
+        let pace = RunTargetLink.keepingPace(distanceKm: 5, paceKmH: 10 + Double(tenth) / 10)
+        XCTAssertEqual(pace.paceKmH, 10.5)
+        XCTAssertEqual(pace.distanceKm, 5)
+    }
+
     // MARK: 全角・半角
 
     func testFullWidthDigitsReadTheSameAsHalfWidth() {

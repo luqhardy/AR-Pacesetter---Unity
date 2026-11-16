@@ -151,6 +151,9 @@ enum AppStrings {
         static let pace: LocalizedStringKey = "settings.pace"
         static let wheel: LocalizedStringKey = "settings.wheel"
         static let wheelLabel: LocalizedStringKey = "settings.wheelLabel"
+        static var columnDone: String { resolve("settings.column.done") }
+        static var columnCancel: String { resolve("settings.column.cancel") }
+        static var columnEdit: String { resolve("settings.column.edit") }
         // ルート選択へ進む前の最終チェック(タスク表 S5)
         static let tooSmallTitle: LocalizedStringKey = "settings.invalid.tooSmall"
         static let tooLargeTitle: LocalizedStringKey = "settings.invalid.tooLarge"

@@ -9,6 +9,15 @@ import Foundation
 // UIに依存しない純ロジック(ios/AppLogicTests で `swift test` できる)。
 
 nonisolated enum NumericInput {
+    /// ドラムロールの1列だけを編集する。0・ゼロ埋め・全角は許可し、
+    /// 小数点や符号、列の範囲外は確定しない(空欄は編集中の下書き)。
+    static func parseWheelColumn(_ text: String, range: ClosedRange<Int>) -> Int? {
+        let s = normalized(text)
+        guard !s.isEmpty, s.utf8.allSatisfy({ (48...57).contains($0) }),
+              let value = Int(s), range.contains(value) else { return nil }
+        return value
+    }
+
     /// 全角の数字・記号を半角へ、前後の空白(全角スペース含む)を除く。
     /// 日本語キーボードやコピー&ペーストで全角が混ざっても同じ値として読む
     static func normalized(_ text: String) -> String {
