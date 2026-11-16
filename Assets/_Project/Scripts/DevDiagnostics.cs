@@ -120,6 +120,9 @@ public static class DevDiagnostics
                 : glass.CameraPassthroughHasFrame ? "ON — 変換を実行中(画素は未確認)"
                 : "ON だが映っていない: フレーム待ち";
             Add(rows, "glass.cameraFeed", glassCamera);
+            // グラス出力中に ARKit のフレームが届き続けているか(止まれば映像もトラッキングも止まる)。
+            // 2回読んで frames が増えていなければ止まっている
+            Add(rows, "glass.cameraFrames", glass.CameraPassthroughFrameStats);
         }
 
         // ── iPhone の画面のカメラ映像 ───────────────────────────────

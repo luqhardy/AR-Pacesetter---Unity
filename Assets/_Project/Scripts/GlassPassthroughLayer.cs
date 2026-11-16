@@ -1,7 +1,10 @@
+using System;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
 
 /// <summary>
 /// ARグラスへ出す映像の背景に、iPhone のカメラ映像(パススルー)を描く。
@@ -46,6 +49,24 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
     private RawImage _image;
     private float _cameraProjectionM11;
     private RenderTexture _probe;
+    private ARCameraBackground _arBackground;
+    private CommandBuffer _releaseCommands;
+
+    // ARKit はフレームごとにカメラの Metal テクスチャを掴み、「背景を描く直前」の合図で手放す
+    // (ARKitCameraSubsystem.OnBeforeBackgroundRender)。合図を出すのは ARCameraBackground の描画だけで、
+    // グラス出力中はそれを止めているので誰も出さない — 掴んだままだと ARKit がカメラのフレームを
+    // 配らなくなる疑いがある(映像もトラッキングも止まる)。AR Foundation と同じ形で自分で出す。
+    // 描画スレッドから呼ばれるので static のデリゲートを関数ポインタにする(IL2CPP は MonoPInvokeCallback が要る)
+    private static XRCameraSubsystem s_ReleaseSubsystem;
+    private static readonly Action<int> s_ReleaseHandler = ReleaseCameraBuffers;
+    private static readonly IntPtr s_ReleaseHandlerPtr = Marshal.GetFunctionPointerForDelegate(s_ReleaseHandler);
+
+    [AOT.MonoPInvokeCallback(typeof(Action<int>))]
+    private static void ReleaseCameraBuffers(int eventId) => s_ReleaseSubsystem?.OnBeforeBackgroundRender(eventId);
+
+    /// <summary>カメラのテクスチャを手放す合図を自分で出した回数(診断用)。</summary>
+    public int CameraBufferReleaseCount { get; private set; }
+
     private System.Action<AsyncGPUReadbackRequest> _onProbe;
     private bool _probePending;
     private float _nextProbeTime;
@@ -78,7 +99,10 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
         if (_cameraManager == null)
             _cameraManager = FindFirstObjectByType<ARCameraManager>(FindObjectsInactive.Include);
         if (_cameraManager != null)
+        {
+            _arBackground = _cameraManager.GetComponent<ARCameraBackground>();
             _cameraManager.frameReceived += OnCameraFrameReceived;
+        }
         else
             Debug.LogWarning("[GLASS] ARCameraManager が見つからないためグラスへカメラ映像を出せません。");
 
@@ -103,6 +127,7 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
         if (_cameraManager != null) _cameraManager.frameReceived -= OnCameraFrameReceived;
         if (_texture != null) { _texture.Release(); Destroy(_texture); }
         if (_probe != null) { _probe.Release(); Destroy(_probe); }
+        if (_releaseCommands != null) _releaseCommands.Release();
         if (_blitMaterial != null) Destroy(_blitMaterial);
     }
 
@@ -167,8 +192,12 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
     {
         FrameEventCount++;
         _lastFrameHadNoTextures = args.textures.Count == 0;
-        if (!IsShowing || args.textures.Count == 0) return;
-        if (!EnsureMaterial()) return;
+        if (!IsShowing || args.textures.Count == 0 || !EnsureMaterial())
+        {
+            // 映像を出さない設定でも、フレームは毎回掴まれている — 手放す合図は要る
+            ScheduleCameraBufferRelease();
+            return;
+        }
 
         for (int i = 0; i < args.textures.Count; i++)
             _blitMaterial.SetTexture(args.propertyNameIds[i], args.textures[i]);
@@ -186,6 +215,8 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
         GL.Clear(true, true, Color.black);
         Graphics.Blit(null, _texture, _blitMaterial);
         RenderTexture.active = previous;
+        // 変換の後に出す(描画スレッドでも変換 → 手放しの順で実行される)
+        ScheduleCameraBufferRelease();
         ProbePixelsIfDue();
 
         float fov = _outputCamera != null ? _outputCamera.fieldOfView : 0f;
@@ -199,6 +230,28 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
             _image.enabled = true;
             Debug.Log($"[GLASS] グラスへカメラ映像を表示開始(中央 {UvScale * 100f:F0}% を切り出し・{_texture.width}x{_texture.height})");
         }
+    }
+
+    /// <summary>
+    /// このフレームのカメラのテクスチャを手放す合図を出す。iPhone の画面へ描いている間
+    /// (ARCameraBackground が有効)は AR Foundation が出すので何もしない
+    /// </summary>
+    private void ScheduleCameraBufferRelease()
+    {
+        if (_arBackground != null && _arBackground.enabled) return;
+        XRCameraSubsystem subsystem = _cameraManager != null ? _cameraManager.subsystem : null;
+        if (subsystem == null) return;
+
+        s_ReleaseSubsystem = subsystem;
+        if (_releaseCommands == null)
+        {
+            _releaseCommands = new CommandBuffer { name = "GlassPassthroughReleaseCameraBuffers" };
+            _releaseCommands.IssuePluginEvent(s_ReleaseHandlerPtr, 0);
+        }
+        Graphics.ExecuteCommandBuffer(_releaseCommands);
+
+        if (CameraBufferReleaseCount++ == 0)
+            Debug.Log("[GLASS] カメラのテクスチャを手放す合図を自分で出し始めた(ARCameraBackground が止まっているため)");
     }
 
     private bool EnsureMaterial()
