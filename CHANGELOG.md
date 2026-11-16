@@ -4,6 +4,11 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-16 — 検出した平面が描かれ続けていた(グラスで平面の形に黒く抜ける)のを直す
+- `ARPlaneOcclusionController` は平面の `Renderer.enabled` を切っていたが、AR Foundation の `ARPlaneMeshVisualizer` が毎フレーム書き戻すので、既定の「遮蔽OFF」が効いていなかった(コードの読みによる特定・実機の表示とは未照合)。深度だけ書く材質がグラスの背景のカメラ映像を隠し、壁や机の後ろのアバターも隠す。
+- `forceRenderingOff` で隠す(ビジュアライザは触らない — コライダーのメッシュを更新している)。平面が増えたフレームで掛け、0.5秒ごとにも掛け直す。Renderer の走査は確保なし。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 533/533、Swift 構文 90 ファイル、E2E 383/383)。エディタ・E2E では平面が検出されず、この経路は実行されていない — 実機は未確認。
+
 ### 2026-11-13 (2) — グラス出力中に ARKit のカメラのテクスチャを手放す合図を自分で出す
 - ARKit はフレームごとに Metal テクスチャを掴み、「背景を描く直前」の合図(`OnBeforeBackgroundRender`)で手放す。合図を出すのは `ARCameraBackground` の描画だけで、グラス出力中はそれを止めているため誰も出していなかった。掴んだままだと ARKit がフレームを配らなくなる疑いがある(映像が出ない・11-04 の「走行中に ARKit の位置が止まる」とも符合する — **仮説・ネイティブ側は読めず実機で未再現**)。
 - `GlassPassthroughLayer` が変換の後に AR Foundation と同じ形(CommandBuffer の IssuePluginEvent)で出す。映像OFFの設定でも出す。iPhone の画面へ描いている間は出さない。診断に `glass.cameraFrames`(届いたフレーム数 / 手放した回数 — 2回読んで増えていなければ止まっている)。
