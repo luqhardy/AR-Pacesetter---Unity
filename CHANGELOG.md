@@ -14,6 +14,11 @@
 - `glass.cameraFeed` は変換を呼んだだけで「表示中」と出ていた。結果を 8x8 に縮めて非同期で読み戻し(確認できるまで1秒に1回)、黒でない画素を見てから「表示中(画素を確認)」、黒なら「結果が黒い」と出す。しきい値は仮(`GlassPassthroughMath.VisiblePixelThreshold`)。
 - 実機で映らない原因は未特定のまま。この診断(と 11-10 の `phone.cameraFeed`)は**エクスポートを公開し直すまで実機に入らない**(最新は 11-09 の 7c7994ba)。
 - 検証: verify.sh ALL CHECKS PASSED(dotnet test 533/533、Swift 構文 90 ファイル、E2E 383/383)。エディタ・E2E ではカメラのフレームが届かないので、変えた経路そのものは実行されていない — 実機は未確認。
+### 2026-11-12 — ドキュメントを実装に合わせる(HANDOVER §5・実地テスト計画・Kobe Calling チェックリスト)
+- HANDOVER §5: 「XREAL の IMU は取得不能・回避策なし」→ TCP の生IMU経路(`XrealImuReceiver`・iPhone 未確認)と頭マウントへ。「UnityFramework 未リンク・Swift 未コンパイル」→ 実施済み(CI の ios-build / swift test)。実地テストは記録が1件も無いと明記し、T1〜T9 → T1〜T10。
+- FIELD_TEST_PLAN: 準備に頭マウントを追加、Apple Watch は任意(第1期スコープ外)、首振りの確認を頭マウント(AirPods 不要)と胸マウントに分ける。
+- KOBE_CALLING_CHECKLIST: 冒頭に注意 — 手順は胸マウント・カメラ映像なしのままで、今の既定(頭マウント・カメラ映像ON)と食い違う。どちらへ合わせるかはチーム判断なので手順は書き換えていない。
+- 検証: ドキュメントのみ(コード変更なし・verify.sh は実行していない)。
 
 ### 2026-11-10 (2) — 使っていない LilLeo アバター(FBX・テクスチャ・マテリアル)を削除
 - `Assets/Avatar.fbx`(11MB)・`T_LilLeo_Quest.png`・`M_LilLeo_Quest.mat`・`Mamehinata_LilLeo_Quest.mat` を削除。どのシーン・プレハブからも参照されておらず、第三者のアバターを公開リポジトリに置く根拠(ライセンス・出典)も無かった。
