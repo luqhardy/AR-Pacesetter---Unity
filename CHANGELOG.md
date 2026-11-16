@@ -4,6 +4,16 @@
 詳細は `git log` とコミットメッセージが一次情報なので、ここへ再掲しない。
 (2026-09-24 以前のエントリは README から移設したもので、長いまま残している)
 
+### 2026-11-13 (2) — グラス出力中に ARKit のカメラのテクスチャを手放す合図を自分で出す
+- ARKit はフレームごとに Metal テクスチャを掴み、「背景を描く直前」の合図(`OnBeforeBackgroundRender`)で手放す。合図を出すのは `ARCameraBackground` の描画だけで、グラス出力中はそれを止めているため誰も出していなかった。掴んだままだと ARKit がフレームを配らなくなる疑いがある(映像が出ない・11-04 の「走行中に ARKit の位置が止まる」とも符合する — **仮説・ネイティブ側は読めず実機で未再現**)。
+- `GlassPassthroughLayer` が変換の後に AR Foundation と同じ形(CommandBuffer の IssuePluginEvent)で出す。映像OFFの設定でも出す。iPhone の画面へ描いている間は出さない。診断に `glass.cameraFrames`(届いたフレーム数 / 手放した回数 — 2回読んで増えていなければ止まっている)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 533/533、Swift 構文 90 ファイル、E2E 383/383)。エディタ・E2E ではフレームが届かず、この経路は実行されていない — 実機は未確認。
+
+### 2026-11-13 — グラスのカメラ映像の変換を固め、「映っている」の診断を画素で確かめる
+- `GlassPassthroughLayer`: 変換先に深度バッファ(24bit)を持たせ、描画先を明示して色・深度を消してから描く。ARKit の背景シェーダーは深度を書くので、深度の無い描画先では Metal で何も描かれない疑いがあった(**仮説・実機で未再現**)。
+- `glass.cameraFeed` は変換を呼んだだけで「表示中」と出ていた。結果を 8x8 に縮めて非同期で読み戻し(確認できるまで1秒に1回)、黒でない画素を見てから「表示中(画素を確認)」、黒なら「結果が黒い」と出す。しきい値は仮(`GlassPassthroughMath.VisiblePixelThreshold`)。
+- 実機で映らない原因は未特定のまま。この診断(と 11-10 の `phone.cameraFeed`)は**エクスポートを公開し直すまで実機に入らない**(最新は 11-09 の 7c7994ba)。
+- 検証: verify.sh ALL CHECKS PASSED(dotnet test 533/533、Swift 構文 90 ファイル、E2E 383/383)。エディタ・E2E ではカメラのフレームが届かないので、変えた経路そのものは実行されていない — 実機は未確認。
 ### 2026-11-12 — ドキュメントを実装に合わせる(HANDOVER §5・実地テスト計画・Kobe Calling チェックリスト)
 - HANDOVER §5: 「XREAL の IMU は取得不能・回避策なし」→ TCP の生IMU経路(`XrealImuReceiver`・iPhone 未確認)と頭マウントへ。「UnityFramework 未リンク・Swift 未コンパイル」→ 実施済み(CI の ios-build / swift test)。実地テストは記録が1件も無いと明記し、T1〜T9 → T1〜T10。
 - FIELD_TEST_PLAN: 準備に頭マウントを追加、Apple Watch は任意(第1期スコープ外)、首振りの確認を頭マウント(AirPods 不要)と胸マウントに分ける。
