@@ -16,6 +16,9 @@ struct ARSettingsView: View {
     @AppStorage(AvatarPacing.storageKey) private var avatarSelfPaced = false
     /// 走り始めにGPSが使えなければHUDだけで始める(既定 OFF = アバターを出す — HudOnlyStart)
     @AppStorage(HudOnlyStart.storageKey) private var hudOnlyWithoutGps = false
+    /// グラスの背景に iPhone のカメラ映像を出す(既定 ON — GlassPassthroughSetting)。
+    /// 開発者モードの同じスイッチと値を共有する。OFF ならグラスは加算表示なので背景が透けて現実だけが見える
+    @AppStorage(GlassPassthroughSetting.key) private var glassPassthrough = GlassPassthroughSetting.defaultValue
 
     /// 準備画面と同じ判定(手動の接続はここでは扱わない)
     private var glassStatus: GlassRowStatus {
@@ -53,6 +56,23 @@ struct ARSettingsView: View {
                                     .foregroundColor(glassStatus == .notDetected ? .arGrayText : glassStatus.color)
                             }
                             Text(AppStrings.ARSettings.brightnessNote)
+                                .font(.system(size: 12))
+                                .foregroundColor(.arGrayText)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            // 接続のたびにも Unity へ送る(UnityBridge)。ここでは接続中の即時反映だけ
+                            Toggle(isOn: $glassPassthrough) {
+                                Text(AppStrings.ARSettings.cameraPassthrough)
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                            .tint(.arYellow)
+                            .padding(.top, 4)
+                            .onChange(of: glassPassthrough) { _, on in
+                                bridge.setGlassPassthrough(enabled: on)
+                            }
+                            Text(glassPassthrough ? AppStrings.ARSettings.cameraPassthroughOnNote
+                                                  : AppStrings.ARSettings.cameraPassthroughOffNote)
                                 .font(.system(size: 12))
                                 .foregroundColor(.arGrayText)
                                 .fixedSize(horizontal: false, vertical: true)

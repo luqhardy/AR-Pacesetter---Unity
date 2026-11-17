@@ -81,7 +81,7 @@ nonisolated enum DeviceGate {
     }
 }
 
-// MARK: - 開発者モード「グラスにカメラ映像を出す」
+// MARK: - AR設定 / 開発者モード「グラスにカメラ映像を出す」
 
 /// ARグラスの背景に iPhone のカメラ映像(パススルー)を出すか(**既定 ON** — 頭に付けた iPhone の映像)。
 /// 値は接続のたびに Unity へ送る(`SetGlassPassthrough`)。未設定は ON として読む

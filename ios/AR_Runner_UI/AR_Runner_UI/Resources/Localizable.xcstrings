@@ -81,6 +81,57 @@
         }
       }
     },
+    "arSettings.cameraPassthrough" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the camera view in the glasses"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グラスにカメラ映像を出す"
+          }
+        }
+      }
+    },
+    "arSettings.cameraPassthrough.offNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off: the background is left black, so it's see-through — you see the real world through the lenses with just the avatar and HUD"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフ: 背景は黒(透明)になり、レンズ越しの景色にアバターとHUDだけが重なります"
+          }
+        }
+      }
+    },
+    "arSettings.cameraPassthrough.onNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On (default): the iPhone's camera view is shown behind the avatar in the glasses"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オン(既定): iPhone のカメラ映像をグラスの背景に出します"
+          }
+        }
+      }
+    },
     "arSettings.chooseAvatar" : {
       "extractionState" : "manual",
       "localizations" : {

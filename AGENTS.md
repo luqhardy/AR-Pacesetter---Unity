@@ -247,7 +247,7 @@ stateDiagram-v2
 - 実測GPSサンプルが来ない間 `GpsSignalMonitor` は介入しない — エディタの G/R/A キー検証はこれに依存する
 - IMU加速度の供給元は `RunTelemetryLogger.ImuSource` で判別する(実機=`Input.gyro.userAcceleration`、エディタ=カメラ差分近似)。`SetImuAcceleration` はC#専用で、Swiftからは呼べない
 - **グラスの背景には iPhone のカメラ映像を出す(既定ON)**。`GlassViewRig` の `GlassPassthroughLayer` がグラスの画角で切り出して描く
-  (ARKit カメラの `ARCameraBackground` はグラス出力中は止めたまま)。切替は開発者モード → `SetGlassPassthrough`。
+  (ARKit カメラの `ARCameraBackground` はグラス出力中は止めたまま)。切替は AR設定「グラスにカメラ映像を出す」(開発者モードの同名スイッチと値を共有)→ `SetGlassPassthrough`。OFF は背景が黒＝加算表示で透ける。
   詳細は [Docs/XREAL_ONE_INTEGRATION.md](Docs/XREAL_ONE_INTEGRATION.md) §3-5
 - グラスの画面モードは **Follow(固定)**。Anchor だと頭部補正が二重にかかる。XREAL SDK の姿勢は iOS から取れない(XREAL One の生IMUは下の `XrealImuReceiver`)
 - 屋外路面分類(ARCore)は `#if ARCORE_EXTENSIONS` の中だけで触る。**3D面分類を画像分類で上書きしない**
