@@ -126,7 +126,8 @@ struct ContentView: View {
                     onGlassDisconnected: {
                         glassLostDuringRun = true
                         screen = .deviceConnect
-                    }
+                    },
+                    onCancel: { screen = .mapRoute }
                 )
 
             // 6. Stats — 「終了」でホームへ戻る(課題 #9)

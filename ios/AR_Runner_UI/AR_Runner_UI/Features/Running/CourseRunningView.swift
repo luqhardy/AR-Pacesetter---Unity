@@ -7,6 +7,8 @@ struct RunningView: View {
     let onEnd: () -> Void
     /// §8.3 ARグラス切断時: 準備画面へ戻す(走行記録・CSVログは継続)
     var onGlassDisconnected: (() -> Void)? = nil
+    /// Leave the AR preview without creating a run or a results record.
+    var onCancel: (() -> Void)? = nil
 
     @ObservedObject private var bridge = UnityBridge.shared
     @ObservedObject private var session = ARSessionManager.shared
@@ -19,6 +21,7 @@ struct RunningView: View {
     @State private var bpm = 0
     @State private var showEndAlert = false
     @State private var showGoalOverlay = false
+    @State private var startConfirmation = RunStartConfirmation.preparing
 
     /// 画面ロック(誤タップ防止)。**画面遷移ではなくオーバーレイ**にしている —
     /// 別画面へ遷移すると UnityContainerView がヒエラルキーから外れ、ARビューの
@@ -43,12 +46,12 @@ struct RunningView: View {
     ///   iPhone表示中  = SwiftUI(手に持って正面から見る画面に適した意匠)
     ///   グラス出力中  = UnityのF-07 HUD(周辺視野レイアウトはグラス用の設計)
     /// どちらの場合も二重には描かない。Unity側は StartSession の hideUnityHud で切り替える。
-    private var showsSwiftStatsHud: Bool { !external.isGlassesConnected }
+    private var showsSwiftStatsHud: Bool { session.isSessionActive && !external.isGlassesConnected }
 
     /// グラス出力中はiPhoneを「操作面」として扱う。
     /// 走行中は腕・ポケットの端末を読めないので、統計を並べるより
     /// 大きく押せる終了操作を置くほうが役に立つ。
-    private var isControlSurface: Bool { external.isGlassesConnected && hasUnityView }
+    private var isControlSurface: Bool { session.isSessionActive && external.isGlassesConnected && hasUnityView }
 
     /// AirPods の頭の向きを使っていたのに届かなくなった(外した・接続が切れた)。走行は続ける
     private var headTrackingLost: Bool { headTracker.isRequested && headTracker.status.isLost }
@@ -237,7 +240,7 @@ struct RunningView: View {
                         .padding(.horizontal, 28)
                         .padding(.bottom, 48)
                     }
-                } else {
+                } else if session.isSessionActive {
                     // Stop / Lock buttons
                     VStack {
                         HStack(spacing: 10) {
@@ -301,7 +304,7 @@ struct RunningView: View {
                 }
 
                 // GPS喪失バナー（Unityの GPSLost / GPSRecovered イベント連動）
-                if bridge.gpsStatus == .lost {
+                if session.isSessionActive && bridge.gpsStatus == .lost {
                     VStack {
                         HStack(spacing: 8) {
                             Image(systemName: "location.slash.fill")
@@ -322,7 +325,7 @@ struct RunningView: View {
 
                 // アバター非表示の理由バナー(Unity AvatarVisibilityDiagnostics)。
                 // 実機で「消えた」と言われたとき、どの経路で消えたかをその場で読めるようにする
-                if let reason = bridge.avatarHiddenReason {
+                if session.isSessionActive, let reason = bridge.avatarHiddenReason {
                     VStack {
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "eye.slash.fill")
@@ -365,6 +368,10 @@ struct RunningView: View {
 
                 // 画面ロック — 最前面。走行・Unityの描画は裏で続いており、
                 // 上へスワイプすると元の走行画面へそのまま戻る
+                if startConfirmation == .ready {
+                    startConfirmationPanel
+                }
+
                 if isLocked {
                     // 終了はロックを解除してから(タスク表 S6: 誤操作でランが終わらないように)。
                     // ロック画面にあった停止ボタン(hsu/main 由来)は 2026-10-14 に外した
@@ -384,32 +391,24 @@ struct RunningView: View {
                 UIApplication.shared.isIdleTimerDisabled = true
                 powerWarning = RunPowerWarning.resolve(PowerMonitor.shared.sample())
 
-                // Unityランタイム起動 → 走行セッション開始（設定値をUnityへ引き渡す）
+                // Load the AR preview first. StartSession is sent only by the Start button.
                 //
                 // prepare() を使う理由: Unityの初期化は同期でメインスレッドを塞ぐため、
                 // launch() を直接呼ぶと SwiftUI に描く隙が無く、準備画面が一度も
                 // 表示されないまま固まる。prepare() は表示を1フレーム描かせてから入る
-                UnityLauncher.shared.prepare()
-                if !session.isSessionActive {
-                    session.start(
-                        paceKmH: RunSettings.shared.paceKmH,
-                        distanceKm: RunSettings.shared.distanceKm,
-                        ghostDateIso: RunSettings.shared.ghostDateIso,
-                        // iPhoneに映している間はSwiftUIがHUDを持つ
-                        hideUnityHud: !ExternalDisplayManager.shared.isGlassesConnected,
-                        // S8 で選んだルート(案内を ON にしたときだけ)
-                        routeLatLon: RunSettings.shared.guidanceRoute,
-                        // AR設定「アバターが目標ペースで走る」(既定 OFF = 走者+3m)
-                        selfPaced: AvatarPacing.isSelfPaced(in: .standard),
-                        // S8 で選んだレーンの1周(レーン以外は nil)
-                        lapLengthMeters: RunSettings.shared.lapLengthMeters,
-                        // AR設定「GPSが使えないとき HUDだけで走り始める」(既定 OFF = アバターを出す)
-                        hudOnlyWithoutGps: HudOnlyStart.isEnabled(in: .standard)
-                    )
-                } else {
+                if session.isSessionActive {
+                    startConfirmation = .started
+                    UnityLauncher.shared.prepare()
                     // §8.3: グラス切断で準備画面へ戻った後の再スタート。
                     // 新規セッションは開始せず、スタンバイ中の表示だけ復帰させる
                     bridge.resumeSession()
+                } else {
+                    startConfirmation = .preparing
+                    UnityLauncher.shared.prepare {
+                        // Honour the saved camera setting during the preview as well.
+                        bridge.setPhonePassthrough(enabled: PhonePassthroughSetting.read(.standard))
+                        startConfirmation.preparationFinished()
+                    }
                 }
             }
             .onChange(of: external.isGlassesConnected) { wasConnected, isConnected in
@@ -420,10 +419,16 @@ struct RunningView: View {
                 }
             }
             .onDisappear {
-                // ゴースト指定・選んだルートは1走行限り
-                RunSettings.shared.ghostDateIso = nil
-                RunSettings.shared.guidanceRoute = nil
-                RunSettings.shared.lapLengthMeters = nil
+                if startConfirmation == .started {
+                    // ゴースト指定・選んだルートは1走行限り
+                    RunSettings.shared.ghostDateIso = nil
+                    RunSettings.shared.guidanceRoute = nil
+                    RunSettings.shared.lapLengthMeters = nil
+                } else {
+                    // Going back from the preview keeps the selected run settings.
+                    startConfirmation.cancel()
+                    UnityLauncher.shared.pause()
+                }
                 // 自動スリープの無効化はこの画面の間だけ(タスク表 S6「画面破棄時に解除」)
                 UIApplication.shared.isIdleTimerDisabled = false
             }
@@ -451,6 +456,59 @@ struct RunningView: View {
                 Button(AppStrings.Common.continueRun, role: .cancel) {}
             }
         }
+    }
+
+    private var startConfirmationPanel: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            VStack(spacing: 10) {
+                Text(AppStrings.Running.readyTitle)
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.white)
+                Text(AppStrings.Running.readyNote)
+                    .font(.system(size: 15))
+                    .foregroundColor(.arGrayText)
+                    .multilineTextAlignment(.center)
+                Button(action: startConfirmedRun) {
+                    Label(AppStrings.Running.startRun, systemImage: "play.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity, minHeight: 76)
+                        .background(Color.arYellow, in: RoundedRectangle(cornerRadius: 18))
+                }
+                .accessibilityIdentifier("running.startRun")
+                if let onCancel {
+                    Button {
+                        startConfirmation.cancel()
+                        UnityLauncher.shared.pause()
+                        onCancel()
+                    } label: {
+                        Text(AppStrings.Common.back)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                    }
+                }
+            }
+            .padding(24)
+            .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 24))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 48)
+        }
+    }
+
+    private func startConfirmedRun() {
+        guard !session.isSessionActive, startConfirmation.confirmStart() else { return }
+        session.start(
+            paceKmH: RunSettings.shared.paceKmH,
+            distanceKm: RunSettings.shared.distanceKm,
+            ghostDateIso: RunSettings.shared.ghostDateIso,
+            hideUnityHud: !external.isGlassesConnected,
+            routeLatLon: RunSettings.shared.guidanceRoute,
+            selfPaced: AvatarPacing.isSelfPaced(in: .standard),
+            lapLengthMeters: RunSettings.shared.lapLengthMeters,
+            hudOnlyWithoutGps: HudOnlyStart.isEnabled(in: .standard)
+        )
     }
 
     /// グラスへ出していた走行は、Unity がグラスで「挨拶 → 粒子で消滅 → 結果カード → 表示 OFF」を

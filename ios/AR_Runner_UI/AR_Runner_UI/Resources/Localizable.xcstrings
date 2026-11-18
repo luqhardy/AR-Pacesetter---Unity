@@ -3770,6 +3770,57 @@
         }
       }
     },
+    "running.ready.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready to run?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "走り始める準備はできましたか？"
+          }
+        }
+      }
+    },
+    "running.ready.note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get into position, then tap Start Running to begin the 3–2–1 countdown."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置を整えて「走行開始」を押すと、3・2・1のカウントダウンが始まります。"
+          }
+        }
+      }
+    },
+    "running.startRun" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Running"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "走行開始"
+          }
+        }
+      }
+    },
     "running.preparing.note" : {
       "extractionState" : "manual",
       "localizations" : {

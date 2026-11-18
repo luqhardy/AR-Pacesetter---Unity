@@ -183,6 +183,9 @@ enum AppStrings {
 
     /// 走行中(S6)・ロック画面
     enum Running {
+        static let readyTitle: LocalizedStringKey = "running.ready.title"
+        static let readyNote: LocalizedStringKey = "running.ready.note"
+        static let startRun: LocalizedStringKey = "running.startRun"
         static let preparingTitle: LocalizedStringKey = "running.preparing.title"
         static let preparingNote: LocalizedStringKey = "running.preparing.note"
         static let active: LocalizedStringKey = "running.active"

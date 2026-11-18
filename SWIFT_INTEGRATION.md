@@ -300,7 +300,7 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 
 `RunningView`([CourseRunningView.swift](ios/AR_Runner_UI/AR_Runner_UI/Features/Running/CourseRunningView.swift))に統合済み:
 - 背景: UnityFrameworkリンク時は `UnityContainerView`(ARカメラ+アバター)、未リンク時は従来のモック背景に自動フォールバック
-- `onAppear`: `UnityLauncher.launch()` → `ARSessionManager.start(paceKmH:distanceKm:)`(設定値は`RunSettings.shared`経由でRunningSettingsViewから受領)
+- `onAppear`: `UnityLauncher.prepare()` でARプレビューを表示し、走行は開始しない。`RunStartConfirmation` が準備完了後の「走行開始」タップを1回だけ受け付け、`ARSessionManager.start(paceKmH:distanceKm:)` を送る。その後は既存の3・2・1・START。確認前は時計・GPS走行記録を開始せず、戻ると設定を保持してルート画面へ戻る。既存セッションのグラス再接続は従来どおり `ResumeSession`。
 - HUD: 距離/経過時間=`ARSessionManager`、シンクロ率=`UnityBridge.avatarSyncRate`(Unityから1Hz)、ペース=設定値の分'秒"換算
 - GPS喪失バナー: `UnityBridge.gpsStatus == .lost` で表示(Unityの`GPSLost`/`GPSRecovered`イベント連動)。
   `awaitingFix` 付きなら「GPS測位待ち — 測位できるとアバターが現れます」(`gpsAwaitingFirstFix`)
