@@ -65,16 +65,19 @@ public class OvertakeBehaviourController : MonoBehaviour
         // ── Update Animator Speed and Halt parameters safely ───────────────
         if (avatarAnimator != null)
         {
-            bool isWaitingOrHalted = !_engine.HasStarted || _engine.IsHalted
-                || _engine.IsSessionEnded || _engine.IsWaitingForUser;
-            float currentSpeed = isWaitingOrHalted ? 0f : _engine.GetTargetSpeed();
+            // HasStarted only arms the countdown. Before START, use the idle
+            // blend (Speed=0, no halt flag); InPlaceHalt plays a jogging clip.
+            bool runMotionActive = _engine.IsRunMotionActive;
+            bool isWaitingOrHalted = _engine.IsHalted || _engine.IsWaitingForUser;
+            bool inPlaceJog = runMotionActive && isWaitingOrHalted;
+            float currentSpeed = !runMotionActive || isWaitingOrHalted ? 0f : _engine.GetTargetSpeed();
             SetAnimatorFloatSafe("Speed", currentSpeed);
 
             // 基本設計書 §7.3: 歩行(0.1〜5.0km/h)は速度に応じて再生速度を同期。
             // 走行域は1.0のまま(ブレンドツリーがRun/Sprintを担当)
             SetAnimatorFloatSafe("PlaybackSpeed", ComputePlaybackSpeed(currentSpeed));
-            SetAnimatorBoolSafe("IsHalted", isWaitingOrHalted);
-            SetAnimatorBoolSafe("IsInPlaceJog", isWaitingOrHalted);
+            SetAnimatorBoolSafe("IsHalted", inPlaceJog);
+            SetAnimatorBoolSafe("IsInPlaceJog", inPlaceJog);
         }
 
         AvatarEngine.OvertakeState currentState = _engine.CurrentOvertakeState;

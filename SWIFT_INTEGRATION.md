@@ -298,6 +298,10 @@ StatsViewは`UnityBridge.lastResult`(SessionEnded)を表示: シンクロ率リ�
 
 ## 走行画面の配線(実装済み)
 
+確認待ちと3・2・1中のアバターはIdle。Unity側の走行アニメーションと障害物時の足踏みも
+`AvatarEngine.IsRunMotionActive`(START到達)で制御する。`HasStarted`はカウントダウン開始時点でtrueになるため、
+これだけを走行アニメーションの条件にしない。`E2EScenarioBehaviour.RunUnconfirmedPreviewTest`で6秒待機を検証する。
+
 `RunningView`([CourseRunningView.swift](ios/AR_Runner_UI/AR_Runner_UI/Features/Running/CourseRunningView.swift))に統合済み:
 - 背景: UnityFrameworkリンク時は `UnityContainerView`(ARカメラ+アバター)、未リンク時は従来のモック背景に自動フォールバック
 - `onAppear`: `UnityLauncher.prepare()` でARプレビューを表示し、走行は開始しない。`RunStartConfirmation` が準備完了後の「走行開始」タップを1回だけ受け付け、`ARSessionManager.start(paceKmH:distanceKm:)` を送る。その後は既存の3・2・1・START。確認前は時計・GPS走行記録を開始せず、戻ると設定を保持してルート画面へ戻る。既存セッションのグラス再接続は従来どおり `ResumeSession`。

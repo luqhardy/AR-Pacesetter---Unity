@@ -623,12 +623,15 @@ public class GroundSnap : MonoBehaviour
 
     private void UpdateAnimatorState(bool isHalted)
     {
+        // The halt state uses a jogging clip. Obstacle detection may run during
+        // the preview/countdown, but jogging is allowed only after countdown START.
+        bool inPlaceJog = isHalted && avatarEngine != null && avatarEngine.IsRunMotionActive;
         OvertakeBehaviourController overtake = GetComponent<OvertakeBehaviourController>();
         Animator animator = (overtake != null && overtake.ActiveAnimator != null) ? overtake.ActiveAnimator : AvatarRigLocator.FindBestAnimator(transform);
         if (animator != null)
         {
-            animator.SetBool("IsHalted", isHalted);
-            animator.SetBool("IsInPlaceJog", isHalted);
+            animator.SetBool("IsHalted", inPlaceJog);
+            animator.SetBool("IsInPlaceJog", inPlaceJog);
         }
     }
 }

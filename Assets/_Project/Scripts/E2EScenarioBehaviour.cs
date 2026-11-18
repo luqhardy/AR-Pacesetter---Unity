@@ -333,12 +333,18 @@ public class E2EScenarioBehaviour : MonoBehaviour
             Check(!engine.IsHalted, "obstacle: halting clears once the wall is gone");
         }
 
+        // AR preview must remain idle even after the old countdown fallback expires.
+        // Check the actual rig animator as well as the engine's movement flags.
+        yield return StartCoroutine(RunUnconfirmedPreviewTest(engine, session, groundSnap));
+
         // ── Step 1: StartSession (目標60m — ゴール自動終了を早く踏むため) ──
         bridge.OnSwiftCommand(
             "{\"command\":\"StartSession\",\"targetPaceKmH\":13.0,\"distanceKm\":0.06," +
             "\"avatarHeightCm\":175,\"forwardOffsetM\":3.0}");
         yield return WaitScaled(0.5f);
         Check(engine.HasStarted, "start: engine.HasStarted after StartSession");
+        Check(engine.IsStartCountdownActive, "confirmation: tapping Start arms the countdown");
+        CheckAvatarIdle(engine, "countdown");
 
         // 開始の瞬間、アバターは走者の**正面**に出ること。
         // 待機中の手ブレで立った移動履歴を優先すると、ほぼランダムな方向の3m先に現れ、
@@ -475,6 +481,9 @@ public class E2EScenarioBehaviour : MonoBehaviour
         if (countdown != null)
             Check(countdown.HasCompleted, "countdown: full 3-2-1-START sequence completed");
         yield return null; // allow telemetry/VFX listeners to observe the transition
+        var startedAnimator = AvatarRigLocator.FindBestAnimator(engine.transform);
+        Check(startedAnimator != null && startedAnimator.GetFloat("Speed") > 0.1f,
+            "confirmation: avatar running animation begins after countdown START");
 
         // サイズの異常系: START直後のスケールイン(0.15→1.0倍)の途中でアバターごと非アクティブになる
         // (GPSロスト・グラス切断のスタンバイ)と、復帰後も途中の大きさのまま走っていた
@@ -2468,6 +2477,70 @@ public class E2EScenarioBehaviour : MonoBehaviour
     /// 手ブレ + 測位ノイズ下で静止6秒(最初の2秒は収束待ち)。
     /// アバター位置の重心からの最大ずれ / フレーム間ジャンプ / リード距離を縛る。
     /// </summary>
+    private IEnumerator RunUnconfirmedPreviewTest(AvatarEngine engine, RunSessionController session,
+                                                  GroundSnap groundSnap)
+    {
+        yield return WaitScaled(0.5f);
+        Vector3 heldPosition = engine.transform.position;
+        float maxTravel = 0f;
+        bool stayedDisarmed = true;
+        for (float t = 0f; t < 6f; t += Time.deltaTime)
+        {
+            stayedDisarmed &= !engine.HasStarted && !engine.IsRunMotionActive;
+            Vector3 moved = engine.transform.position - heldPosition;
+            moved.y = 0f;
+            maxTravel = Mathf.Max(maxTravel, moved.magnitude);
+            yield return null;
+        }
+        Check(stayedDisarmed, "confirmation: waiting 6s without Start never arms or activates motion");
+        Check(maxTravel < 0.05f, $"confirmation: unconfirmed pacer does not run forward ({maxTravel:F3}m)");
+        Check(!engine.IsPacesetterActive, "confirmation: self-paced model remains inactive without Start");
+        var countdown = FindFirstObjectByType<CountdownDisplay>(FindObjectsInactive.Include);
+        Check(countdown != null && !countdown.IsShowing,
+            "confirmation: countdown does not appear without Start");
+        var logger = FindFirstObjectByType<RunTelemetryLogger>(FindObjectsInactive.Include);
+        Check(logger != null && !logger.IsLogging, "confirmation: preview does not start recording");
+        Check(session.AuthoritativeDistanceMeters == 0f,
+            "confirmation: preview does not accumulate run distance");
+        CheckAvatarIdle(engine, "preview");
+
+        // GroundSnap is another writer of the halt/jog animator flags.
+        if (groundSnap != null)
+        {
+            bool haltBefore = groundSnap.HaltOnObstacles;
+            bool simulateBefore = groundSnap.SimulateObstacle;
+            groundSnap.HaltOnObstacles = true;
+            groundSnap.SimulateObstacle = true;
+            yield return WaitScaled(0.5f);
+            Check(engine.IsHalted, "confirmation: obstacle detection remains active in preview");
+            CheckAvatarIdle(engine, "preview with obstacle");
+            groundSnap.SimulateObstacle = simulateBefore;
+            groundSnap.HaltOnObstacles = haltBefore;
+            yield return WaitScaled(0.5f);
+        }
+    }
+
+    private void CheckAvatarIdle(AvatarEngine engine, string phase)
+    {
+        Animator animator = AvatarRigLocator.FindBestAnimator(engine.transform);
+        Check(animator != null, $"confirmation: {phase} has the visible rig animator");
+        if (animator == null) return;
+        Check(Mathf.Abs(animator.GetFloat("Speed")) < 0.001f,
+            $"confirmation: {phase} animation Speed is zero");
+        Check(!animator.GetBool("IsHalted") && !animator.GetBool("IsInPlaceJog"),
+            $"confirmation: {phase} cannot select the in-place jogging state");
+        var clips = animator.GetCurrentAnimatorClipInfo(0);
+        bool idleOnly = clips.Length > 0;
+        foreach (var clip in clips)
+        {
+            if (clip.weight <= 0.01f || clip.clip == null) continue;
+            string clipPath = AssetDatabase.GetAssetPath(clip.clip);
+            if (!clipPath.EndsWith("Y Bot@Idle.fbx", System.StringComparison.OrdinalIgnoreCase))
+                idleOnly = false;
+        }
+        Check(idleOnly, $"confirmation: {phase} plays only the idle animation clip");
+    }
+
     private IEnumerator RunNoiseStationaryTest(AvatarEngine engine, ARSessionManagerBridge bridge)
     {
         Vector3 truePos = _cameraMover.position; // 手ブレを載せる前の「本当の」位置
