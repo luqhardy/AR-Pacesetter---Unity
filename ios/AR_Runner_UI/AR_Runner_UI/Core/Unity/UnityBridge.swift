@@ -337,7 +337,16 @@ final class UnityBridge: NSObject, ObservableObject {
         setGlassPassthrough(enabled: GlassPassthroughSetting.read(.standard))
         // 頭の向きの元(開発者モード・既定は iPhone)も同じく接続のたびに送る
         setHeadYawSource(HeadYawSourceSetting.read(.standard))
+        // 頭に付けた iPhone の縦横(AR設定・既定は縦)も接続のたびに送る — カメラ映像の向きに効く
+        setPhoneMountOrientation(PhoneMountSetting.read(.standard))
         sendToUnity(object: "DeviceManager", method: "OnSwiftCommand", payload: payload)
+    }
+
+    /// AR設定: 頭に付けた iPhone の縦横(既定は縦)。Unity はグラスの背景のカメラ映像をこれに合わせて回す。
+    /// 接続中なら Unity はすぐ切り替え、未接続なら次の接続で使う
+    func setPhoneMountOrientation(_ mount: PhoneMountSetting) {
+        sendToUnity(object: "DeviceManager", method: "OnSwiftCommand",
+                    payload: ["command": "SetPhoneMountOrientation", "orientation": mount.rawValue])
     }
 
     /// 開発者モード: ARグラスの背景に iPhone のカメラ映像を出すか(既定ON)。
@@ -747,7 +756,7 @@ final class UnityBridge: NSObject, ObservableObject {
             pendingCommands.removeAll { $0.command == "ConnectXREAL" || $0.command == "DisconnectXREAL" }
         case "RequestHistory":
             pendingCommands.removeAll { $0.command == "RequestHistory" }
-        case "SetGlassPassthrough", "SetPhonePassthrough", "SetHeadYawSource":
+        case "SetGlassPassthrough", "SetPhonePassthrough", "SetHeadYawSource", "SetPhoneMountOrientation":
             pendingCommands.removeAll { $0.command == command }
         default:
             break

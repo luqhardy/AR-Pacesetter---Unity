@@ -16,6 +16,9 @@ using UnityEngine;
 ///                      — グラスの背景 / iPhone の画面にカメラ映像を出すか(開発者モード・どちらも既定ON)
 ///   SetHeadYawSource {source}
 ///                      — 頭マウントの描画のヨーの元。"phone"(既定・ARKitカメラ)| "glassImu"(UpdateHeadYaw のヨー)
+///   SetPhoneMountOrientation {orientation}
+///                      — 頭に付けた iPhone の縦横(AR設定)。"portrait"(既定)| "landscape"。グラスのカメラ映像を
+///                        iPhone の実際の向きに合わせて回す(3D の描画はロールを足さないので変わらない)
 ///   UpdateHeadYaw {yaw}
 ///                      — 頭のヨー(度・基準は任意・右が正)。AirPods か XREAL One 自身のIMU(Swift の XrealImuReceiver)。進行方向との差を首振りとして
 ///                        グラスの描画の向きへ足し、首を振ってもアバターが進行方向の3m先に留まって見える
@@ -50,6 +53,9 @@ public class DeviceManagerBridge : MonoBehaviour
 
         // SetHeadYawSource(開発者モード): 頭マウントの描画のヨーの元。"phone"(既定) | "glassImu"
         public string source;
+
+        // SetPhoneMountOrientation(AR設定): 頭に付けた iPhone の縦横。"portrait"(既定) | "landscape"
+        public string orientation;
     }
 
     [SerializeField] private ReadyCheckController readyCheck;
@@ -147,6 +153,15 @@ public class DeviceManagerBridge : MonoBehaviour
                 var rig = ResolveGlassRig();
                 if (rig != null) rig.SetHeadYawSource(HeadPoseMath.ParseHeadYawSource(cmd.source));
                 else Debug.LogWarning("[SWIFT BRIDGE] SetHeadYawSource ignored — GlassViewRig not found.");
+                break;
+            }
+
+            case "SetPhoneMountOrientation":
+            {
+                // 頭に付けた iPhone の縦横(AR設定)。グラスのカメラ映像の向きだけに効く
+                var rig = ResolveGlassRig();
+                if (rig != null) rig.SetPhoneMountOrientation(PhoneMountMath.Parse(cmd.orientation));
+                else Debug.LogWarning("[SWIFT BRIDGE] SetPhoneMountOrientation ignored — GlassViewRig not found.");
                 break;
             }
 

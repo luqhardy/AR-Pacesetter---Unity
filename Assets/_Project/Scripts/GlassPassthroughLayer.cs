@@ -47,7 +47,9 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
     private RenderTexture _texture;
     private Canvas _canvas;
     private RawImage _image;
+    private float _cameraProjectionM00;
     private float _cameraProjectionM11;
+    private Matrix4x4 _displayMatrix = Matrix4x4.identity;
     private RenderTexture _probe;
     private ARCameraBackground _arBackground;
     private CommandBuffer _releaseCommands;
@@ -89,8 +91,22 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
     /// <summary>直近に読み戻した画素の最大の明るさ(0〜255)。</summary>
     public int LastProbePeak { get; private set; }
 
-    /// <summary>直近に使った切り出しの割合(1 = 全面)。</summary>
+    /// <summary>直近に使った切り出しの割合(1 = 全面)。90° 回すときは画面の横の倍率</summary>
     public float UvScale { get; private set; } = 1f;
+
+    /// <summary>
+    /// 映像を何度回して出すか(反時計回り・0 / 90 / 180 / -90)。iPhone の実際の向きと画面の向きの差
+    /// (<see cref="PhoneMountMath.PassthroughRotationDegrees"/>)。<see cref="GlassViewRig"/> が毎フレーム渡す
+    /// </summary>
+    public int RotationDegrees { get; private set; }
+
+    /// <summary>映像の回転を変える。次のフレームから反映する</summary>
+    public void SetRotationDegrees(int degrees)
+    {
+        if (degrees == RotationDegrees) return;
+        RotationDegrees = degrees;
+        Debug.Log($"[GLASS] カメラ映像を {degrees}° 回して出す(iPhone の向きと画面の向きの差)");
+    }
 
     public void Initialize(Camera outputCamera, Camera arCamera)
     {
@@ -202,12 +218,29 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
         for (int i = 0; i < args.textures.Count; i++)
             _blitMaterial.SetTexture(args.propertyNameIds[i], args.textures[i]);
         if (args.displayMatrix.HasValue)
-            _blitMaterial.SetMatrix(DisplayTransformId, args.displayMatrix.Value);
+            _displayMatrix = args.displayMatrix.Value;
         ApplyKeywords(args);
         if (args.projectionMatrix.HasValue)
+        {
+            _cameraProjectionM00 = args.projectionMatrix.Value[0, 0];
             _cameraProjectionM11 = args.projectionMatrix.Value[1, 1];
+        }
 
-        EnsureTexture();
+        int rotation = RotationDegrees;
+        bool swap = PhoneMountMath.SwapsAxes(rotation);
+        float fov = _outputCamera != null ? _outputCamera.fieldOfView : 0f;
+        float aspect = _outputCamera != null ? _outputCamera.aspect : 0f;
+        double scaleX = 1.0, scaleY = 1.0;
+        bool quarterTurnCrop = swap && GlassPassthroughMath.QuarterTurnUvScales(
+            fov, aspect, _cameraProjectionM00, _cameraProjectionM11,
+            _displayMatrix[0, 0], _displayMatrix[0, 1], _displayMatrix[1, 0], _displayMatrix[1, 1],
+            _displayMatrix[2, 0] + _displayMatrix[3, 0], _displayMatrix[2, 1] + _displayMatrix[3, 1],
+            out scaleX, out scaleY);
+        // 90° 回すときは表示変換の手前で画面の UV を中央から広げ、切り詰められた外側まで読む(GlassPassthroughMath)
+        _blitMaterial.SetMatrix(DisplayTransformId,
+            quarterTurnCrop ? CenteredUvScale((float)scaleX, (float)scaleY) * _displayMatrix : _displayMatrix);
+
+        EnsureTexture(swap);
         // 描画先を明示して色と深度を消してから描く(Unity の案内と同じ手順)。
         // 前のフレームが残っていると、変換が失敗しても古い絵で成功に見える
         var previous = RenderTexture.active;
@@ -219,16 +252,64 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
         ScheduleCameraBufferRelease();
         ProbePixelsIfDue();
 
-        float fov = _outputCamera != null ? _outputCamera.fieldOfView : 0f;
-        UvScale = (float)GlassPassthroughMath.UvCropScale(fov, _cameraProjectionM11);
-        float offset = (float)GlassPassthroughMath.CenteredUvOffset(UvScale);
-        _image.uvRect = new Rect(offset, offset, UvScale, UvScale);
+        if (swap)
+        {
+            // 切り出しは変換の側で済ませた(できなければ全面)
+            UvScale = (float)scaleX;
+            _image.uvRect = new Rect(0f, 0f, 1f, 1f);
+        }
+        else
+        {
+            UvScale = (float)GlassPassthroughMath.UvCropScale(fov, _cameraProjectionM11);
+            float offset = (float)GlassPassthroughMath.CenteredUvOffset(UvScale);
+            _image.uvRect = new Rect(offset, offset, UvScale, UvScale);
+        }
+        LayoutImage(rotation, swap);
 
         if (!HasFrame)
         {
             HasFrame = true;
             _image.enabled = true;
-            Debug.Log($"[GLASS] グラスへカメラ映像を表示開始(中央 {UvScale * 100f:F0}% を切り出し・{_texture.width}x{_texture.height})");
+            Debug.Log($"[GLASS] グラスへカメラ映像を表示開始(中央 {UvScale * 100f:F0}% を切り出し・{rotation}° 回転・{_texture.width}x{_texture.height})");
+        }
+    }
+
+    /// <summary>
+    /// 画面の UV を中央から軸ごとに拡大する行列。ARKit のシェーダーは (u, v, 1, 1) を行ベクトルとして
+    /// 表示変換に掛けるので、これを左から掛けると「広げた UV を表示変換へ入れる」になる
+    /// </summary>
+    private static Matrix4x4 CenteredUvScale(float scaleX, float scaleY)
+    {
+        var m = Matrix4x4.zero;
+        m[0, 0] = scaleX;
+        m[1, 1] = scaleY;
+        m[2, 0] = 0.5f - 0.5f * scaleX;
+        m[2, 1] = 0.5f - 0.5f * scaleY;
+        m[2, 2] = 1f;
+        m[3, 3] = 1f;
+        return m;
+    }
+
+    /// <summary>
+    /// 映像を回して画面いっぱいに置く。±90° では回す前の縦横を入れ替えておき、回した後に画面を埋める
+    /// </summary>
+    private void LayoutImage(int rotation, bool swap)
+    {
+        var rect = _image.rectTransform;
+        rect.localEulerAngles = new Vector3(0f, 0f, rotation);
+        if (swap)
+        {
+            Rect canvas = ((RectTransform)_canvas.transform).rect;
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(canvas.height, canvas.width);
+        }
+        else
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
         }
     }
 
@@ -274,11 +355,12 @@ public sealed class GlassPassthroughLayer : MonoBehaviour
         foreach (var k in OcclusionKeywords) _blitMaterial.DisableKeyword(k);
     }
 
-    // displayMatrix は描画面の縦横比で切り出されているので、変換先も同じ縦横比にする
-    private void EnsureTexture()
+    // displayMatrix は描画面の縦横比で切り出されているので、変換先も同じ縦横比にする。
+    // 90° 回して出すときは縦横を入れ替える(回した後にグラスの縦横比になる)
+    private void EnsureTexture(bool swap)
     {
-        int w = Mathf.Max(2, Screen.width / TextureDownscale);
-        int h = Mathf.Max(2, Screen.height / TextureDownscale);
+        int w = Mathf.Max(2, (swap ? Screen.height : Screen.width) / TextureDownscale);
+        int h = Mathf.Max(2, (swap ? Screen.width : Screen.height) / TextureDownscale);
         if (_texture != null && _texture.width == w && _texture.height == h) return;
 
         if (_texture != null) { _texture.Release(); Destroy(_texture); }

@@ -65,6 +65,20 @@ final class GlassConnectionStatusTests: XCTestCase {
         XCTAssertEqual(HeadYawSourceSetting.glassImu.rawValue, "glassImu")
     }
 
+    func testPhoneMountDefaultsToPortrait() {
+        let defaults = UserDefaults(suiteName: "PhoneMountSettingTests")!
+        defaults.removePersistentDomain(forName: "PhoneMountSettingTests")
+        XCTAssertEqual(PhoneMountSetting.read(defaults), .portrait, "未設定(初回起動)は縦")
+        defaults.set("landscape", forKey: PhoneMountSetting.key)
+        XCTAssertEqual(PhoneMountSetting.read(defaults), .landscape)
+        defaults.set("sideways", forKey: PhoneMountSetting.key)
+        XCTAssertEqual(PhoneMountSetting.read(defaults), .portrait, "知らない値は縦")
+        defaults.removePersistentDomain(forName: "PhoneMountSettingTests")
+        // Unity(PhoneMountMath.Parse)と同じ文字列
+        XCTAssertEqual(PhoneMountSetting.portrait.rawValue, "portrait")
+        XCTAssertEqual(PhoneMountSetting.landscape.rawValue, "landscape")
+    }
+
     func testPhonePassthroughIsOnUntilTurnedOff() {
         let defaults = UserDefaults(suiteName: "PhonePassthroughSettingTests")!
         defaults.removePersistentDomain(forName: "PhonePassthroughSettingTests")

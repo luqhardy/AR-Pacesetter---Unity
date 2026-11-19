@@ -262,6 +262,7 @@ stateDiagram-v2
 - **展示デモではアバターを一度も消さない**(GPSロスト判定OFF)。向きは iPhone の正面から取る(`AvatarEngine.SetPresentationFollowsView`)— §4.1 Gaze Lock の**唯一の例外**で、走行には持ち込まない
 - **iPhone は頭のマウントに付ける(`CameraMount.Head`・既定)**。グラスの描画は ARKit カメラの位置・ヨー・ピッチのまま(`HeadMountedCamera`)で、
   ロールは足さない(マウントの縦横で90°変わるため)。§4.1 が禁じているのはアバターの位置・進行方向に視線を使うことで、描画の向きは別。
+  縦横は AR設定「マウントに付ける iPhone の向き」(既定は縦・`SetPhoneMountOrientation`)で選び、効くのはグラスのカメラ映像の回転だけ(`PhoneMountMath`)。
   `GroundSnap.assumedCameraHeightMeters` も眼高(1.55m)。胸マウントの経路(`CameraMount.Chest` = 進行方向ヨー+俯角+`UpdateHeadYaw`)は残してある
 - **AirPods の頭の向き(`HeadphoneHeadTracker` → `UpdateHeadYaw`)は準備画面(S4)で「接続」を押したときだけ使う**(既定OFF・走行の終了で止める)。
   足すのは胸マウントのときだけ(`HeadYawBaseline`)。頭マウントではカメラの向きに首振りが含まれているので Unity は使わない。Anchor モードでは足さない
