@@ -115,6 +115,74 @@
         }
       }
     },
+    "arSettings.phoneMount" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone orientation on the mount"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マウントに付ける iPhone の向き"
+          }
+        }
+      }
+    },
+    "arSettings.phoneMount.landscape" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Landscape"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "横"
+          }
+        }
+      }
+    },
+    "arSettings.phoneMount.note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns the camera view in the glasses to match how the iPhone is mounted. For landscape, either side works — it's detected automatically."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グラスのカメラ映像を iPhone の付け方に合わせて回します。横はどちら向きに付けても自動で判定します"
+          }
+        }
+      }
+    },
+    "arSettings.phoneMount.portrait" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portrait"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "縦"
+          }
+        }
+      }
+    },
     "arSettings.cameraPassthrough.onNote" : {
       "extractionState" : "manual",
       "localizations" : {

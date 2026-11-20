@@ -19,6 +19,8 @@ struct ARSettingsView: View {
     /// グラスの背景に iPhone のカメラ映像を出す(既定 ON — GlassPassthroughSetting)。
     /// 開発者モードの同じスイッチと値を共有する。OFF ならグラスは加算表示なので背景が透けて現実だけが見える
     @AppStorage(GlassPassthroughSetting.key) private var glassPassthrough = GlassPassthroughSetting.defaultValue
+    /// 頭のマウントに付けた iPhone の縦横(既定は縦 — PhoneMountSetting)
+    @AppStorage(PhoneMountSetting.key) private var phoneMount = PhoneMountSetting.defaultValue
 
     /// 準備画面と同じ判定(手動の接続はここでは扱わない)
     private var glassStatus: GlassRowStatus {
@@ -73,6 +75,26 @@ struct ARSettingsView: View {
                             }
                             Text(glassPassthrough ? AppStrings.ARSettings.cameraPassthroughOnNote
                                                   : AppStrings.ARSettings.cameraPassthroughOffNote)
+                                .font(.system(size: 12))
+                                .foregroundColor(.arGrayText)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            // 頭のマウントに付けた iPhone の縦横。接続のたびにも Unity へ送る(UnityBridge)
+                            Text(AppStrings.ARSettings.phoneMount)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.top, 4)
+                            Picker(selection: $phoneMount) {
+                                Text(AppStrings.ARSettings.phoneMountPortrait).tag(PhoneMountSetting.portrait)
+                                Text(AppStrings.ARSettings.phoneMountLandscape).tag(PhoneMountSetting.landscape)
+                            } label: {
+                                Text(AppStrings.ARSettings.phoneMount)
+                            }
+                            .pickerStyle(.segmented)
+                            .onChange(of: phoneMount) { _, mount in
+                                bridge.setPhoneMountOrientation(mount)
+                            }
+                            Text(AppStrings.ARSettings.phoneMountNote)
                                 .font(.system(size: 12))
                                 .foregroundColor(.arGrayText)
                                 .fixedSize(horizontal: false, vertical: true)

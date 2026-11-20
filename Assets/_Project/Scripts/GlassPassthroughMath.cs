@@ -33,6 +33,68 @@ public static class GlassPassthroughMath
     public static double CenteredUvOffset(double scale) => 0.5 - scale * 0.5;
 
     /// <summary>
+    /// iPhone を画面の向きと 90° 違えて付けたとき(<see cref="PhoneMountMath.SwapsAxes"/>)の切り出し。
+    ///
+    /// <para>映像は画面の向きで立っているので、グラスの横は映像の縦に、グラスの縦は映像の横に当たる。
+    /// ARKit の表示変換(displayMatrix)は画面の縦横比で映像を切り詰めているが、変換に 0〜1 の外の UV を
+    /// 入れれば切り詰められた外側も読める。そこで画面の UV を中央から軸ごとに
+    /// <paramref name="scaleX"/> / <paramref name="scaleY"/> 倍して変換へ入れる(1 を超えてよい)。</para>
+    ///
+    /// <para>映像の外へはみ出す(読む先が 0〜1 を出る)ときは、縦横を同じ割合で縮める —
+    /// 引き伸ばすより縮尺が少しずれる方を選ぶ(<see cref="UvCropScale"/> と同じ方針)。</para>
+    /// </summary>
+    /// <param name="glassVerticalFovDegrees">グラスの垂直画角(度)</param>
+    /// <param name="glassAspect">グラスの描画面の縦横比(幅/高さ)</param>
+    /// <param name="cameraProjectionM00">ARKit の投影行列 [0,0](= 1 / tan(画面の横の半画角))</param>
+    /// <param name="cameraProjectionM11">ARKit の投影行列 [1,1](= 1 / tan(画面の縦の半画角))</param>
+    /// <param name="dxx">表示変換: 画面の u がテクスチャの x へ効く係数(行0列0)</param>
+    /// <param name="dxy">表示変換: 画面の u がテクスチャの y へ効く係数(行0列1)</param>
+    /// <param name="dyx">表示変換: 画面の v がテクスチャの x へ効く係数(行1列0)</param>
+    /// <param name="dyy">表示変換: 画面の v がテクスチャの y へ効く係数(行1列1)</param>
+    /// <param name="ox">表示変換の定数項 x(行2列0 + 行3列0 — ARKit のシェーダーは (u, v, 1, 1) を掛ける)</param>
+    /// <param name="oy">表示変換の定数項 y(行2列1 + 行3列1)</param>
+    /// <returns>決められれば true。値が不正なら false(呼び手は切り出しをやめて全面を出す)</returns>
+    public static bool QuarterTurnUvScales(double glassVerticalFovDegrees, double glassAspect,
+                                           double cameraProjectionM00, double cameraProjectionM11,
+                                           double dxx, double dxy, double dyx, double dyy, double ox, double oy,
+                                           out double scaleX, out double scaleY)
+    {
+        scaleX = 1.0;
+        scaleY = 1.0;
+        if (!(glassVerticalFovDegrees > 0.0 && glassVerticalFovDegrees < 180.0)) return false;
+        if (!(glassAspect > 0.0) || double.IsInfinity(glassAspect)) return false;
+        if (!(cameraProjectionM00 > 0.0) || double.IsInfinity(cameraProjectionM00)) return false;
+        if (!(cameraProjectionM11 > 0.0) || double.IsInfinity(cameraProjectionM11)) return false;
+        if (!IsFinite(dxx) || !IsFinite(dxy) || !IsFinite(dyx) || !IsFinite(dyy) || !IsFinite(ox) || !IsFinite(oy))
+            return false;
+
+        double glassHalfTanV = Math.Tan(glassVerticalFovDegrees * Math.PI / 360.0);
+        double glassHalfTanH = glassHalfTanV * glassAspect;
+        // 画面の横(u)はグラスの縦を、画面の縦(v)はグラスの横を受け持つ
+        double kx = glassHalfTanV * cameraProjectionM00;
+        double ky = glassHalfTanH * cameraProjectionM11;
+
+        // 画面の中央が読むテクスチャの位置と、そこから四隅までの広がり
+        double cx = 0.5 * (dxx + dyx) + ox;
+        double cy = 0.5 * (dxy + dyy) + oy;
+        double reachX = 0.5 * (Math.Abs(kx * dxx) + Math.Abs(ky * dyx));
+        double reachY = 0.5 * (Math.Abs(kx * dxy) + Math.Abs(ky * dyy));
+        double roomX = Math.Min(cx, 1.0 - cx);
+        double roomY = Math.Min(cy, 1.0 - cy);
+        if (!(roomX > 0.0) || !(roomY > 0.0)) return false;
+
+        double fit = 1.0;
+        if (reachX > roomX) fit = Math.Min(fit, roomX / reachX);
+        if (reachY > roomY) fit = Math.Min(fit, roomY / reachY);
+
+        scaleX = kx * fit;
+        scaleY = ky * fit;
+        return true;
+    }
+
+    private static bool IsFinite(double v) => !double.IsNaN(v) && !double.IsInfinity(v);
+
+    /// <summary>
     /// これを超える明るさ(0〜255)の画素があれば「絵が出ている」とみなす。
     /// 仮の値: レンズを覆ったときのセンサーのノイズより上、暗い室内の映像より下を狙っている(実機で未調整)
     /// </summary>

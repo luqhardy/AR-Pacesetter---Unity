@@ -49,6 +49,8 @@ public sealed class GlassViewRig : MonoBehaviour
     [SerializeField] private bool cameraPassthroughOnGlass = true;
     [Tooltip("頭マウントのとき描画のヨーをどこから取るか。既定は iPhone(ARKitカメラ)。開発者モードの SetHeadYawSource で切替")]
     [SerializeField] private HeadYawSource headYawSource = HeadYawSource.PhoneCamera;
+    [Tooltip("頭に付けた iPhone の縦横(既定は縦)。AR設定の SetPhoneMountOrientation で切替。カメラ映像の向きだけに効く")]
+    [SerializeField] private PhoneMountOrientation phoneMountOrientation = PhoneMountOrientation.Portrait;
 
     private Camera _outputCamera;
     private GlassPassthroughLayer _passthroughLayer;
@@ -154,6 +156,9 @@ public sealed class GlassViewRig : MonoBehaviour
         ReportOpticalFit();
         ApplyHudSafeArea();
         UpdateOutputCamera();
+        // 横向きの左右は重力で決める(RunTelemetryLogger も有効にするが、走行前の接続でも読めるように)
+        Input.gyro.enabled = true;
+        UpdatePassthroughRotation();
         ApplyCameraPassthrough();
 
         Debug.Log($"[GLASS] 出力リグ起動: {profile} / 描画面 {Screen.width}x{Screen.height} " +
@@ -231,6 +236,58 @@ public sealed class GlassViewRig : MonoBehaviour
     /// <summary>頭マウントの描画のヨーの元(設定)。</summary>
     public HeadYawSource HeadYawSourceSetting => headYawSource;
 
+    // ── iPhone の縦横(AR設定「iPhoneの向き」) ───────────────────────────
+    // 3D の描画はロールを足さないので縦横で変わらない。変わるのはカメラ映像だけ(PhoneMountMath)
+
+    private int _mountAngleDegrees;
+
+    /// <summary>頭に付けた iPhone の縦横(設定)。</summary>
+    public PhoneMountOrientation PhoneMount => phoneMountOrientation;
+
+    /// <summary>直近に判定した iPhone の倒れ方(縦向きから反時計回り・0 / +90 / -90)。</summary>
+    public int MountAngleDegrees => _mountAngleDegrees;
+
+    /// <summary>直近にカメラ映像へかけた回転(反時計回り・度)。</summary>
+    public int PassthroughRotationDegrees => _passthroughLayer != null ? _passthroughLayer.RotationDegrees : 0;
+
+    /// <summary>
+    /// 頭に付けた iPhone の縦横を切り替える(AR設定・接続のたびにも届く)。次のフレームから反映する
+    /// </summary>
+    public void SetPhoneMountOrientation(PhoneMountOrientation mount)
+    {
+        if (phoneMountOrientation == mount) return;
+        phoneMountOrientation = mount;
+        Debug.Log($"[GLASS] iPhone の向きを{(mount == PhoneMountOrientation.Landscape ? "横" : "縦")}に設定");
+    }
+
+    /// <summary>検証用: 重力の代わりに使う端末の倒れ方(度)。NaN なら実際の重力を読む</summary>
+    public float VerificationDeviceAngleDegrees = float.NaN;
+
+    private void UpdatePassthroughRotation()
+    {
+        float deviceAngle = VerificationDeviceAngleDegrees;
+        if (float.IsNaN(deviceAngle) && Input.gyro.enabled)
+        {
+            Vector3 g = Input.gyro.gravity; // 端末の座標(縦向きの x=右・y=上端)
+            deviceAngle = PhoneMountMath.DeviceAngleFromGravity(g.x, g.y);
+        }
+        _mountAngleDegrees = PhoneMountMath.ResolveMountAngleDegrees(phoneMountOrientation, deviceAngle, _mountAngleDegrees);
+        int rotation = PhoneMountMath.PassthroughRotationDegrees(_mountAngleDegrees, ScreenAngleDegrees(Screen.orientation));
+        if (_passthroughLayer != null) _passthroughLayer.SetRotationDegrees(rotation);
+    }
+
+    /// <summary>Unity の画面の向き → 縦向きから反時計回りの角度(PhoneMountMath の約束)</summary>
+    private static int ScreenAngleDegrees(ScreenOrientation orientation)
+    {
+        switch (orientation)
+        {
+            case ScreenOrientation.LandscapeLeft: return 90;
+            case ScreenOrientation.LandscapeRight: return -90;
+            case ScreenOrientation.PortraitUpsideDown: return 180;
+            default: return 0;
+        }
+    }
+
     /// <summary>直近のフレームで、頭マウントのヨーを実際に外部IMUで回したか(設定が IMU でも届いていなければ false)</summary>
     public bool IsHeadYawFromImu { get; private set; }
 
@@ -254,6 +311,7 @@ public sealed class GlassViewRig : MonoBehaviour
         if (avatarEngine != null && !Mathf.Approximately(avatarEngine.LeadDistanceMeters, _fitLimitLeadMeters))
             ApplyFitHeightLimit();
         UpdateOutputCamera();
+        UpdatePassthroughRotation();
     }
 
     // ────────────────────────────────────────────────────────────────

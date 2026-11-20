@@ -130,6 +130,25 @@ nonisolated enum HeadYawSourceSetting: String, CaseIterable, Identifiable {
     var startsGlassImuWithRun: Bool { self == .glassImu }
 }
 
+// MARK: - AR設定「iPhoneの向き」
+
+/// 頭のマウントに付けた iPhone の向き(**既定は縦**)。グラスの背景のカメラ映像を iPhone の実際の向きに合わせて
+/// 回すために Unity へ渡す(3D の描画は縦横で変わらない)。横はどちらへ倒したかを Unity が重力から決める。
+/// 値は接続のたびに Unity へ送る(`SetPhoneMountOrientation`)。未設定・知らない値は縦として読む
+nonisolated enum PhoneMountSetting: String, CaseIterable, Identifiable {
+    case portrait
+    case landscape
+
+    var id: String { rawValue }
+
+    static let key = "phoneMountOrientation"
+    static let defaultValue = PhoneMountSetting.portrait
+
+    static func read(_ defaults: UserDefaults) -> PhoneMountSetting {
+        defaults.string(forKey: key).flatMap(PhoneMountSetting.init(rawValue:)) ?? defaultValue
+    }
+}
+
 // MARK: - 開発者モード「屋内テスト」
 
 /// Unity の Diagnostics の `gps.autoLostHandling` の値("ON(仕様どおり)" / "OFF(手動で無効化中)")を読む。

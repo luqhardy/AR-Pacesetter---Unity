@@ -120,6 +120,10 @@ public static class DevDiagnostics
                 : glass.CameraPassthroughHasFrame ? "ON — 変換を実行中(画素は未確認)"
                 : "ON だが映っていない: フレーム待ち";
             Add(rows, "glass.cameraFeed", glassCamera);
+            // iPhone の縦横(AR設定)と、カメラ映像にかけている回転
+            Add(rows, "glass.phoneMount",
+                (glass.PhoneMount == PhoneMountOrientation.Landscape ? "横" : "縦(既定)") +
+                $" — 端末 {glass.MountAngleDegrees}° / 画面 {Screen.orientation} / 映像の回転 {glass.PassthroughRotationDegrees}°");
             // グラス出力中に ARKit のフレームが届き続けているか(止まれば映像もトラッキングも止まる)。
             // 2回読んで frames が増えていなければ止まっている
             Add(rows, "glass.cameraFrames", glass.CameraPassthroughFrameStats);
