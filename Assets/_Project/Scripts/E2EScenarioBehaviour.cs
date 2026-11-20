@@ -724,6 +724,27 @@ public class E2EScenarioBehaviour : MonoBehaviour
                 deviceBridge.OnSwiftCommand("{\"command\":\"SetGlassPassthrough\",\"enabled\":true}");
                 Check(glassRig.IsCameraPassthroughShowing,
                     "glass-passthrough: SetGlassPassthrough(true) shows it again");
+
+                // iPhone の縦横(AR設定): 既定は縦。横は倒した向き(重力)で左右を決める
+                Check(glassRig.PhoneMount == PhoneMountOrientation.Portrait && glassRig.MountAngleDegrees == 0,
+                    "phone-mount: portrait by default");
+                deviceBridge.OnSwiftCommand("{\"command\":\"SetPhoneMountOrientation\",\"orientation\":\"landscape\"}");
+                glassRig.VerificationDeviceAngleDegrees = 90f;
+                yield return null;
+                Check(glassRig.PhoneMount == PhoneMountOrientation.Landscape && glassRig.MountAngleDegrees == 90,
+                    $"phone-mount: landscape tipped counter-clockwise resolves to +90° (got {glassRig.MountAngleDegrees}°)");
+                glassRig.VerificationDeviceAngleDegrees = -85f;
+                yield return null;
+                Check(glassRig.MountAngleDegrees == -90,
+                    $"phone-mount: landscape tipped clockwise resolves to -90° (got {glassRig.MountAngleDegrees}°)");
+                glassRig.VerificationDeviceAngleDegrees = float.NaN; // エディタはジャイロが無い — 前の向きを保つ
+                yield return null;
+                Check(glassRig.MountAngleDegrees == -90,
+                    "phone-mount: keeps the last side while gravity gives no answer");
+                deviceBridge.OnSwiftCommand("{\"command\":\"SetPhoneMountOrientation\",\"orientation\":\"portrait\"}");
+                yield return null;
+                Check(glassRig.PhoneMount == PhoneMountOrientation.Portrait && glassRig.MountAngleDegrees == 0,
+                    "phone-mount: back to portrait");
                 Check(glassRig.ActiveProfile != null && glassRig.ActiveProfile.Model == "XREAL One",
                     $"glass: 1920x1080 resolves to the XREAL One profile (got {glassRig.ActiveProfile?.Model})");
 
